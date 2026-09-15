@@ -8,7 +8,7 @@ from yaml import load, CSafeLoader
 
 class YamlParser:
     def __init__(self: Self, yaml_p: Traversable) -> None:
-        self.yaml_p: Traversable = p
+        self.yaml_p: Traversable = yaml_p
 
     def parse(self: Self) -> Any:
         with self.yaml_p.open("r") as f:
