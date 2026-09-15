@@ -15,7 +15,7 @@ class YamlIngests(StrictBase):
 class Dataset(StrictBase):
     type: Literal["vocab"] = Field(...)
 
-class HuggingFaceDataset(Dataset)
+class HuggingFaceDataset(Dataset):
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
     subset: str = Field(...)
