@@ -22,11 +22,11 @@ class YamlIngestsParser(YamlParser):
     def write_ingests_avro(self: Self) -> None:
         ParsedIngests: YamlIngests = self.parse_ingests()
 
-        avro_schema: Any = Dataset.avro_schema_to_python()
-        parsed_avro_schema: Any = fastavro.parse_schema(avro_schema)
+        avro_schema: Any = YamlIngests.avro_schema_to_python()
+        datasets_arvo_schema: list[Any] = [field["type"]["items"] for field in avro_schema["fields"] if field["name"] == "datasets"]
 
-        avro_blob: dict[str, Any] = ParsedIngests.model_dump()
-        avro_recors: list[Any] = avro_blob["datasets"]
+        parsed_avro_schema: Any = fastavro.parse_schema(datasets_arvo_schema)
+        avro_records: list[Any] = [dataset.model_dump() for dataset in ParsedIngests.datasets]
 
         with self.avro_p.open("wb") as f:
-            fastavro.writer(f, parsed_avro_schema, avro_blob)
+            fastavro.writer(f, parsed_avro_schema, avro_records)

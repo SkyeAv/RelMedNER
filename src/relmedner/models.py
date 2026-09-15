@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Literal, TypeAlias, Union
+from typing import Literal, Union, Annotated
+from importlib.resources.abc import Traversable
 
 from pydantic import ConfigDict, Field
 from dataclasses_avroschema.pydantic import AvroBaseModel
@@ -22,7 +23,16 @@ class HuggingFaceDataset(DatasetBase):
     split: str = Field(...)
     column: str = Field(...)
 
-Dataset: TypeAlias = Union[DatasetBase, HuggingFaceDataset]
+class LocalDataset(DatasetBase):
+    """placeholder to get the annotated Dataset type to work"""
+    source: Literal["local"] = Field(...)
+    path: Traversable = Field(...)
+
+Dataset: Annotated = Annotated[
+    Union[HuggingFaceDataset, LocalDataset],
+    Field(discriminator="source"),
+]
+
 
 class YamlIngests(StrictBase):
     datasets: list[Dataset] = Field(...)
