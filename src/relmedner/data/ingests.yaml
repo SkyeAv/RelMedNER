@@ -1,5 +1,7 @@
 datasets:
-  - type: hf
-    name: placeholder.com
-    splits:
-      -
+  - source: hf
+    type: vocab
+    dataset: TrialPanorama/TrialPanorama-database
+    subset: adverse_events
+    split: all
+    column: adverse_event_description
