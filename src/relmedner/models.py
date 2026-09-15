@@ -9,6 +9,9 @@ from dataclasses_avroschema.pydantic import AvroBaseModel
 class StrictBase(AvroBaseModel):
     model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid")
 
+    class Meta:
+        namespace: str = "relmedner.ingests"
+
 class YamlIngests(StrictBase):
     datasets: list[Dataset] = Field(...)
 
