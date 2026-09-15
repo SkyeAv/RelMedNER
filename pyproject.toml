@@ -7,7 +7,9 @@ authors = [
     { name = "SkyeAv", email = "skye.a.goetz@gmail.com" }
 ]
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    "apache-beam>=2.76.0",
+]
 
 [project.scripts]
 relmedner = "relmedner:main"
@@ -15,3 +17,13 @@ relmedner = "relmedner:main"
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
 build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pre-commit>=4.6.2",
+    "pyright>=1.1.414",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "pytest-xdist>=3.8.0",
+    "ruff>=0.16.7",
+]
