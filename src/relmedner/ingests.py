@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from relmedliner.parsers import YamlParser
-from relmedliner.models import YamlIngests
-from relmedliner.constants import DATA
+from relmedner.parsers import YamlParser
+from relmedner.models import YamlIngests
+from relmedner.constants import DATA
 
 from importlib.resources.abc import Traversable
 from typing import Self, Any, Union, Literal
