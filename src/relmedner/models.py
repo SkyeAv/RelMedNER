@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, TypeAlias
 
 from pydantic import ConfigDict, Field
 from dataclasses_avroschema.pydantic import AvroBaseModel
@@ -10,12 +10,14 @@ class StrictBase(AvroBaseModel):
     model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid")
 
 class YamlIngests(StrictBase):
-    datasets: list[HuggingFaceDataset] = Field(...)
+    datasets: list[Dataset] = Field(...)
 
-class Dataset(StrictBase):
+Dataset: TypeAlias = HuggingFaceDataset
+
+class DatasetBase(StrictBase):
     type: Literal["vocab"] = Field(...)
 
-class HuggingFaceDataset(Dataset):
+class HuggingFaceDataset(DatasetBase):
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
     subset: str = Field(...)

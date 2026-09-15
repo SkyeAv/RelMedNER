@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from relmedner.parsers import YamlParser
-from relmedner.models import YamlIngests
+from relmedner.models import YamlIngests, Dataset
 from relmedner.constants import DATA
 
 from importlib.resources.abc import Traversable
@@ -22,10 +22,11 @@ class YamlIngestsParser(YamlParser):
     def write_ingests_avro(self: Self) -> None:
         ParsedIngests: YamlIngests = self.parse_ingests()
 
-        avro_schema: Any = ParsedIngests.avro_schema_to_python()
+        avro_schema: Any = Dataset.avro_schema_to_python()
         parsed_avro_schema: Any = fastavro.parse_schema(avro_schema)
 
-        avro_blob: Any = ParsedIngests.model_dump()
+        avro_blob: dict[str, Any] = ParsedIngests.model_dump()
+        avro_recors: list[Any] = avro_blob["datasets"]
 
         with self.avro_p.open("wb") as f:
             fastavro.writer(f, parsed_avro_schema, avro_blob)
