@@ -12,5 +12,10 @@ def build_dataset() -> None:
     BuildPipeline: BeamPipeline = BeamPipeline()
     BuildPipeline.run()
 
+
 @APP.command(name="reset-ingests")
 def reset_ingests() -> None:
+    from relmedner.ingests import YamlIngestsParser
+
+    IngestsParser: YamlIngestsParser = YamlIngestsParser()
+    IngestsParser.write_ingests_arvo()

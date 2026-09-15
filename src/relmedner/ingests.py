@@ -9,12 +9,9 @@ from typing import Self, Any, Union, Literal
 
 import fastarvo
 
+
 class YamlIngestsParser(YamlParser):
-    def __init__(
-        self: Self,
-        yaml_p: str = "ingests.yaml",
-        arvo_p: str = "ingests.arvo"
-    ) -> None:
+    def __init__(self: Self, yaml_p: str = "ingests.yaml", arvo_p: str = "ingests.arvo") -> None:
         super().__init__()
         self.yaml_p: Traversable = DATA / yaml_p
         self.arvo_p: Traversable = DATA / arvo_p

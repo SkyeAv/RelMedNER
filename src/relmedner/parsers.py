@@ -5,6 +5,7 @@ from importlib.resources.abc import Traversable
 
 from yaml import load, CSafeLoader
 
+
 class YamlParser:
     def __init__(self: Self, yaml_p: Traversable) -> None:
         self.yaml_p: Traversable = p
