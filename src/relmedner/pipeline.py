@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from relmedner.constants import INGESTS_AVRO
+
 from importlib.resources import files
 from typing import Self
 
@@ -14,7 +16,8 @@ class BeamPipeline:
     def run(self: Self) -> None:
         with beam.Pipeline as new_pipeline:
             (
-                new_pipeline | "" >> ReadFromAvro()
+                new_pipeline
+                | "load avro data containing declarative ingests" >> ReadFromAvro(INGESTS_AVRO)
             )
 
         return None
