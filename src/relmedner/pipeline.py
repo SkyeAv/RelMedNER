@@ -17,7 +17,7 @@ class BeamPipeline:
         with beam.Pipeline as new_pipeline:
             (
                 new_pipeline
-                | "load avro data containing declarative ingests" >> ReadFromAvro(INGESTS_AVRO)
+                | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO)
             )
 
         return None
