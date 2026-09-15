@@ -12,11 +12,6 @@ class StrictBase(AvroBaseModel):
     class Meta:
         namespace: str = "relmedner.ingests"
 
-class YamlIngests(StrictBase):
-    datasets: list[Dataset] = Field(...)
-
-Dataset: TypeAlias = Union[DatasetBase, HuggingFaceDataset]
-
 class DatasetBase(StrictBase):
     type: Literal["vocab"] = Field(...)
 
@@ -26,3 +21,8 @@ class HuggingFaceDataset(DatasetBase):
     subset: str = Field(...)
     split: str = Field(...)
     column: str = Field(...)
+
+Dataset: TypeAlias = Union[DatasetBase, HuggingFaceDataset]
+
+class YamlIngests(StrictBase):
+    datasets: list[Dataset] = Field(...)
