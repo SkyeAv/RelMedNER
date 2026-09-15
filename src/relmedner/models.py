@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal, Union, Annotated
-from importlib.resources.abc import Traversable
+from pathlib import Path
 
 from pydantic import ConfigDict, Field
 from dataclasses_avroschema.pydantic import AvroBaseModel
@@ -26,7 +26,7 @@ class HuggingFaceDataset(DatasetBase):
 class LocalDataset(DatasetBase):
     """placeholder to get the annotated Dataset type to work"""
     source: Literal["local"] = Field(...)
-    path: Traversable = Field(...)
+    path: str = Field(...)
 
 Dataset: Annotated = Annotated[
     Union[HuggingFaceDataset, LocalDataset],
