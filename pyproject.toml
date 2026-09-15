@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-relmedner = "relmedner:main"
+relmedner = "relmedner.cli:APP"
 
 [build-system]
 requires = ["uv_build>=0.12.5,<0.13.0"]
