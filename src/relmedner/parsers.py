@@ -12,4 +12,4 @@ class YamlParser:
 
     def parse(self: Self) -> Any:
         with self.yaml_p.open("r") as f:
-            return load(f, loader=CSafeLoader)
+            return load(f, Loader=CSafeLoader)
