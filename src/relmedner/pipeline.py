@@ -1,5 +1,9 @@
-# import apache_beam as beam
+import apache_beam as beam
 
 
 def build_pipeline() -> None:
-    print("Hello from relmedner!")
+    with beam.Pipeline as new_pipeline:
+        (
+            new_pipeline
+            | "" >> beam.Create()
+        )
