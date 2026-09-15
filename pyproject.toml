@@ -29,6 +29,10 @@ dev = [
     "ruff>=0.16.7",
 ]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=relmedner --cov-report=term-missing -n auto"
+
 [tool.ruff]
 line-length = 150
 indent-width = 4
