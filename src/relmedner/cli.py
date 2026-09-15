@@ -1,4 +1,4 @@
-from relmedner.pipeline import build_pipeline
+from relmedner.pipeline import BeamPipeline
 import cyclopts
 
 APP: cyclopts.App = cyclopts.App()
@@ -6,4 +6,5 @@ APP: cyclopts.App = cyclopts.App()
 
 @APP.command(name="trigger")
 def trigger() -> None:
-    build_pipeline()
+    build_pipeline: BeamPipeline = BeamPipeline()
+    build_pipeline.run()

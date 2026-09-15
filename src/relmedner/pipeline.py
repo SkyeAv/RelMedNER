@@ -2,7 +2,7 @@ import apache_beam as beam
 
 from typing import Self
 
-class BuildPipeline:
+class BeamPipeline:
     def __init__(self: Self) -> None:
         return None
 
