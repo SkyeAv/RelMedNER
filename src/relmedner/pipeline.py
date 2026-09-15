@@ -14,7 +14,11 @@ class BeamPipeline:
         return None
 
     def run(self: Self) -> None:
-        with beam.Pipeline as new_pipeline:
-            (new_pipeline | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO))
+        with beam.Pipeline() as new_pipeline:
+            (
+                new_pipeline
+                | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO.as_posix())
+                | "print ingests" >> beam.Map(print)
+            )
 
         return None
