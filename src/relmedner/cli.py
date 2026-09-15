@@ -18,4 +18,4 @@ def reset_ingests() -> None:
     from relmedner.ingests import YamlIngestsParser
 
     IngestsParser: YamlIngestsParser = YamlIngestsParser()
-    IngestsParser.write_ingests_arvo()
+    IngestsParser.write_ingests_avro()
