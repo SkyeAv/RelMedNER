@@ -10,7 +10,7 @@ class StrictBase(AvroBaseModel):
     model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid")
 
 class YamlIngests(StrictBase):
-    datasets: list[Dataset] = Field(...)
+    datasets: list[HuggingFaceDataset] = Field(...)
 
 class Dataset(StrictBase):
     type: Literal["vocab"] = Field(...)
