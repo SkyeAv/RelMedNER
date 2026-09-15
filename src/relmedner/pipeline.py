@@ -15,9 +15,6 @@ class BeamPipeline:
 
     def run(self: Self) -> None:
         with beam.Pipeline as new_pipeline:
-            (
-                new_pipeline
-                | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO)
-            )
+            (new_pipeline | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO))
 
         return None

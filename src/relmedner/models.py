@@ -13,8 +13,10 @@ class StrictBase(AvroBaseModel):
     class Meta:
         namespace: str = "relmedner.ingests"
 
+
 class DatasetBase(StrictBase):
     type: Literal["vocab"] = Field(...)
+
 
 class HuggingFaceDataset(DatasetBase):
     source: Literal["hf"] = Field(...)
@@ -23,10 +25,13 @@ class HuggingFaceDataset(DatasetBase):
     split: str = Field(...)
     column: str = Field(...)
 
+
 class LocalDataset(DatasetBase):
     """placeholder to get the annotated Dataset type to work"""
+
     source: Literal["local"] = Field(...)
     path: str = Field(...)
+
 
 Dataset: Annotated = Annotated[
     Union[HuggingFaceDataset, LocalDataset],
