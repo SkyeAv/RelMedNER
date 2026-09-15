@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import Literal, TypeAlias
+from typing import Literal, TypeAlias, Union
 
-from pydantic import ConfigDict, Field, Union
+from pydantic import ConfigDict, Field
 from dataclasses_avroschema.pydantic import AvroBaseModel
 
 
