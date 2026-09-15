@@ -23,7 +23,6 @@ build-backend = "uv_build"
 dev = [
     "dataclasses-avroschema>=0.70.9",
     "fastavro>=1.12.2",
-    "pre-commit>=4.6.2",
     "pydantic>=2.13.5",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
