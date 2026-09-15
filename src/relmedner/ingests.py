@@ -23,7 +23,7 @@ class YamlIngestsParser(YamlParser):
         ParsedIngests: YamlIngests = self.parse_ingests()
 
         avro_schema: Any = ParsedIngests.avro_schema_to_python()
-        parsed_avro_schema: Any = fastavro.parsed_schema(avro_schema)
+        parsed_avro_schema: Any = fastavro.parse_schema(avro_schema)
 
         avro_blob: Any = ParsedIngests.model_dump()
 
