@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from relmedner.parsers import YamlParser
 from relmedner.models import YamlIngests, Dataset
-from relmedner.constants import DATA
+from relmedner.constants import DATA, INGESTS_AVRO
 
 from importlib.resources.abc import Traversable
 from typing import Self, Any, Union, Literal
@@ -11,9 +11,9 @@ import fastavro
 
 
 class YamlIngestsParser(YamlParser):
-    def __init__(self: Self, yaml_p: str = "ingests.yaml", avro_p: str = "ingests.avro") -> None:
+    def __init__(self: Self, yaml_p: str = "ingests.yaml") -> None:
         super().__init__(DATA / yaml_p)
-        self.avro_p: Traversable = DATA / avro_p
+        self.avro_p: Traversable = INGESTS_AVRO
 
     def parse_ingests(self: Self) -> YamlIngests:
         serialized_yaml: Any = self.parse()
