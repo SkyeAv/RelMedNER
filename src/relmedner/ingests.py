@@ -12,7 +12,7 @@ import fastavro
 
 class YamlIngestsParser(YamlParser):
     def __init__(self: Self, yaml_p: str = "ingests.yaml", avro_p: str = "ingests.avro") -> None:
-        super().__init__(Traversable = DATA / yaml_p)
+        super().__init__(DATA / yaml_p)
         self.avro_p: Traversable = DATA / avro_p
 
     def parse_ingests(self: Self) -> YamlIngests:
