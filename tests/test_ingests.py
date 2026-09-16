@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from relmedner.ingests import YamlIngestsParser
-from relmedner.models import MatchOn, LocalDataset
-
 from typing import Any
+
+from relmedner.ingests import YamlIngestsParser
+from relmedner.models import LocalDataset, MatchOn
 
 
 def test_generate_tuples_shape() -> None:

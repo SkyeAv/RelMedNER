@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from relmedner.enums import ProcessingTypes
-
-from typing import Literal, Union, Annotated, Optional, Self, Any
+from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from relmedner.enums import ProcessingTypes
 
 
 class StrictBase(BaseModel):
@@ -37,9 +37,9 @@ class MatchOn(StrictBase):
 class HuggingFaceDataset(DatasetBase):
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
-    subset: Optional[str] = Field(None)
-    split: Optional[str] = Field(None)
-    match_on: Optional[list[MatchOn]] = Field(None)
+    subset: str | None = Field(None)
+    split: str | None = Field(None)
+    match_on: list[MatchOn] | None = Field(None)
     columns_out: list[str] = Field(...)
 
 
@@ -51,7 +51,7 @@ class LocalDataset(DatasetBase):
 
 
 Dataset: Annotated = Annotated[
-    Union[HuggingFaceDataset, LocalDataset],
+    HuggingFaceDataset | LocalDataset,
     Field(discriminator="source"),
 ]
 

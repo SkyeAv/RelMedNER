@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 
-class ProcessingTypes(str, Enum):
+class ProcessingTypes(StrEnum):
     BABEL = "babel"
     SCRIPT = "script"

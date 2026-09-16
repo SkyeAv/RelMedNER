@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from relmedner.parsers import YamlParser
-from relmedner.models import YamlIngests
-from relmedner.constants import INGESTS_YAML
+from typing import Any, Self
 
-from typing import Self, Any
+from relmedner.constants import INGESTS_YAML
+from relmedner.models import YamlIngests
+from relmedner.parsers import YamlParser
 
 
 class YamlIngestsParser(YamlParser):

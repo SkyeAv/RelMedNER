@@ -38,3 +38,6 @@ addopts = "--cov=relmedner --cov-report=term-missing -n auto"
 line-length = 150
 indent-width = 4
 target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B"]
