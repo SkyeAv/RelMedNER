@@ -1,5 +1,13 @@
 datasets:
-  - source: hf
-    type: scala
+  - type: scala
+    source: hf
     dataset: nvidia/Nemotron-PII
     split: train
+    match_on:
+      - column: domain
+        values:
+          - Healthcare
+          - Biotechnology
+    columns_out:
+      - text
+      - spans
