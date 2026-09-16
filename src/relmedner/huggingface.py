@@ -30,5 +30,5 @@ class HuggingFaceDataStream:
         datastream = load_dataset(self.dataset, self.subset, split=self.split, streaming=True)
 
         for row in datastream:
-            if apply_match:
-                yield (type, (row.get(column) for column in columns_out))
+            if self.apply_match(row):
+                yield (self.type, tuple(row.get(column) for column in self.columns_out))
