@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "apache-beam>=2.76.0",
     "cyclopts>=4.25.2",
+    "datasets>=5.0.1",
 ]
 
 [project.scripts]
