@@ -1,7 +1,5 @@
 datasets:
   - source: hf
-    type: vocab
-    dataset: TrialPanorama/TrialPanorama-database
-    subset: adverse_events
-    split: all
-    column: adverse_event_description
+    type: scala
+    dataset: nvidia/Nemotron-PII
+    split: train

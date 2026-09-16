@@ -25,7 +25,6 @@ class HuggingFaceDataset(DatasetBase):
     dataset: str = Field(...)
     subset: Optional[str] = Field(None)
     split: Optional[str] = Field(None)
-    column: Optional[str] = Field(None)
 
 
 class LocalDataset(DatasetBase):
