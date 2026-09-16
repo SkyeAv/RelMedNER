@@ -28,7 +28,7 @@ class HuggingFaceDataset(DatasetBase):
     dataset: str = Field(...)
     subset: Optional[str] = Field(None)
     split: Optional[str] = Field(None)
-    match_on: Optional[MatchOn] = Field(None)
+    match_on: Optional[list[MatchOn]] = Field(None)
     columns_out: list[str] = Field(...)
 
 
