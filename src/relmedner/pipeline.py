@@ -14,10 +14,12 @@ class BeamPipeline:
 
     def run(self: Self) -> None:
         with beam.Pipeline() as new_pipeline:
-            (
-                new_pipeline
-                | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO.as_posix())
-                | "print ingests" >> beam.Map(print)
+            dcode = new_pipeline | "load declarative ingests" >> ReadFromAvro(INGESTS_AVRO.as_posix())
+
+            hfstream = (
+                dcode
+                | "isolate hugging face ingests" >> beam.Filter(lambda row: row["source"] == "hf")
+                | "print data to debug" >> beam.Map(print)
             )
 
         return None
