@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal, Union, Annotated
+from typing import Literal, Union, Annotated, Optional
 from pathlib import Path
 
 from pydantic import ConfigDict, Field
@@ -21,9 +21,9 @@ class DatasetBase(StrictBase):
 class HuggingFaceDataset(DatasetBase):
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
-    subset: str = Field(...)
-    split: str = Field(...)
-    column: str = Field(...)
+    subset: Optional[str] = Field(None)
+    split: Optional[str] = Field(None)
+    column: Optional[str] = Field(None)
 
 
 class LocalDataset(DatasetBase):
