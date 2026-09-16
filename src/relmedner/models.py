@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from relmedner.enums import ProcessingTypes
+
 from typing import Literal, Union, Annotated, Optional
 from pathlib import Path
 
@@ -8,14 +10,14 @@ from dataclasses_avroschema.pydantic import AvroBaseModel
 
 
 class StrictBase(AvroBaseModel):
-    model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid")
+    model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid", use_enum_values=True)
 
     class Meta:
         namespace: str = "relmedner.ingests"
 
 
 class DatasetBase(StrictBase):
-    type: Literal["vocab"] = Field(...)
+    type: ProcessingTypes = Field(...)
 
 
 class HuggingFaceDataset(DatasetBase):
