@@ -1,4 +1,4 @@
-.PHONY: pytest pylint scala-test scala-lint scala-fmt
+.PHONY: test lint
 
 test:
 	uv run pytest
