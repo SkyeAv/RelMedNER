@@ -1,7 +1,7 @@
-.PHONY: test lint
+.PHONY: pytest pylint
 
-test:
+pytest:
 	uv run pytest
 
-lint:
+pylint:
 	uv run ruff format ./src
