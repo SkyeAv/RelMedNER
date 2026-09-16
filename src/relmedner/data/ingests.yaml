@@ -1,5 +1,5 @@
 datasets:
-  - type: scala
+  - type: script
     source: hf
     dataset: nvidia/Nemotron-PII
     split: train
