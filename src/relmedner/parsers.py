@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Self, Any
 from importlib.resources.abc import Traversable
+from typing import Any, Self
 
-from yaml import load, CSafeLoader
+from yaml import CSafeLoader, load
 
 
 class YamlParser:

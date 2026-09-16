@@ -1,5 +1,5 @@
-from importlib.resources.abc import Traversable
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 
 DATA: Traversable = files("relmedner") / "data"
 INGESTS_YAML: Traversable = DATA / "ingests.yaml"

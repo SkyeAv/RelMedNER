@@ -1,14 +1,14 @@
 from __future__ import annotations
 
-from relmedner.constants import TEST_ROW_LIMIT
-from relmedner.huggingface import HuggingFaceDataStream
-from relmedner.ingests import YamlIngestsParser
-
 from collections.abc import Iterator
 from itertools import islice
 from typing import Self
 
 import apache_beam as beam
+
+from relmedner.constants import TEST_ROW_LIMIT
+from relmedner.huggingface import HuggingFaceDataStream
+from relmedner.ingests import YamlIngestsParser
 
 
 def limit_rows(generated: Iterator, test_run: bool) -> Iterator:
