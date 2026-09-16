@@ -3,17 +3,12 @@ from __future__ import annotations
 from relmedner.enums import ProcessingTypes
 
 from typing import Literal, Union, Annotated, Optional
-from pathlib import Path
 
-from pydantic import ConfigDict, Field
-from dataclasses_avroschema.pydantic import AvroBaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
-class StrictBase(AvroBaseModel):
+class StrictBase(BaseModel):
     model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid", use_enum_values=True)
-
-    class Meta:
-        namespace: str = "relmedner.ingests"
 
 
 class DatasetBase(StrictBase):
