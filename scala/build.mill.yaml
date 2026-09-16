@@ -1,4 +1,4 @@
-extends: ScalaModule
+extends: [ScalaModule, mill.scalalib.scalafmt.ScalafmtModule]
 scalaVersion: 3.8.2
 scalacOptions:
   - "-Werror"

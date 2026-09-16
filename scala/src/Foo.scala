@@ -1,4 +1,4 @@
-package foo
+package relmedner
 import scalatags.Text.all.*
 
 object Foo {
