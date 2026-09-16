@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from relmedner.constants import INGESTS_AVRO
 
-from importlib.resources import files
 from typing import Self
 
 from apache_beam.io.avroio import ReadFromAvro
