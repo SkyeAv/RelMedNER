@@ -11,3 +11,15 @@ datasets:
     columns_out:
       - text
       - spans
+  - type: script
+    source: hf
+    dataset: nvidia/Nemotron-PII
+    split: test
+    match_on:
+      - column: domain
+        values:
+          - Healthcare
+          - Biotechnology
+    columns_out:
+      - text
+      - spans
