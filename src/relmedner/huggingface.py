@@ -5,6 +5,7 @@ from collections.abc import Iterator
 
 from datasets import load_dataset
 
+
 class HuggingFaceDataStream:
     def __init__(
         self: Self,
