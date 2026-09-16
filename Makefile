@@ -7,10 +7,10 @@ pylint:
 	uv run ruff format ./src
 
 scala-test:
-	cd scala && mill test
+	cd ./scala && mill test
 
 scala-lint:
-	cd scala && mill __.checkFormat && mill compile
+	cd ./scala && mill __.checkFormat && mill compile
 
 scala-fmt:
-	cd scala && mill __.reformat
+	cd ./scala && mill __.reformat
