@@ -5,6 +5,7 @@ from collections.abc import Iterator
 
 from datasets import load_dataset
 
+
 class HuggingFaceDataStream:
     def __init__(
         self: Self,
@@ -13,7 +14,7 @@ class HuggingFaceDataStream:
         subset: Optional[str],
         split: Optional[str],
         match_on: Optional[list[dict[str, Union[str, list[str]]]]],
-        columns_out: list[str]
+        columns_out: list[str],
     ) -> None:
         self.type: str = type
         self.dataset: str = dataset

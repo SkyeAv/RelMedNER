@@ -15,8 +15,11 @@ class BeamPipeline:
         return None
 
     def hfgenerator(self: Self, hfops):
-        hfdata = hfops | "initialize datastream class" >> beam.Map(starmap, HuggingFaceDataStream) | "stream declared dataset data" >> beam.FlatMap(HuggingFaceDataStream.row_generator)
-        return hfdata
+        return (
+            hfops
+            | "initialize datastream classes" >> beam.Map(starmap, HuggingFaceDataStream)
+            | "stream declared data from hugging face" >> beam.FlatMap(HuggingFaceDataStream.row_generator)
+        )
 
     def run(self: Self) -> None:
         with beam.Pipeline() as new_pipeline:

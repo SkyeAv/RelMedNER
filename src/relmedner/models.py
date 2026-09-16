@@ -19,9 +19,11 @@ class StrictBase(AvroBaseModel):
 class DatasetBase(StrictBase):
     type: ProcessingTypes = Field(...)
 
+
 class MatchOn(StrictBase):
     column: str = Field(...)
     values: list[str] = Field(...)
+
 
 class HuggingFaceDataset(DatasetBase):
     source: Literal["hf"] = Field(...)
