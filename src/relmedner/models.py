@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from relmedner.enums import ProcessingTypes
 
-from typing import Literal, Union, Annotated, Optional
+from typing import Literal, Union, Annotated, Optional, Self, Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -10,9 +10,23 @@ from pydantic import BaseModel, ConfigDict, Field
 class StrictBase(BaseModel):
     model_config: ConfigDict = ConfigDict(frozen=True, extra="forbid", use_enum_values=True)
 
+    @staticmethod
+    def freeze(value: Any) -> Any:
+        if isinstance(value, StrictBase):
+            return value.to_tuple()
+        if isinstance(value, list):
+            return tuple(StrictBase.freeze(item) for item in value)
+        return value
+
+    def to_tuple(self: Self) -> tuple[Any, ...]:
+        return tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields)
+
 
 class DatasetBase(StrictBase):
     type: ProcessingTypes = Field(...)
+
+    def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
+        return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields if name != "source"))
 
 
 class MatchOn(StrictBase):
@@ -44,3 +58,6 @@ Dataset: Annotated = Annotated[
 
 class YamlIngests(StrictBase):
     datasets: list[Dataset] = Field(...)
+
+    def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
+        return tuple(dataset.to_tuple() for dataset in self.datasets)
