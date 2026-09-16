@@ -1,32 +1,20 @@
 from __future__ import annotations
 
 from relmedner.parsers import YamlParser
-from relmedner.models import YamlIngests, Dataset
-from relmedner.constants import DATA, INGESTS_AVRO
+from relmedner.models import YamlIngests
+from relmedner.constants import INGESTS_YAML
 
-from importlib.resources.abc import Traversable
-from typing import Self, Any, Union, Literal
-
-import fastavro
+from typing import Self, Any
 
 
 class YamlIngestsParser(YamlParser):
-    def __init__(self: Self, yaml_p: str = "ingests.yaml") -> None:
-        super().__init__(DATA / yaml_p)
-        self.avro_p: Traversable = INGESTS_AVRO
+    def __init__(self: Self) -> None:
+        super().__init__(INGESTS_YAML)
 
     def parse_ingests(self: Self) -> YamlIngests:
         serialized_yaml: Any = self.parse()
         return YamlIngests.model_validate(serialized_yaml)
 
-    def write_ingests_avro(self: Self) -> None:
+    def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
         ParsedIngests: YamlIngests = self.parse_ingests()
-
-        avro_schema: Any = YamlIngests.avro_schema_to_python()
-        datasets_arvo_schema: list[Any] = [field["type"]["items"] for field in avro_schema["fields"] if field["name"] == "datasets"]
-
-        parsed_avro_schema: Any = fastavro.parse_schema(datasets_arvo_schema)
-        avro_records: list[Any] = [dataset.model_dump() for dataset in ParsedIngests.datasets]
-
-        with self.avro_p.open("wb") as f:
-            fastavro.writer(f, parsed_avro_schema, avro_records)
+        return ParsedIngests.generate_tuples()
