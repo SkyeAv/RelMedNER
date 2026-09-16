@@ -4,4 +4,4 @@ from enum import Enum
 
 class ProcessingTypes(str, Enum):
     BABEL = "babel"
-    SCALA = "scala"
+    SCRIPT = "script"
