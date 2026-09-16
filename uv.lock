@@ -195,15 +195,6 @@ wheels = [
 ]
 
 [[package]]
-name = "casefy"
-version = "1.0.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/bf/50/f5991618899c42d0c6339bd83fed5f694f56b204dfb3f2a052f0d586d4c5/casefy-1.0.0.tar.gz", hash = "sha256:bc99428475c2089c5f6a21297b4cfe4e83dff132cf3bb06655ddcb90632af1ed", size = 123432, upload-time = "2024-11-30T10:00:59.015Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/9b/b6/797c17fe4804896836ef33b447f0a2641d59a8d1d63e63834fb3fbc87cd8/casefy-1.0.0-py3-none-any.whl", hash = "sha256:c89f96fb0fbd13691073b7a65c1e668e81453247d647479a3db105e86d7b0df9", size = 6299, upload-time = "2024-11-30T10:00:33.134Z" },
-]
-
-[[package]]
 name = "certifi"
 version = "2026.7.22"
 source = { registry = "https://pypi.org/simple" }
@@ -571,32 +562,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dacite"
-version = "1.9.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/55/a0/7ca79796e799a3e782045d29bf052b5cde7439a2bbb17f15ff44f7aacc63/dacite-1.9.2.tar.gz", hash = "sha256:6ccc3b299727c7aa17582f0021f6ae14d5de47c7227932c47fec4cdfefd26f09", size = 22420, upload-time = "2025-02-05T09:27:29.757Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/94/35/386550fd60316d1e37eccdda609b074113298f23cef5bddb2049823fe666/dacite-1.9.2-py3-none-any.whl", hash = "sha256:053f7c3f5128ca2e9aceb66892b1a3c8936d02c686e707bee96e19deef4bc4a0", size = 16600, upload-time = "2025-02-05T09:27:24.345Z" },
-]
-
-[[package]]
-name = "dataclasses-avroschema"
-version = "0.70.9"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "casefy" },
-    { name = "dacite" },
-    { name = "fastavro" },
-    { name = "inflection" },
-    { name = "python-dateutil" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/68/74/aaa9cb6a46374acb3dc710ed16b8f6e9ce13e3a04fba8ed9fb90a422f00a/dataclasses_avroschema-0.70.9.tar.gz", hash = "sha256:a34b5aa62b1e0f082fd65ffd0789ebdba63580529f3b68613c377f4649c57694", size = 51487, upload-time = "2026-09-08T11:13:52.401Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/95/c5/ee71663f51b9f18d45b79e01fea26a92e3839f760e85c15cfd36f1e866b7/dataclasses_avroschema-0.70.9-py3-none-any.whl", hash = "sha256:ec23e08250100a2c0048ed5c2d2f82329614c53d44e6a19abf6b7d9d4d1afdd5", size = 62864, upload-time = "2026-09-08T11:13:53.239Z" },
-]
-
-[[package]]
 name = "datasets"
 version = "5.0.1"
 source = { registry = "https://pypi.org/simple" }
@@ -935,15 +900,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5f/f7/abb373e5757eaec4b922b92f97ec8d6d7e057cf06778247604fbc4e7c3f3/idna-3.19.tar.gz", hash = "sha256:5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15", size = 215237, upload-time = "2026-08-18T05:14:24.27Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/57/b0/0e52c878c53f245edd3a11020f20979b3f490f245af532c7cae3027754b5/idna-3.19-py3-none-any.whl", hash = "sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4", size = 68550, upload-time = "2026-08-18T05:14:22.343Z" },
-]
-
-[[package]]
-name = "inflection"
-version = "0.5.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e1/7e/691d061b7329bc8d54edbf0ec22fbfb2afe61facb681f9aaa9bff7a27d04/inflection-0.5.1.tar.gz", hash = "sha256:1a29730d366e996aaacffb2f1f1cb9593dc38e2ddd30c91250c6dde09ea9b417", size = 15091, upload-time = "2020-08-22T08:16:29.139Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/59/91/aa6bde563e0085a02a435aa99b49ef75b0a4b062635e606dab23ce18d720/inflection-0.5.1-py2.py3-none-any.whl", hash = "sha256:f38b2b640938a4f35ade69ac3d053042959b62a0f1076a5bbaa1b9526605a8a2", size = 9454, upload-time = "2020-08-22T08:16:27.816Z" },
 ]
 
 [[package]]
@@ -1693,17 +1649,15 @@ dependencies = [
     { name = "apache-beam" },
     { name = "cyclopts" },
     { name = "datasets" },
+    { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.dev-dependencies]
 dev = [
-    { name = "dataclasses-avroschema" },
-    { name = "fastavro" },
-    { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-xdist" },
-    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -1712,17 +1666,15 @@ requires-dist = [
     { name = "apache-beam", specifier = ">=2.76.0" },
     { name = "cyclopts", specifier = ">=4.25.2" },
     { name = "datasets", specifier = ">=5.0.1" },
+    { name = "pydantic", specifier = ">=2.13.5" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dataclasses-avroschema", specifier = ">=0.70.9" },
-    { name = "fastavro", specifier = ">=1.12.2" },
-    { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "ruff", specifier = ">=0.16.7" },
 ]
 
