@@ -5,7 +5,6 @@ from collections.abc import Iterator
 
 from datasets import load_dataset
 
-
 class HuggingFaceDataStream:
     def __init__(
         self: Self,
@@ -23,17 +22,12 @@ class HuggingFaceDataStream:
         self.match_on: Optional[list[dict[str, Union[str, list[str]]]]] = match_on
         self.columns_out: list[str] = columns_out
 
-    def row_generator(self: Self) -> Iterator[tuple[str, tuple[tuple[Union[Optional[str], str], ...], ...], tuple[Optional[str], ...]]]:
+    def apply_match(self: Self, row) -> bool:
+        return any(any(transform.get("values") in row.get(column) for column in transform.get("column")) for transform in self.match_on)
+
+    def generate_rows(self: Self) -> Iterator[tuple[str, tuple[Optional[str], ...]]]:
         datastream = load_dataset(self.dataset, self.subset, split=self.split, streaming=True)
 
-        if self.match_on:
-            values: tuple[str, ...] = self.match_on.values()
-
         for row in datastream:
-            outstream: tuple[Optional[str], ...] = tuple(row.get(column) for column in self.columns_out)
-            matchstream: tuple[tuple[Union[Optional[str], str], ...], ...] = ()
-
-            if self.match_on:
-                matchstream = ((row.get(column) for column in self.match_on.keys()), values)
-
-            yield (type, matchstream, outstream)
+            if apply_match:
+                yield (type, (row.get(column) for column in columns_out))
