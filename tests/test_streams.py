@@ -16,7 +16,7 @@ class CountingDataStream(DataStream):
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         for index in count():
-            yield ("script", (str(index),))
+            yield ("NemotronPiiScript", (("entities",), (str(index),)))
 
 
 class FiniteDataStream(DataStream):
@@ -24,17 +24,17 @@ class FiniteDataStream(DataStream):
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         for index in range(20):
-            yield ("script", (str(index),))
+            yield ("NemotronPiiScript", (("entities",), (str(index),)))
 
 
 def test_stream_truncates_an_unbounded_source() -> None:
     Streamed: list[StreamedRow] = list(CountingDataStream().stream(RunConfig(sample_limit=5)))
-    assert Streamed == [("script", (str(index),)) for index in range(5)]
+    assert Streamed == [("NemotronPiiScript", (("entities",), (str(index),))) for index in range(5)]
 
 
 def test_stream_without_a_limit_yields_every_row() -> None:
     Streamed: list[StreamedRow] = list(FiniteDataStream().stream(RunConfig()))
-    assert Streamed == [("script", (str(index),)) for index in range(20)]
+    assert Streamed == [("NemotronPiiScript", (("entities",), (str(index),))) for index in range(20)]
 
 
 def test_stream_limit_is_not_shared_between_calls() -> None:
@@ -59,7 +59,7 @@ def test_registry_keys_on_the_source_discriminator() -> None:
 
 def test_apply_match_keeps_only_declared_values() -> None:
     Stream: HuggingFaceDataStream = HuggingFaceDataStream(
-        type="script",
+        task=("script", "NemotronPiiScript", ("entities",)),
         dataset="nvidia/Nemotron-PII",
         subset=None,
         split="train",

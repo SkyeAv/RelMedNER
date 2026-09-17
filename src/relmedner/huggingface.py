@@ -13,14 +13,14 @@ class HuggingFaceDataStream(DataStream):
 
     def __init__(
         self: Self,
-        type: str,
+        task: tuple[Any, ...],
         dataset: str,
         subset: str | None,
         split: str | None,
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None,
         columns_out: tuple[str, ...],
     ) -> None:
-        self.type: str = type
+        _, self.name, self.outputs = task
         self.dataset: str = dataset
         self.subset: str | None = subset
         self.split: str | None = split
@@ -35,4 +35,4 @@ class HuggingFaceDataStream(DataStream):
 
         for row in datastream:
             if self.apply_match(row):
-                yield (self.type, tuple(row.get(column) for column in self.columns_out))
+                yield (self.name, (self.outputs, tuple(row.get(column) for column in self.columns_out)))

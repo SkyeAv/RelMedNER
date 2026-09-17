@@ -5,3 +5,4 @@ DATA: Traversable = files("relmedner") / "data"
 INGESTS_YAML: Traversable = DATA / "ingests.yaml"
 EXPANSION_SERVICE: str = "localhost:9097"
 TEST_ROW_LIMIT: int = 5
+DEFAULT_OUTPUT: str = "./relmedner.avro"

@@ -1,5 +1,9 @@
 datasets:
-  - type: script
+  - task:
+      type: script
+      name: NemotronPiiScript
+      outputs:
+        - entities
     source: hf
     dataset: nvidia/Nemotron-PII
     split: train
@@ -11,7 +15,11 @@ datasets:
     columns_out:
       - text
       - spans
-  - type: script
+  - task:
+      type: script
+      name: NemotronPiiScript
+      outputs:
+        - entities
     source: hf
     dataset: nvidia/Nemotron-PII
     split: test
