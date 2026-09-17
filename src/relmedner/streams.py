@@ -6,8 +6,9 @@ from itertools import islice
 from typing import ClassVar, Self
 
 from relmedner.models import RunConfig
+from relmedner.types import ScriptPayload
 
-StreamedRow = tuple[str, tuple[str | None, ...]]
+StreamedRow = tuple[str, ScriptPayload]
 
 
 class DataStream(ABC):

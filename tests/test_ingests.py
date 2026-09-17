@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from relmedner.ingests import YamlIngestsParser
-from relmedner.models import LocalDataset, MatchOn
+from relmedner.models import LocalDataset, MatchOn, YamlIngests
 
 
 def test_generate_tuples_shape() -> None:
@@ -14,7 +16,7 @@ def test_generate_tuples_shape() -> None:
         (
             "hf",
             (
-                "script",
+                ("script", "NemotronPiiScript", ("entities",)),
                 "nvidia/Nemotron-PII",
                 None,
                 "train",
@@ -25,7 +27,7 @@ def test_generate_tuples_shape() -> None:
         (
             "hf",
             (
-                "script",
+                ("script", "NemotronPiiScript", ("entities",)),
                 "nvidia/Nemotron-PII",
                 None,
                 "test",
@@ -42,5 +44,20 @@ def test_match_on_tuples_without_an_override() -> None:
 
 
 def test_local_dataset_keys_on_source_without_an_override() -> None:
-    Local: LocalDataset = LocalDataset(type="babel", source="local", path="/some/path.jsonl")
-    assert Local.to_tuple() == ("local", ("babel", "/some/path.jsonl"))
+    Local: LocalDataset = LocalDataset(task={"type": "babel"}, source="local", path="/some/path.jsonl")
+    assert Local.to_tuple() == ("local", (("babel",), "/some/path.jsonl"))
+
+
+def test_script_task_carries_its_declared_output_shapes() -> None:
+    ParsedIngests: YamlIngests = YamlIngestsParser().parse_ingests()
+    assert all(dataset.task.outputs == ["entities"] for dataset in ParsedIngests.datasets)
+
+
+def test_an_undeclared_script_fails_before_the_pipeline_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    IngestsParser: YamlIngestsParser = YamlIngestsParser()
+    Declared: dict[str, Any] = IngestsParser.parse()
+    Declared["datasets"][0]["task"]["name"] = "NoSuchScript"
+    monkeypatch.setattr(IngestsParser, "parse", lambda: Declared)
+
+    with pytest.raises(ValueError, match="undeclared script 'NoSuchScript'"):
+        IngestsParser.parse_ingests()

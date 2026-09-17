@@ -10,6 +10,7 @@ requires-python = ">=3.13"
 dependencies = [
     "apache-beam>=2.76.0",
     "cyclopts>=4.25.2",
+    "dataclasses-avroschema[pydantic]>=0.70.9",
     "datasets>=5.0.1",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
@@ -24,6 +25,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "gliner2>=0.1.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
