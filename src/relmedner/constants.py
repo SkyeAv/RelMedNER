@@ -1,5 +1,6 @@
 from importlib.resources import files
 from importlib.resources.abc import Traversable
+from pathlib import Path
 
 DATA: Traversable = files("relmedner") / "data"
 COMPOSE_DIR: Traversable = files("relmedner") / "compose"
@@ -28,3 +29,6 @@ JOBMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.jobmanager.yml"
 TASKMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.taskmanager.yml"
 WORKER_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.worker"
 FLINK_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.flink"
+
+# Local fullmap database directory for resolution on the driver (no cluster mount).
+FULLMAP_DIR: Path = Path("/home/skyeav/Desktop/fullmap")

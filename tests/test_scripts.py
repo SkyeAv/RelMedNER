@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import ClassVar, Self
+from typing import Any, ClassVar, Self
 
 import pytest
 
 from relmedner.models import Entity, TrainingExample
-from relmedner.scripts import NemotronPiiScript
+from relmedner.scripts import GlinerBiomedScript
 from relmedner.types import DispatchedExample, Script, ScriptValues
+from relmedner.utils import ResolvedMention, ScriptUtils, strip_biolink_prefix
 
 
 class StubScript(Script):
@@ -18,8 +19,8 @@ class StubScript(Script):
 
 
 def test_subclasses_self_register_on_import() -> None:
-    assert Script.REGISTRY["NemotronPiiScript"] is not None
-    assert isinstance(Script.REGISTRY["NemotronPiiScript"], NemotronPiiScript)
+    assert Script.REGISTRY["GlinerBiomedScript"] is not None
+    assert isinstance(Script.REGISTRY["GlinerBiomedScript"], GlinerBiomedScript)
     assert isinstance(Script.REGISTRY["StubScript"], StubScript)
 
 
@@ -41,8 +42,70 @@ def test_dispatch_on_an_unregistered_name_raises() -> None:
         Script.dispatch("NoSuchScript", (("entities",), ("Alice", "person")))
 
 
-def test_the_placeholder_script_emits_no_tasks_yet() -> None:
-    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), ("some text", "[]")))
+def test_join_tokens_glues_with_single_spaces() -> None:
+    assert ScriptUtils.join_tokens(["Aspirin", "treats", "headache", "."]) == "Aspirin treats headache ."
 
-    assert Example.text == "some text"
+
+def test_mentions_slice_spans_with_inclusive_ends_and_skip_out_of_bounds() -> None:
+    Tokens: list[str] = ["Ankle", "sprain", "is", "common", "."]
+    Ner: list[list[Any]] = [[0, 1, "Condition"], [4, 4, "Identifier"], [0, 9, "Broken"], [-1, 1, "Broken"], [3, 2, "Broken"]]
+
+    assert ScriptUtils.mentions(Tokens, Ner) == [("Ankle sprain", "Condition"), (".", "Identifier")]
+
+
+def test_biolink_categories_have_no_prefix_and_membership_checks() -> None:
+    Categories: frozenset[str] = ScriptUtils.biolink_categories()
+
+    assert "Gene" in Categories and "Drug" in Categories and "Disease" in Categories
+    assert all(not category.startswith("biolink:") for category in Categories)
+    assert ScriptUtils.is_biolink_category("Gene") is True
+    assert ScriptUtils.is_biolink_category("Identifier") is False
+    assert strip_biolink_prefix("biolink:Gene") == "Gene"
+    assert strip_biolink_prefix("Gene") == "Gene"
+
+
+def test_every_fallback_label_maps_to_a_biolink_category() -> None:
+    for raw_label, category in ScriptUtils.FALLBACK_LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
+
+
+def test_the_script_groups_mentions_by_resolved_category(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_resolve(spans: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", curie="CHEBI:15365", preferred_name="Acetylsalicylic acid", origin="fullmap"),
+            ResolvedMention(mention="headache", category="Disease", origin="fallback"),
+            ResolvedMention(mention=".", category="Identifier", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "treats", "headache", "."]
+    Ner: list[list[Any]] = [[0, 0, "Drug"], [2, 2, "Condition"], [3, 3, "Identifier"]]
+    _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
+
+    assert Example.text == "Aspirin treats headache ."
+    assert Example.populated() == frozenset({"entities"})
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Drug": ["Aspirin"],
+        "Disease": ["headache"],
+        "Identifier": ["."],
+    }
+    by_label = {entity.label: entity for entity in Example.entities}
+    assert by_label["Drug"].description is not None and "[fullmap: CHEBI:15365 | Acetylsalicylic acid]" in by_label["Drug"].description
+    assert by_label["Disease"].description is not None and "fullmap" not in by_label["Disease"].description
+    assert by_label["Identifier"].description is None
+
+
+def test_the_script_emits_nothing_for_empty_rows() -> None:
+    _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), ([], [])))
+    assert Example.text == ""
     assert Example.populated() == frozenset()
+
+
+@pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
+def test_fullmap_resolves_real_mentions_to_biolink_categories() -> None:
+    Resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions([("Aspirin", "Drug"), ("totally-unresolvable-xyz", "Drug")])
+
+    assert Resolved[0].origin == "fullmap"
+    assert ScriptUtils.is_biolink_category(Resolved[0].category)
+    assert Resolved[0].curie is not None and ":" in Resolved[0].curie
+    assert Resolved[1].origin in {"fallback", "raw"}
