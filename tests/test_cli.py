@@ -1,9 +1,8 @@
-from itertools import count
-
 import pytest
 
 from relmedner.cli import APP
-from relmedner.pipeline import limit_rows
+from relmedner.constants import TEST_ROW_LIMIT
+from relmedner.models import RunConfig
 
 
 @pytest.mark.parametrize("flag", ["--test-run", "-t"])
@@ -19,11 +18,11 @@ def test_build_dataset_default_no_test_run() -> None:
     assert Bound.arguments.get("test_run", False) is False
 
 
-def test_limit_rows_test_run_yields_ten() -> None:
-    Limited: list[int] = list(limit_rows(iter(count()), test_run=True))
-    assert Limited == list(range(10))
+def test_run_config_from_test_run_flag_samples_five() -> None:
+    Config: RunConfig = RunConfig.from_flags(True)
+    assert Config.sample_limit == TEST_ROW_LIMIT == 5
 
 
-def test_limit_rows_full_run_yields_all() -> None:
-    Rows: list[int] = list(limit_rows(iter(range(20)), test_run=False))
-    assert Rows == list(range(20))
+def test_run_config_from_full_run_flag_is_unlimited() -> None:
+    Config: RunConfig = RunConfig.from_flags(False)
+    assert Config.sample_limit is None
