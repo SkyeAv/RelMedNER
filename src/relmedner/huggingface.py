@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Self
+from typing import Any, ClassVar, Self
 
 from datasets import load_dataset
 
+from relmedner.streams import DataStream, StreamedRow
 
-class HuggingFaceDataStream:
+
+class HuggingFaceDataStream(DataStream):
+    SOURCE: ClassVar[str] = "hf"
+
     def __init__(
         self: Self,
         type: str,
@@ -26,7 +30,7 @@ class HuggingFaceDataStream:
     def apply_match(self: Self, row: dict[str, Any]) -> bool:
         return all(row.get(column) in values for column, values in self.match_on)
 
-    def generate_rows(self: Self) -> Iterator[tuple[str, tuple[str | None, ...]]]:
+    def rows(self: Self) -> Iterator[StreamedRow]:
         datastream = load_dataset(self.dataset, self.subset, split=self.split, streaming=True)
 
         for row in datastream:

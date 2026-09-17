@@ -4,6 +4,7 @@ from typing import Annotated, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from relmedner.constants import TEST_ROW_LIMIT
 from relmedner.enums import ProcessingTypes
 
 
@@ -20,6 +21,14 @@ class StrictBase(BaseModel):
 
     def to_tuple(self: Self) -> tuple[Any, ...]:
         return tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields)
+
+
+class RunConfig(StrictBase):
+    sample_limit: int | None = Field(None)
+
+    @classmethod
+    def from_flags(cls, test_run: bool) -> Self:
+        return cls(sample_limit=TEST_ROW_LIMIT if test_run else None)
 
 
 class DatasetBase(StrictBase):
