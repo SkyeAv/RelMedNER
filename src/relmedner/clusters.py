@@ -5,7 +5,14 @@ from typing import Self
 
 from apache_beam.options.pipeline_options import PipelineOptions
 
-from relmedner.constants import CLUSTER_YAML, FLINK_REST_PORT, FLINK_VERSION, LOCAL_HOST, WORKER_IMAGE_NAME
+from relmedner.constants import (
+    CLUSTER_YAML,
+    FLINK_REST_PORT,
+    FLINK_VERSION,
+    LOCAL_HOST,
+    WORKER_IMAGE_NAME,
+    WORKER_POOL_PORT,
+)
 from relmedner.models import Cluster, WorkerNode
 from relmedner.parsers import YamlParser
 from relmedner.utils import package_version
@@ -52,8 +59,11 @@ class YamlClusterParser(YamlParser):
         if parallelism:
             flags.append(f"--parallelism={parallelism}")
         flags += [
-            f"--environment_config={self.worker_image()}",
-            "--environment_type=DOCKER",
+            # EXTERNAL: user code runs in the per-node sdkworker pool (see the compose files), which
+            # owns the fullmap volume mount; DOCKER environment cannot mount host dirs (beam #19240).
+            # localhost resolves because both taskmanager and sdkworker use host networking.
+            f"--environment_config=localhost:{WORKER_POOL_PORT}",
+            "--environment_type=EXTERNAL",
             "--sdk_location=container",
         ]
         return PipelineOptions(flags)

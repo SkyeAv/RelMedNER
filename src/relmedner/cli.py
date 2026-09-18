@@ -5,8 +5,9 @@ from typing import Annotated
 import cyclopts
 
 from relmedner.clusters import YamlClusterParser
-from relmedner.constants import DEFAULT_OUTPUT
-from relmedner.deploy import deploy_cluster
+from relmedner.collect import collect_outputs
+from relmedner.constants import DEFAULT_OUTPUT, LOCAL_HOST
+from relmedner.deploy import deploy_cluster, run_cmd
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
 from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
@@ -21,6 +22,7 @@ def build_dataset(
     output: Annotated[str, cyclopts.Parameter(alias="-o")] = DEFAULT_OUTPUT,
 ) -> None:
     Parser: YamlClusterParser = YamlClusterParser()
+    ClusterSpec = Parser.parse_cluster()
     # flink slots cannot outstrip the number of declared datasets; each dataset is one source bundle
     parallelism: int = min(Parser.total_slots(), len(YamlIngestsParser().generate_tuples()))
     Config: RunConfig = RunConfig.from_flags(test_run, output)
@@ -30,6 +32,7 @@ def build_dataset(
     before: frozenset[str] = job_ids(fetch_jobs(rest_url))
     BeamPipeline(options=Parser.runner_options(parallelism)).run(Config)
     watch_jobs(rest_url, before)
+    collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, LOCAL_HOST, run_cmd)
 
 
 @APP.command(name="deploy-cluster")

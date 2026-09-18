@@ -8,6 +8,7 @@ import apache_beam as beam
 from apache_beam.io.avroio import WriteToAvro
 from apache_beam.options.pipeline_options import PipelineOptions
 
+from relmedner.constants import OUTPUTS_MOUNT
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample
 from relmedner.registry import build_stream
@@ -34,7 +35,9 @@ class BeamPipeline:
 
     def run(self: Self, config: RunConfig) -> None:
         IngestsParser: YamlIngestsParser = YamlIngestsParser()
-        Output: Path = Path(config.output)
+        # Flink user code runs in the sdkworker, so external runs write to its durable output mount.
+        # DirectRunner keeps honoring the caller's ordinary local path for development and unit tests.
+        Output: Path = Path(config.output) if self.options is None else Path(OUTPUTS_MOUNT) / config.artifact_name()
 
         with beam.Pipeline(options=self.options) as new_pipeline:
             (
