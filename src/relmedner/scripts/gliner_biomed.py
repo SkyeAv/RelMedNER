@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, ClassVar, Self
 
+from relmedner.gazetteer import extract_relations
 from relmedner.models import Entity, TrainingExample
 from relmedner.types import Script, ScriptValues
 from relmedner.utils import ScriptUtils
@@ -21,10 +22,14 @@ class GlinerBiomedScript(Script):
         ner: list[list[Any]] = [list(span) for span in ner_value] if isinstance(ner_value, list) else []
         if not tokens or not ner:
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
+        spans: list[tuple[int, int, str]] = ScriptUtils.mention_spans(tokens, ner)
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(ScriptUtils.mentions(tokens, ner))
+        # spans and mentions filter identically, so zip pairs each span with its resolution positionally
+        resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, resolved, strict=True)]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),
             entities=self._entities(resolved),
+            relations=extract_relations(tokens, resolved_spans),
         )
 
     @staticmethod

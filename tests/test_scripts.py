@@ -4,7 +4,7 @@ from typing import Any, ClassVar, Self
 
 import pytest
 
-from relmedner.models import Entity, TrainingExample
+from relmedner.models import Entity, Relation, RelationField, TrainingExample
 from relmedner.scripts import GlinerBiomedScript
 from relmedner.types import DispatchedExample, Script, ScriptValues
 from relmedner.utils import ResolvedMention, ScriptUtils, strip_biolink_prefix
@@ -83,7 +83,7 @@ def test_the_script_groups_mentions_by_resolved_category(monkeypatch: pytest.Mon
     _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
 
     assert Example.text == "Aspirin treats headache ."
-    assert Example.populated() == frozenset({"entities"})
+    assert Example.populated() == frozenset({"entities", "relations"})
     assert {entity.label: entity.mentions for entity in Example.entities} == {
         "Drug": ["Aspirin"],
         "Disease": ["headache"],
@@ -99,6 +99,59 @@ def test_the_script_emits_nothing_for_empty_rows() -> None:
     _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), ([], [])))
     assert Example.text == ""
     assert Example.populated() == frozenset()
+
+
+def test_mention_spans_keeps_in_bounds_triples_and_drops_the_rest() -> None:
+    """US-003 relation wiring consumes (start, end_inclusive, label) triples with mentions' bounds contract"""
+    Tokens: list[str] = ["Ankle", "sprain", "is", "common", "."]
+    Ner: list[list[Any]] = [[0, 1, "Condition"], [4, 4, "Identifier"], [0, 9, "Broken"], [-1, 1, "Broken"], [3, 2, "Broken"]]
+
+    assert ScriptUtils.mention_spans(Tokens, Ner) == [(0, 1, "Condition"), (4, 4, "Identifier")]
+
+
+def test_mentions_rejoins_each_mention_span_slice() -> None:
+    """mentions is mention_spans with each triple rejoined, so script wiring can pair the two positionally"""
+    Tokens: list[str] = ["Ankle", "sprain", "is", "common", "."]
+    Ner: list[list[Any]] = [[0, 1, "Condition"], [4, 4, "Identifier"], [0, 9, "Broken"]]
+    Spans: list[tuple[int, int, str]] = ScriptUtils.mention_spans(Tokens, Ner)
+
+    assert ScriptUtils.mentions(Tokens, Ner) == [(" ".join(Tokens[start : end + 1]), label) for start, end, label in Spans]
+
+
+def test_the_script_emits_gazetteer_relations_between_resolved_mentions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a trigger phrase between two mentions must surface a treats relation over resolved categories"""
+
+    def fake_resolve(spans: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "is", "used", "to", "treat", "migraine"]
+    Ner: list[list[Any]] = [[0, 0, "Drug"], [5, 5, "Condition"]]
+    _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
+
+    assert Example.relations == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
+
+
+def test_the_script_emits_no_relations_on_rows_without_a_trigger(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mentions with no predicate phrase between them carry no relation signal"""
+
+    def fake_resolve(spans: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "and", "migraine", "coexist", "."]
+    Ner: list[list[Any]] = [[0, 0, "Drug"], [2, 2, "Condition"]]
+    _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
+
+    assert Example.relations == []
 
 
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")

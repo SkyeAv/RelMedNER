@@ -77,15 +77,20 @@ class ScriptUtils:
         return " ".join(tokens)
 
     @staticmethod
-    def mentions(tokens: list[str], ner: list[list[Any]]) -> list[tuple[str, str]]:
-        """slice mention text out of GLiNER token spans ([start, end, label], end inclusive)"""
-        spans: list[tuple[str, str]] = []
+    def mention_spans(tokens: list[str], ner: list[list[Any]]) -> list[tuple[int, int, str]]:
+        """filter GLiNER spans ([start, end, label], end inclusive) down to in-bounds triples"""
+        spans: list[tuple[int, int, str]] = []
         for span in ner:
             start, end, label = int(span[0]), int(span[1]), str(span[2])
             if start < 0 or end < start or end >= len(tokens):
                 continue
-            spans.append((" ".join(tokens[start : end + 1]), label))
+            spans.append((start, end, label))
         return spans
+
+    @classmethod
+    def mentions(cls, tokens: list[str], ner: list[list[Any]]) -> list[tuple[str, str]]:
+        """slice mention text out of GLiNER token spans; bounds checks live in mention_spans"""
+        return [(cls.join_tokens(tokens[start : end + 1]), label) for start, end, label in cls.mention_spans(tokens, ner)]
 
     @classmethod
     @cache
