@@ -3,7 +3,8 @@ from __future__ import annotations
 import pytest
 from tablassert.biolink import Predicates
 
-from relmedner.gazetteer import MAX_TRIGGER_DISTANCE, PREDICATE_TRIGGERS, SENTENCE_BREAKS, find_triggers, validate_trigger_table
+from relmedner.gazetteer import MAX_TRIGGER_DISTANCE, PREDICATE_TRIGGERS, SENTENCE_BREAKS, extract_relations, find_triggers, validate_trigger_table
+from relmedner.models import Relation, RelationField
 
 
 def test_the_vocabulary_covers_exactly_the_six_starter_predicates() -> None:
@@ -113,3 +114,104 @@ def test_validate_trigger_table_accepts_a_minimal_valid_table() -> None:
 def test_the_shipped_table_passes_its_own_validation() -> None:
     """the module already ran this at import time; asserting it pins the fail-loudly contract"""
     assert validate_trigger_table(PREDICATE_TRIGGERS) is None
+
+
+def test_extract_relations_emits_a_basic_treats_pair() -> None:
+    """the happy path must produce one treats relation joining the nearest mentions by surface"""
+    Tokens: list[str] = ["Aspirin", "is", "used", "to", "treat", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (5, 5, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
+
+
+def test_extract_relations_skips_triggers_with_no_head_mention() -> None:
+    """a trigger before any mention has no argument to bind, so it must emit nothing"""
+    Tokens: list[str] = ["treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_triggers_with_no_tail_mention() -> None:
+    """a trigger after every mention has no second argument, so it must emit nothing"""
+    Tokens: list[str] = ["Aspirin", "treats"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_when_a_break_sits_between_head_and_trigger() -> None:
+    """a sentence break severs the head from its trigger, so the pair must not cross it"""
+    Tokens: list[str] = ["Aspirin", ".", "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_when_a_break_sits_between_trigger_and_tail() -> None:
+    """a sentence break severs the trigger from its tail, so the pair must not cross it"""
+    Tokens: list[str] = ["Aspirin", "treats", ".", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_when_the_head_window_exceeds_max_trigger_distance() -> None:
+    """a head starting more than fifteen tokens before its trigger is too far to be its argument"""
+    Tokens: list[str] = ["Aspirin", *["fill"] * 15, "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (17, 17, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_when_the_tail_window_exceeds_max_trigger_distance() -> None:
+    """a tail starting more than fifteen tokens after its trigger is too far to be its argument"""
+    Tokens: list[str] = ["Aspirin", "treats", *["fill"] * 16, "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (18, 18, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_keeps_mentions_exactly_at_the_window_boundary() -> None:
+    """the distance cap is inclusive: a gap of exactly fifteen tokens on either side still binds"""
+    Tokens: list[str] = ["Aspirin", *["fill"] * 14, "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (16, 16, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
+
+
+def test_extract_relations_skips_punctuation_only_head_surfaces() -> None:
+    """a period span is a tokenizer artifact, not an entity, so it must never become a head"""
+    Tokens: list[str] = ["Aspirin", ".", "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Disease"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_punctuation_only_tail_surfaces() -> None:
+    """a period span must never become a tail either, mirroring the head guard"""
+    Tokens: list[str] = ["Aspirin", "treats", ".", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_deduplicates_identical_predicate_head_tail_triples() -> None:
+    """two identical triggers binding the same spans describe one fact, so only the first survives"""
+    Tokens: list[str] = ["smoking", "causes", "causes", "cancer"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Behavior"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="causes", fields=[RelationField(name="head", value="smoking"), RelationField(name="tail", value="cancer")])
+    ]
+
+
+def test_extract_relations_picks_the_nearest_overlapping_mention_on_each_side() -> None:
+    """among overlapping candidates the closest span wins: greatest end before, smallest start after"""
+    Tokens: list[str] = ["alpha", "fill", "beta", "gamma", "treats", "delta", "fill", "epsilon"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Disease"), (2, 3, "Disease"), (5, 5, "ChemicalEntity"), (7, 7, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="beta gamma"), RelationField(name="tail", value="delta")])
+    ]
+
+
+def test_extract_relations_matches_triggers_case_insensitively_and_preserves_surfaces() -> None:
+    """trigger matching ignores case while the emitted surfaces keep the original casing"""
+    Tokens: list[str] = ["ASPIRIN", "TREATS", "MIGRAINE"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="ASPIRIN"), RelationField(name="tail", value="MIGRAINE")])
+    ]
