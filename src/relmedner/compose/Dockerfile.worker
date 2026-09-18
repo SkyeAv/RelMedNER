@@ -1,0 +1,5 @@
+# beam sdk harness — must match the apache_beam version in pyproject.toml
+FROM docker.io/apache/beam_python3.13_sdk:2.76.0
+
+COPY dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm -f /tmp/*.whl

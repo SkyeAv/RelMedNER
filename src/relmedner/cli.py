@@ -4,8 +4,12 @@ from typing import Annotated
 
 import cyclopts
 
+from relmedner.clusters import YamlClusterParser
 from relmedner.constants import DEFAULT_OUTPUT
+from relmedner.deploy import deploy_cluster
+from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
+from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
 from relmedner.pipeline import BeamPipeline
 
 APP: cyclopts.App = cyclopts.App()
@@ -16,6 +20,21 @@ def build_dataset(
     test_run: Annotated[bool, cyclopts.Parameter(alias="-t")] = False,
     output: Annotated[str, cyclopts.Parameter(alias="-o")] = DEFAULT_OUTPUT,
 ) -> None:
+    Parser: YamlClusterParser = YamlClusterParser()
+    # flink slots cannot outstrip the number of declared datasets; each dataset is one source bundle
+    parallelism: int = min(Parser.total_slots(), len(YamlIngestsParser().generate_tuples()))
     Config: RunConfig = RunConfig.from_flags(test_run, output)
-    BuildPipeline: BeamPipeline = BeamPipeline()
-    BuildPipeline.run(Config)
+    rest_url: str = Parser.rest_url()
+    # submission is detached (see runner_options), so the beam job server exits immediately;
+    # snapshot the pre-existing jobs and then follow ours through the jobmanager REST api
+    before: frozenset[str] = job_ids(fetch_jobs(rest_url))
+    BeamPipeline(options=Parser.runner_options(parallelism)).run(Config)
+    watch_jobs(rest_url, before)
+
+
+@APP.command(name="deploy-cluster")
+def deploy_cluster_command(
+    teardown: Annotated[bool, cyclopts.Parameter("--teardown", alias=["-t"])] = False,
+    dry_run: Annotated[bool, cyclopts.Parameter("--dry-run", alias=["-d"])] = False,
+) -> None:
+    deploy_cluster(teardown=teardown, dry_run=dry_run)

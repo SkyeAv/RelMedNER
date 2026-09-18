@@ -6,6 +6,7 @@ from typing import Any, Self
 
 import apache_beam as beam
 from apache_beam.io.avroio import WriteToAvro
+from apache_beam.options.pipeline_options import PipelineOptions
 
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample
@@ -28,14 +29,14 @@ def to_record(example: TrainingExample) -> dict[str, Any]:
 
 
 class BeamPipeline:
-    def __init__(self: Self) -> None:
-        return None
+    def __init__(self: Self, options: PipelineOptions | None = None) -> None:
+        self.options: PipelineOptions | None = options
 
     def run(self: Self, config: RunConfig) -> None:
         IngestsParser: YamlIngestsParser = YamlIngestsParser()
         Output: Path = Path(config.output)
 
-        with beam.Pipeline() as new_pipeline:
+        with beam.Pipeline(options=self.options) as new_pipeline:
             (
                 new_pipeline
                 | "load declarative ingests" >> beam.Create(IngestsParser.generate_tuples())
@@ -54,5 +55,3 @@ class BeamPipeline:
                     schema=TrainingExample.avro_schema_to_python(),
                 )
             )
-
-        return None
