@@ -1,5 +1,3 @@
-from __future__ import annotations
+from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 
-from relmedner.scripts.nemotron_pii import NemotronPiiScript
-
-__all__ = ["NemotronPiiScript"]
+__all__ = ["GlinerBiomedScript"]

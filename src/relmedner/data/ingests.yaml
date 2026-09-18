@@ -1,33 +1,13 @@
 datasets:
   - task:
       type: script
-      name: NemotronPiiScript
+      name: GlinerBiomedScript
       outputs:
         - entities
+        - relations
     source: hf
-    dataset: nvidia/Nemotron-PII
+    dataset: anthonyyazdaniml/gliner-biomed-pre-training
     split: train
-    match_on:
-      - column: domain
-        values:
-          - Healthcare
-          - Biotechnology
     columns_out:
-      - text
-      - spans
-  - task:
-      type: script
-      name: NemotronPiiScript
-      outputs:
-        - entities
-    source: hf
-    dataset: nvidia/Nemotron-PII
-    split: test
-    match_on:
-      - column: domain
-        values:
-          - Healthcare
-          - Biotechnology
-    columns_out:
-      - text
-      - spans
+      - tokenized_text
+      - ner

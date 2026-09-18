@@ -5,7 +5,7 @@ from typing import Any, ClassVar, Self
 
 from relmedner.models import TrainingExample
 
-ScriptValues = tuple[str | None, ...]
+ScriptValues = tuple[Any, ...]
 ScriptPayload = tuple[tuple[str, ...], ScriptValues]
 DispatchedExample = tuple[tuple[str, ...], TrainingExample]
 

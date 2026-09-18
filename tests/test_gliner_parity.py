@@ -22,6 +22,8 @@ from relmedner.models import (
     StructureField,
     TrainingExample,
 )
+from relmedner.scripts import GlinerBiomedScript
+from relmedner.utils import ResolvedMention, ScriptUtils
 
 GLINER_DATA_MODULE: str = "gliner2_training_data"
 
@@ -155,6 +157,28 @@ def test_an_example_with_a_mention_outside_the_text_is_rejected_by_gliner() -> N
     Parsed: Any = GlinerData.InputExample.from_dict(Invalid.to_output())
 
     assert Parsed.validate() != []
+
+
+def test_gazetteer_shaped_script_relations_validate_through_real_gliner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """US-003's GlinerBiomedScript relation wiring must emit output the real gliner2 types accept"""
+
+    def fake_resolve(spans: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "is", "used", "to", "treat", "migraine"]
+    Example: TrainingExample = GlinerBiomedScript().run((Tokens, [[0, 0, "Drug"], [5, 5, "Condition"]]))
+
+    assert Example.relations == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
+    GlinerData: ModuleType = load_gliner_data()
+    Parsed: Any = GlinerData.InputExample.from_dict(Example.to_output())
+
+    assert Parsed.validate() == []
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=EXAMPLE_IDS)
