@@ -25,7 +25,12 @@ def test_build_dataset_test_run_writes_five_biolink_labeled_rows(tmp_path: Path)
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
-        assert Example.populated() == frozenset({"entities"})
+        assert Example.populated() == frozenset({"entities", "relations"})
+        # relation head/tail surfaces must occur in the record text, proving extraction never invents mentions
+        for relation in Example.relations:
+            Fields: dict[str, str] = {field.name: field.value for field in relation.fields}
+            for side in ("head", "tail"):
+                assert Fields[side].lower() in Example.text.lower()
         for entity in Example.entities:
             assert entity.label and not entity.label.startswith("biolink:")
             assert entity.mentions

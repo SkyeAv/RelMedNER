@@ -4,6 +4,7 @@ datasets:
       name: GlinerBiomedScript
       outputs:
         - entities
+        - relations
     source: hf
     dataset: anthonyyazdaniml/gliner-biomed-pre-training
     split: train

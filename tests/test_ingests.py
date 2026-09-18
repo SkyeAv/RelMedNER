@@ -11,7 +11,7 @@ def test_generate_tuples_shape() -> None:
         (
             "hf",
             (
-                ("script", "GlinerBiomedScript", ("entities",)),
+                ("script", "GlinerBiomedScript", ("entities", "relations")),
                 "anthonyyazdaniml/gliner-biomed-pre-training",
                 None,
                 "train",
