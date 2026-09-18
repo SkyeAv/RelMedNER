@@ -1,18 +1,8 @@
-
 from __future__ import annotations
-
-from importlib.metadata import PackageNotFoundError, version
-
-
-def package_version() -> str:
-    try:
-        return version("relmedner")
-    except PackageNotFoundError:
-        return "dev"
-
 
 from dataclasses import dataclass
 from functools import cache
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any, ClassVar, Self
 
@@ -21,6 +11,14 @@ from tablassert.biolink import Categories
 from tablassert.fullmap import fullmap_db_path, lookup_rows
 
 from relmedner.constants import FULLMAP_DIR
+
+
+def package_version() -> str:
+    try:
+        return version("relmedner")
+    except PackageNotFoundError:
+        return "dev"
+
 
 BIOLINK_PREFIX: str = "biolink:"
 
