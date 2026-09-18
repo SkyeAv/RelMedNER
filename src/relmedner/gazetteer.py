@@ -98,7 +98,7 @@ def _is_punctuation_only(surface: str) -> bool:
 def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str]]) -> list[Relation]:
     """pair each trigger with its nearest bracketing mentions under sentence-break, window, and surface guards"""
     relations: list[Relation] = []
-    seen: set[tuple[str, tuple[int, int, str], tuple[int, int, str]]] = set()
+    seen: set[tuple[str, int, int, int, int]] = set()
     for trigger_start, trigger_end, predicate in find_triggers(tokens):
         head = _nearest_before(mention_spans, trigger_start)
         tail = _nearest_after(mention_spans, trigger_end)
@@ -114,7 +114,7 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
         tail_surface = _surface(tokens, tail)
         if _is_punctuation_only(head_surface) or _is_punctuation_only(tail_surface):
             continue
-        key = (predicate, head, tail)
+        key = (predicate, head[0], head[1], tail[0], tail[1])
         if key in seen:
             continue
         seen.add(key)

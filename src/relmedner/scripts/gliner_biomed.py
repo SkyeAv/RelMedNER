@@ -19,7 +19,7 @@ class GlinerBiomedScript(Script):
     def run(self: Self, values: ScriptValues) -> TrainingExample:
         tokens_value, ner_value = values
         tokens: list[str] = [str(token) for token in tokens_value] if isinstance(tokens_value, list) else []
-        ner: list[list[Any]] = [list(span) for span in ner_value] if isinstance(ner_value, list) else []
+        ner: list[Any] = ner_value if isinstance(ner_value, list) else []
         if not tokens or not ner:
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
         spans: list[tuple[int, int, str]] = ScriptUtils.mention_spans(tokens, ner)

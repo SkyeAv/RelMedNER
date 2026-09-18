@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 from tablassert.biolink import Predicates
 
+from relmedner import gazetteer
 from relmedner.gazetteer import MAX_TRIGGER_DISTANCE, PREDICATE_TRIGGERS, SENTENCE_BREAKS, extract_relations, find_triggers, validate_trigger_table
 from relmedner.models import Relation, RelationField
 
@@ -196,6 +197,19 @@ def test_extract_relations_deduplicates_identical_predicate_head_tail_triples() 
     Spans: list[tuple[int, int, str]] = [(0, 0, "Behavior"), (3, 3, "Disease")]
     assert extract_relations(Tokens, Spans) == [
         Relation(name="causes", fields=[RelationField(name="head", value="smoking"), RelationField(name="tail", value="cancer")])
+    ]
+
+
+def test_extract_relations_deduplicates_same_endpoint_coordinates_across_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """resolver category changes must not create duplicate facts for identical endpoint coordinates"""
+    Tokens: list[str] = ["aspirin", "treats", "treats", "migraine"]
+    Heads = iter([(0, 0, "Drug"), (0, 0, "ChemicalEntity")])
+    Tails = iter([(3, 3, "Disease"), (3, 3, "PhenotypicFeature")])
+    monkeypatch.setattr(gazetteer, "_nearest_before", lambda spans, trigger_start: next(Heads))
+    monkeypatch.setattr(gazetteer, "_nearest_after", lambda spans, trigger_end: next(Tails))
+
+    assert extract_relations(Tokens, []) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="aspirin"), RelationField(name="tail", value="migraine")])
     ]
 
 

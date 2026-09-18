@@ -77,18 +77,28 @@ class ScriptUtils:
         return " ".join(tokens)
 
     @staticmethod
-    def mention_spans(tokens: list[str], ner: list[list[Any]]) -> list[tuple[int, int, str]]:
-        """filter GLiNER spans ([start, end, label], end inclusive) down to in-bounds triples"""
+    def mention_spans(tokens: list[str], ner: list[Any]) -> list[tuple[int, int, str]]:
+        """filter valid GLiNER spans ([start, end, label], end inclusive) down to in-bounds triples"""
         spans: list[tuple[int, int, str]] = []
         for span in ner:
-            start, end, label = int(span[0]), int(span[1]), str(span[2])
+            if (
+                not isinstance(span, (list, tuple))
+                or len(span) != 3
+                or isinstance(span[0], bool)
+                or not isinstance(span[0], int)
+                or isinstance(span[1], bool)
+                or not isinstance(span[1], int)
+                or not isinstance(span[2], str)
+            ):
+                continue
+            start, end, label = span
             if start < 0 or end < start or end >= len(tokens):
                 continue
             spans.append((start, end, label))
         return spans
 
     @classmethod
-    def mentions(cls, tokens: list[str], ner: list[list[Any]]) -> list[tuple[str, str]]:
+    def mentions(cls, tokens: list[str], ner: list[Any]) -> list[tuple[str, str]]:
         """slice mention text out of GLiNER token spans; bounds checks live in mention_spans"""
         return [(cls.join_tokens(tokens[start : end + 1]), label) for start, end, label in cls.mention_spans(tokens, ner)]
 

@@ -109,6 +109,31 @@ def test_mention_spans_keeps_in_bounds_triples_and_drops_the_rest() -> None:
     assert ScriptUtils.mention_spans(Tokens, Ner) == [(0, 1, "Condition"), (4, 4, "Identifier")]
 
 
+def test_mention_spans_skips_malformed_entries_without_coercion() -> None:
+    """malformed external NER rows must not crash or become silently coerced mentions"""
+    Tokens: list[str] = ["Aspirin", "treats", "migraine"]
+    Ner: list[Any] = [
+        [0, 0, "Drug"],
+        (2, 2, "Condition"),
+        [],
+        [0, 0],
+        [0, 0, "Drug", "extra"],
+        None,
+        3,
+        "span",
+        [True, 0, "Drug"],
+        [0, False, "Drug"],
+        ["0", 0, "Drug"],
+        [0, 0.0, "Drug"],
+        [None, 0, "Drug"],
+        [0, 0, None],
+        [3, 3, "Broken"],
+    ]
+
+    assert ScriptUtils.mention_spans(Tokens, Ner) == [(0, 0, "Drug"), (2, 2, "Condition")]
+    assert ScriptUtils.mentions(Tokens, Ner) == [("Aspirin", "Drug"), ("migraine", "Condition")]
+
+
 def test_mentions_rejoins_each_mention_span_slice() -> None:
     """mentions is mention_spans with each triple rejoined, so script wiring can pair the two positionally"""
     Tokens: list[str] = ["Ankle", "sprain", "is", "common", "."]
@@ -116,6 +141,27 @@ def test_mentions_rejoins_each_mention_span_slice() -> None:
     Spans: list[tuple[int, int, str]] = ScriptUtils.mention_spans(Tokens, Ner)
 
     assert ScriptUtils.mentions(Tokens, Ner) == [(" ".join(Tokens[start : end + 1]), label) for start, end, label in Spans]
+
+
+def test_the_script_skips_malformed_ner_entries_before_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mixed valid and malformed NER rows must preserve valid entity and relation alignment"""
+
+    def fake_resolve(spans: list[tuple[str, str]]) -> list[ResolvedMention]:
+        assert spans == [("Aspirin", "Drug"), ("migraine", "Condition")]
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "treats", "migraine"]
+    Ner: list[Any] = [[0, 0, "Drug"], None, (2, 2, "Condition"), [True, 1, "Drug"], [0, 0, None]]
+    _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"], "Disease": ["migraine"]}
+    assert Example.relations == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
 
 
 def test_the_script_emits_gazetteer_relations_between_resolved_mentions(monkeypatch: pytest.MonkeyPatch) -> None:
