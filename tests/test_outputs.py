@@ -13,8 +13,6 @@ from relmedner.models import RunConfig, TrainingExample
 from relmedner.pipeline import BeamPipeline
 from relmedner.utils import ScriptUtils
 
-pytestmark = pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
-
 TRANSPORT_ERRORS = (OfflineModeIsEnabled, httpx.NetworkError, httpx.TimeoutException, RequestsConnectionError, RequestsTimeout)
 
 
@@ -42,7 +40,9 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
         run_smoke_pipeline(tmp_path / "test.avro")
 
 
+@pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_five_biolink_labeled_rows(tmp_path: Path) -> None:
+    """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap"""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 

@@ -177,6 +177,22 @@ def test_extract_relations_keeps_mentions_exactly_at_the_window_boundary() -> No
     ]
 
 
+def test_extract_relations_keeps_a_tail_exactly_at_the_window_boundary() -> None:
+    """the tail cap is inclusive: a gap of exactly fifteen tokens after the trigger end still binds"""
+    Tokens: list[str] = ["Aspirin", "treats", *["fill"] * 15, "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (17, 17, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+    ]
+
+
+def test_extract_relations_skips_a_tail_one_past_the_window_boundary() -> None:
+    """a tail starting sixteen tokens after the trigger end is dropped, mirroring the head guard"""
+    Tokens: list[str] = ["Aspirin", "treats", *["fill"] * 16, "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (18, 18, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
 def test_extract_relations_skips_punctuation_only_head_surfaces() -> None:
     """a period span is a tokenizer artifact, not an entity, so it must never become a head"""
     Tokens: list[str] = ["Aspirin", ".", "treats", "migraine"]
@@ -184,9 +200,23 @@ def test_extract_relations_skips_punctuation_only_head_surfaces() -> None:
     assert extract_relations(Tokens, Spans) == []
 
 
+def test_extract_relations_skips_punctuation_only_head_adjacent_to_trigger() -> None:
+    """an adjacent punctuation-only head has no break token in the gap, so only the surface guard can reject it"""
+    Tokens: list[str] = ["Aspirin", "...", "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Disease"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
 def test_extract_relations_skips_punctuation_only_tail_surfaces() -> None:
     """a period span must never become a tail either, mirroring the head guard"""
     Tokens: list[str] = ["Aspirin", "treats", ".", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_extract_relations_skips_punctuation_only_tail_adjacent_to_trigger() -> None:
+    """an adjacent punctuation-only tail has no break token in the gap, so only the surface guard can reject it"""
+    Tokens: list[str] = ["Aspirin", "treats", "(", "migraine"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
     assert extract_relations(Tokens, Spans) == []
 
