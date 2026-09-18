@@ -25,3 +25,22 @@ services:
       - taskmanager.memory.process.size=${MEMORY}
     user: "0:0"
     restart: unless-stopped
+
+  sdkworker:
+    # beam sdk worker pool (EXTERNAL environment) — python user code runs HERE, not in
+    # taskmanager-spawned containers, so this is the only place the fullmap mount can live;
+    # rootful docker on remotes, so default root can read the host-owned redb; no socket needed,
+    # the pool never launches containers
+    image: ${WORKER_IMAGE}
+    pull_policy: never
+    network_mode: host
+    command: ["--worker_pool"]
+    working_dir: /opt/outputs
+    # the beam sdk image defaults to an unprivileged user that cannot create /opt/apache/beam-venv;
+    # root also reads the host-owned redb bundle under the fullmap mount
+    user: "0:0"
+    volumes:
+      - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
+      # avro shards land here; the host side is collected back to --output when the job finishes
+      - ${OUTPUTS_DIR}:${OUTPUTS_MOUNT}
+    restart: unless-stopped

@@ -12,8 +12,10 @@ from relmedner.constants import (
     FLINK_IMAGE_NAME,
     FLINK_REST_PORT,
     FLINK_VERSION,
+    FULLMAP_MOUNT,
     JOBMANAGER_COMPOSE,
     JOBMANAGER_RPC_PORT,
+    OUTPUTS_MOUNT,
     PROJECT,
     TASKMANAGER_COMPOSE,
     TASKMANAGER_DATA_PORT,
@@ -43,15 +45,20 @@ def run_cmd(
     return
 
 
-def compose_vars(worker: WorkerNode, jobmanager: str, flink_image: str, data_port: int) -> dict[str, str]:
+def compose_vars(worker: WorkerNode, jobmanager: str, flink_image: str, worker_image: str, data_port: int) -> dict[str, str]:
     return {
         "FLINK_IMAGE": flink_image,
+        "WORKER_IMAGE": worker_image,
         "JOBMANAGER_HOST": jobmanager,
         "FLINK_REST_PORT": str(FLINK_REST_PORT),
         "JOBMANAGER_RPC_PORT": str(JOBMANAGER_RPC_PORT),
         "BLOB_SERVER_PORT": str(BLOB_SERVER_PORT),
         "SLOTS": str(worker.slots),
         "MEMORY": worker.memory,
+        "FULLMAP_DIR": worker.fullmap,
+        "FULLMAP_MOUNT": FULLMAP_MOUNT,
+        "OUTPUTS_DIR": worker.outputs,
+        "OUTPUTS_MOUNT": OUTPUTS_MOUNT,
         "TASKMANAGER_HOST": jobmanager,
         "TASKMANAGER_DATA_PORT": str(data_port),
         "TASKMANAGER_DATA_BIND_PORT": str(TASKMANAGER_DATA_PORT),
@@ -77,18 +84,22 @@ def tunnel_spec(port: int, host: str, user: str, jobmanager: str) -> list[str]:
 
 def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
     Parser: YamlClusterParser = YamlClusterParser()
-    ssh_user: str = Parser.parse_cluster().ssh_user
+    ClusterSpec = Parser.parse_cluster()
+    ssh_user: str = ClusterSpec.ssh_user
     jobmanager: str = Parser.jobmanager()
     flink_image: str = f"{FLINK_IMAGE_NAME}:{FLINK_VERSION}"
     worker_image: str = Parser.worker_image()
-    env: dict[str, str] = {**os.environ, **compose_vars(Parser.local_worker(), jobmanager, flink_image, TASKMANAGER_DATA_PORT)}
+    env: dict[str, str] = {
+        **os.environ,
+        **compose_vars(Parser.local_worker(), jobmanager, flink_image, worker_image, TASKMANAGER_DATA_PORT),
+    }
     remotes: list[WorkerNode] = Parser.remotes()
     tunnels: list[list[str]] = [
         tunnel_spec(TASKMANAGER_DATA_PORT + 1 + index, worker.host, ssh_user, jobmanager) for index, worker in enumerate(remotes)
     ]
 
     def remote(worker: WorkerNode, action: list[str], data_port: int) -> None:
-        rendered: str = Template(TASKMANAGER_COMPOSE.read_text()).substitute(compose_vars(worker, jobmanager, flink_image, data_port))
+        rendered: str = Template(TASKMANAGER_COMPOSE.read_text()).substitute(compose_vars(worker, jobmanager, flink_image, worker_image, data_port))
         run_cmd(["ssh", "-o", "BatchMode=yes", f"{ssh_user}@{worker.host}", *COMPOSE, "-f", "-", *action], dry_run, stdin=rendered)
 
     if teardown:
@@ -99,6 +110,18 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
             remote(worker, ["down"], TASKMANAGER_DATA_PORT + 1 + index)
         run_cmd([*COMPOSE, "-f", str(JOBMANAGER_COMPOSE), "down"], dry_run, env=env)
         return
+
+    # fail fast on a missing fullmap bundle BEFORE any image build or compose run — a node
+    # without its mount would otherwise fail later at sdkworker startup, mid-deploy
+    LocalWorker = Parser.local_worker()
+    if not dry_run and not Path(LocalWorker.fullmap).is_dir():
+        raise SystemExit(f"fullmap directory not found on {LocalWorker.host}: {LocalWorker.fullmap}")
+    if not dry_run:
+        Path(LocalWorker.outputs).mkdir(parents=True, exist_ok=True)
+    for worker in remotes:
+        run_cmd(["ssh", "-o", "BatchMode=yes", f"{ssh_user}@{worker.host}", "test", "-d", worker.fullmap], dry_run)
+        # the outputs dir is ours to create: docker would otherwise make it root-owned on first mount
+        run_cmd(["ssh", "-o", "BatchMode=yes", f"{ssh_user}@{worker.host}", "mkdir", "-p", worker.outputs], dry_run)
 
     for cmd in (
         ["rm", "-rf", "dist"],

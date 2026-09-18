@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, Literal, Self
+from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +32,11 @@ class StrictBase(AvroBaseModel):
 class RunConfig(StrictBase):
     sample_limit: int | None = Field(None)
     output: str = Field(DEFAULT_OUTPUT)
+    run_id: str = Field(default_factory=lambda: uuid4().hex)
+
+    def artifact_name(self: Self) -> str:
+        Output: Path = Path(self.output)
+        return f"{Output.stem}-{self.run_id}{Output.suffix}"
 
     @classmethod
     def from_flags(cls, test_run: bool, output: str = DEFAULT_OUTPUT) -> Self:
@@ -210,6 +217,12 @@ class WorkerNode(StrictBase):
     host: str = Field(...)
     slots: int = Field(..., ge=1)
     memory: str = Field(...)
+
+    fullmap: str = Field(...)
+    """host directory holding the fullmap redb bundle (primary + shards), mounted read-only into the sdkworker"""
+
+    outputs: str = Field(...)
+    """host directory the sdkworker writes avro shards into; collected back to the laptop after a run"""
 
 
 class Cluster(StrictBase):

@@ -7,7 +7,7 @@ INGESTS_YAML: Traversable = DATA / "ingests.yaml"
 CLUSTER_YAML: Traversable = DATA / "cluster.yaml"
 EXPANSION_SERVICE: str = "localhost:9097"
 TEST_ROW_LIMIT: int = 5
-DEFAULT_OUTPUT: str = "./relmedner.avro"
+DEFAULT_OUTPUT: str = "relmedner.avro"
 
 FLINK_VERSION: str = "1.20"
 
@@ -15,6 +15,9 @@ FLINK_REST_PORT: int = 18081
 JOBMANAGER_RPC_PORT: int = 16123
 BLOB_SERVER_PORT: int = 16124
 TASKMANAGER_DATA_PORT: int = 16125
+WORKER_POOL_PORT: int = 50000  # fixed by beam's container boot.go (--service_port=50000)
+FULLMAP_MOUNT: str = "/opt/fullmap"  # in-container mount target for the per-worker fullmap bundle
+OUTPUTS_MOUNT: str = "/opt/outputs"  # in-container mount target the sdkworker writes avro shards into
 
 WORKER_IMAGE_NAME: str = "localhost/relmedner-worker"
 FLINK_IMAGE_NAME: str = "localhost/relmedner-flink"

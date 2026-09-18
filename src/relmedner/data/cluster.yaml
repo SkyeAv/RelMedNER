@@ -1,13 +1,23 @@
 ssh_user: sgoetz
 
 workers:
-  - host: local # skyetop (laptop) — jobmanager lives here; 1 slot keeps real work on the big nodes
-    slots: 1
-    memory: 8g
+  # fullmap points at the host directory holding the fullmap redb bundle (primary redb + <stem>.s<N>.redb
+  # shards), NOT the redb file itself; it is bind-mounted read-only into the sdkworker at /opt/fullmap.
+  # outputs is the host directory the sdkworker writes avro shards into (mounted rw at /opt/outputs);
+  # shards written on remotes are collected back to the laptop when the job finishes
+  - host: local # skyetop (laptop) — jobmanager lives here
+    slots: 8
+    memory: 16g
+    fullmap: /home/skyeav/Desktop/fullmap
+    outputs: /home/skyeav/Desktop/fullmap/outputs
   - host: 10.2.9.11 # wenceslaus — 60 CPU / 120 GB
     slots: 60
     memory: 110g
+    fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
+    outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
   # hypatia — 4 CPU / 8 GB; needs docker-compose-v2 installed before it can join
   # - host: 10.2.9.19
   #   slots: 4
   #   memory: 6g
+  #   fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
+  #   outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs

@@ -19,14 +19,14 @@ def test_cluster_shape() -> None:
 
     assert ClusterSpec.ssh_user == "sgoetz"
     assert tuple(worker.to_tuple() for worker in ClusterSpec.workers) == (
-        ("local", 1, "8g"),
-        ("10.2.9.11", 60, "110g"),
+        ("local", 8, "16g", "/home/skyeav/Desktop/fullmap", "/home/skyeav/Desktop/fullmap/outputs"),
+        ("10.2.9.11", 60, "110g", "/local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap", "/local_raid1/sgoetz/DBSTORE/FULLMAP/outputs"),
     )
 
 
 def test_worker_node_tuple_without_an_override() -> None:
-    Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=4, memory="6g")
-    assert Worker.to_tuple() == ("10.2.9.19", 4, "6g")
+    Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=4, memory="6g", fullmap="/data/fullmap", outputs="/data/outputs")
+    assert Worker.to_tuple() == ("10.2.9.19", 4, "6g", "/data/fullmap", "/data/outputs")
 
 
 def test_cluster_endpoints() -> None:
@@ -34,14 +34,14 @@ def test_cluster_endpoints() -> None:
 
     assert Parser.flink_master() == "10.4.0.30:18081"
     assert Parser.worker_image() == f"localhost/relmedner-worker:{package_version()}"
-    assert Parser.total_slots() == 61
+    assert Parser.total_slots() == 68
     assert tuple(worker.host for worker in Parser.remotes()) == ("10.2.9.11",)
-    assert Parser.local_worker().slots == 1
+    assert Parser.local_worker().slots == 8
 
 
 def test_extra_fields_rejected() -> None:
     with pytest.raises(ValueError):
-        WorkerNode.model_validate({"host": "h", "slots": 1, "memory": "1g", "arch": "amd64"})
+        WorkerNode.model_validate({"host": "h", "slots": 1, "memory": "1g", "fullmap": "/f", "outputs": "/o", "arch": "amd64"})
 
 
 def test_runner_options() -> None:
@@ -53,8 +53,8 @@ def test_runner_options() -> None:
     assert Options.get_all_options(drop_default=True)["no_wait_until_finish"] is True
     assert Options.get_all_options(drop_default=True).get("parallelism") is None
     assert Options.view_as(FlinkRunnerOptions).flink_master == Parser.flink_master()
-    assert Options.view_as(PortableOptions).environment_config == Parser.worker_image()
-    assert Options.view_as(PortableOptions).environment_type == "DOCKER"
+    assert Options.view_as(PortableOptions).environment_config == "localhost:50000"
+    assert Options.view_as(PortableOptions).environment_type == "EXTERNAL"
 
 
 def test_runner_options_use_explicit_parallelism() -> None:

@@ -65,3 +65,26 @@ services:
     userns_mode: keep-id
     user: "${HOST_UID}:${HOST_GID}"
     restart: unless-stopped
+
+  sdkworker:
+    # beam sdk worker pool (EXTERNAL environment) — python user code runs HERE, not in
+    # taskmanager-spawned containers, so this is the only place the fullmap mount can live;
+    # pool port 50000 is hardcoded by beam's container boot.go, host net shares loopback
+    # with the taskmanager, which the pool assumes
+    image: ${WORKER_IMAGE}
+    pull_policy: never
+    network_mode: host
+    command: ["--worker_pool"]
+    # beam writes pipeline_options.json and scratch files into the cwd; the outputs mount is the
+    # one writable place available under the mapped host uid
+    working_dir: /opt/outputs
+    # rootless podman maps the host uid in, and that uid cannot create beam's venv under /opt/apache/beam
+    environment:
+      RUN_PYTHON_SDK_IN_DEFAULT_ENVIRONMENT: "1"
+    volumes:
+      - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
+      # avro shards land here; the host side is collected back to --output when the job finishes
+      - ${OUTPUTS_DIR}:${OUTPUTS_MOUNT}
+    userns_mode: keep-id
+    user: "${HOST_UID}:${HOST_GID}"
+    restart: unless-stopped
