@@ -1,0 +1,13 @@
+ssh_user: sgoetz
+
+workers:
+  - host: local # skyetop (laptop) — jobmanager lives here; 1 slot keeps real work on the big nodes
+    slots: 1
+    memory: 8g
+  - host: 10.2.9.11 # wenceslaus — 60 CPU / 120 GB
+    slots: 60
+    memory: 110g
+  # hypatia — 4 CPU / 8 GB; needs docker-compose-v2 installed before it can join
+  # - host: 10.2.9.19
+  #   slots: 4
+  #   memory: 6g

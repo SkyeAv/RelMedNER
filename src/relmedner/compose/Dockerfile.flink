@@ -1,0 +1,12 @@
+# flink + docker cli so taskmanagers can launch beam sdk harness containers
+FROM docker.io/library/flink:1.20
+
+ARG DOCKER_CLI_VERSION=27.5.1
+
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -fsSL "https://download.docker.com/linux/static/stable/x86_64/docker-${DOCKER_CLI_VERSION}.tgz" -o /tmp/docker.tgz \
+ && tar -xzf /tmp/docker.tgz -C /tmp docker/docker \
+ && install -m 755 /tmp/docker/docker /usr/local/bin/docker \
+ && apt-get purge -y curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/* /tmp/docker.tgz /tmp/docker

@@ -1,0 +1,27 @@
+services:
+  taskmanager:
+    image: ${FLINK_IMAGE}
+    pull_policy: never
+    network_mode: host
+    command:
+      - taskmanager
+      - -D
+      - jobmanager.rpc.address=${JOBMANAGER_HOST}
+      - -D
+      - jobmanager.rpc.port=${JOBMANAGER_RPC_PORT}
+      - -D
+      - blob.server.port=${BLOB_SERVER_PORT}
+      - -D
+      - blob.client.socket.timeout=1800000
+      - -D
+      - taskmanager.host=${TASKMANAGER_HOST}
+      - -D
+      - taskmanager.data.port=${TASKMANAGER_DATA_PORT}
+      - -D
+      - taskmanager.data.bind-port=${TASKMANAGER_DATA_BIND_PORT}
+      - -D
+      - taskmanager.numberOfTaskSlots=${SLOTS}
+      - -D
+      - taskmanager.memory.process.size=${MEMORY}
+    user: "0:0"
+    restart: unless-stopped

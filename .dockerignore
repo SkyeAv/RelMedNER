@@ -1,0 +1,4 @@
+# the worker image only needs the wheel; everything else (venv, git, caches) bloats the context
+*
+!dist
+!dist/**

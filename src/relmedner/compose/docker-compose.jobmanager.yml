@@ -1,0 +1,67 @@
+name: relmedner
+
+services:
+  jobmanager:
+    image: ${FLINK_IMAGE}
+    pull_policy: never
+    # host network keeps flink's advertised rpc address and the real port identical,
+    # which pekko requires; container-internal ports match the published ones
+    network_mode: host
+    command:
+      - jobmanager
+      - -D
+      - cluster.evenly-spread-out-slots=true
+      - -D
+      - restart-strategy.type=fixed-delay
+      - -D
+      - restart-strategy.fixed-delay.attempts=3
+      - -D
+      - restart-strategy.fixed-delay.delay=10 s
+      - -D
+      - jobmanager.rpc.address=${JOBMANAGER_HOST}
+      - -D
+      - jobmanager.rpc.port=${JOBMANAGER_RPC_PORT}
+      - -D
+      - jobmanager.bind-host=0.0.0.0
+      - -D
+      - blob.server.port=${BLOB_SERVER_PORT}
+      - -D
+      - blob.client.socket.timeout=1800000
+      - -D
+      - rest.port=${FLINK_REST_PORT}
+      - -D
+      - rest.bind-address=0.0.0.0
+    restart: unless-stopped
+
+  taskmanager:
+    image: ${FLINK_IMAGE}
+    pull_policy: never
+    # host network + explicit -D flags: the entrypoint cannot rewrite config.yaml
+    # under rootless podman's uid mapping, so pass every setting on the command line
+    network_mode: host
+    command:
+      - taskmanager
+      - -D
+      - jobmanager.rpc.address=${JOBMANAGER_HOST}
+      - -D
+      - jobmanager.rpc.port=${JOBMANAGER_RPC_PORT}
+      - -D
+      - blob.server.port=${BLOB_SERVER_PORT}
+      - -D
+      - blob.client.socket.timeout=1800000
+      - -D
+      - taskmanager.host=${TASKMANAGER_HOST}
+      - -D
+      - taskmanager.data.port=${TASKMANAGER_DATA_PORT}
+      - -D
+      - taskmanager.data.bind-port=${TASKMANAGER_DATA_BIND_PORT}
+      - -D
+      - taskmanager.numberOfTaskSlots=${SLOTS}
+      - -D
+      - taskmanager.memory.process.size=${MEMORY}
+    depends_on:
+      - jobmanager
+    # rootless podman: keep the flink JVM off host root without needing any host mounts
+    userns_mode: keep-id
+    user: "${HOST_UID}:${HOST_GID}"
+    restart: unless-stopped

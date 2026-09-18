@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal, Self
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
-from pydantic import ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
 from relmedner.enums import OutputShapes, ProcessingTypes
@@ -204,3 +204,24 @@ class TrainingExample(StrictBase):
             if shape in populated:
                 output |= getattr(self, f"{shape}_out")()
         return {"input": self.text, "output": output}
+
+
+class WorkerNode(StrictBase):
+    host: str = Field(...)
+    slots: int = Field(..., ge=1)
+    memory: str = Field(...)
+
+
+class Cluster(StrictBase):
+    ssh_user: str = Field(...)
+    workers: list[WorkerNode] = Field(...)
+
+
+class FlinkJob(BaseModel):
+    """one entry of the jobmanager's /jobs/overview payload; extra fields are ignored on purpose"""
+
+    model_config: ConfigDict = ConfigDict(frozen=True, extra="ignore")
+
+    jid: str = Field(...)
+    name: str = Field("")
+    state: str = Field(...)
