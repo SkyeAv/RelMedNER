@@ -376,6 +376,91 @@ def test_the_pile_ner_script_relation_gate_rejects_incompatible_categories(monke
     assert Example.relations == []
 
 
+# ---------------------------------------------------------------------------
+# char-span -> token-span bridge (knowledgator-biomed raw-text ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_char_spans_to_token_spans_maps_exclusive_char_ends_to_inclusive_token_ends() -> None:
+    """char ends are exclusive, token ends inclusive: end_char == a token's start_char excludes it,
+    while end_char == a token's end_char keeps that token"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 7, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 8, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 14, "Drug")]) == [(0, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 15, "Drug")]) == [(0, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 23, "Drug")]) == [(0, 2, "Drug")]
+
+
+def test_char_spans_to_token_spans_drops_out_of_bounds_spans() -> None:
+    """OOB annotations are dataset defects (0.04-0.24% measured); negative starts and ends past the
+    text extent drop while in-bounds survivors keep their input order"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(-1, 5, "Drug"), (0, 7, "Drug"), (18, 30, "Disease"), (15, 23, "Disease")]) == [
+        (0, 0, "Drug"),
+        (2, 2, "Disease"),
+    ]
+
+
+def test_char_spans_to_token_spans_checks_bounds_before_normalizing_slop() -> None:
+    """drop-then-snap order: the bounds check runs on the raw span first, so a negative start drops
+    even though whitespace normalization would have clamped it back into the text"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(-1, 2, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_normalizes_whitespace_boundary_slop() -> None:
+    """~0.4% of spans carry boundary slop; start advances past and end retreats across the
+    whitespace runs the splitter leaves between tokens, and a whitespace-only span drops"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(7, 14, "Drug")]) == [(1, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(7, 15, "Drug")]) == [(1, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(14, 15, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_snaps_mid_token_boundaries_to_full_tokens() -> None:
+    """3.43% of spans (351/10,237) land mid-token; the span widens to the full tokens it overlaps so
+    surfaces always rejoin from whole tokens"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(2, 5, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(16, 21, "Disease")]) == [(2, 2, "Disease")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(5, 16, "Drug")]) == [(0, 2, "Drug")]
+
+
+def test_char_spans_to_token_spans_drops_degenerate_spans() -> None:
+    """zero-length (start == end, even mid-token) and inverted (end < start) spans drop at the
+    degenerate check after normalization"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(3, 3, "Drug")]) == []
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(20, 5, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_returns_empty_for_empty_char_spans() -> None:
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, []) == []
+
+
+def test_char_spans_to_token_spans_returns_empty_for_empty_triples() -> None:
+    """empty text: the extent derives to 0 and no token can overlap, so every span drops"""
+    assert ScriptUtils.char_spans_to_token_spans([], [(0, 1, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_preserves_order_without_dedup_or_merge() -> None:
+    """the dataset is measured overlap-free (0/18,685) so the bridge carries no overlap policy:
+    duplicates and overlaps pass through in input order and downstream mention grouping absorbs them"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+    Spans: list[tuple[int, int, str]] = [(15, 23, "Disease"), (0, 7, "Drug"), (15, 23, "Disease"), (0, 14, "Drug")]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, Spans) == [(2, 2, "Disease"), (0, 0, "Drug"), (2, 2, "Disease"), (0, 1, "Drug")]
+
+
 def expected_relation(name: str, head: str, tail: str) -> Relation:
     """emitted relations carry their biolink slot description; build the matching expectation"""
     return Relation(
