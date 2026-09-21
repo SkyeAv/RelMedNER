@@ -6,6 +6,8 @@ from typing import Any, ClassVar, Self
 
 import pytest
 
+from relmedner import hf_json
+from relmedner.hf_json import HuggingFaceJsonDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
@@ -87,3 +89,116 @@ def test_apply_match_keeps_only_declared_values() -> None:
 
     assert Stream.apply_match(Kept) is True
     assert Stream.apply_match(Dropped) is False
+
+
+def test_build_stream_constructs_the_hf_json_source_positionally() -> None:
+    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced must
+    land in HuggingFaceJsonDataStream.__init__ in model field order minus source"""
+    Source, Payload = (
+        "hf_json",
+        (
+            ("script", "PubmedAbstractsScript", ("entities",)),
+            "knowledgator/PubMedAbstractsNER",
+            "train.json",
+            "train",
+            None,
+            ("tokenized_text", "ner"),
+        ),
+    )
+
+    Stream: DataStream = build_stream(Source, Payload)
+
+    assert isinstance(Stream, HuggingFaceJsonDataStream)
+    assert Stream.name == "knowledgator/PubMedAbstractsNER"
+    assert Stream.task == ("script", "PubmedAbstractsScript", ("entities",))
+    assert Stream.file == "train.json"
+    assert Stream.columns_out == ("tokenized_text", "ner")
+
+
+def test_registry_keys_the_hf_json_source() -> None:
+    assert SOURCE_REGISTRY["hf_json"] is HuggingFaceJsonDataStream
+
+
+def test_build_stream_raises_loudly_on_an_unknown_source() -> None:
+    """an unregistered source is a declaration bug; the KeyError must surface, not fall through"""
+    with pytest.raises(KeyError):
+        build_stream("teleport", ())
+
+
+def test_hf_json_rows_load_the_json_builder_non_streaming_and_honor_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """non-streaming is the fix for the cold-cache hazard: streaming promotes the mixed int/str ner
+    cells to utf8 with the label wrapped in literal JSON quotes, so the kwarg must stay absent"""
+    Calls: dict[str, Any] = {}
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        Calls["path"] = path
+        Calls["name"] = name
+        Calls["kwargs"] = kwargs
+        return [
+            {"tokenized_text": ["Aspirin"], "ner": [[0, 6, "Drug"]], "domain": "Healthcare"},
+            {"tokenized_text": ["Headache"], "ner": [[0, 7, "Disease"]], "domain": "Finance"},
+        ]
+
+    monkeypatch.setattr(hf_json, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceJsonDataStream = HuggingFaceJsonDataStream(
+        ("script", "PubmedAbstractsScript", ("entities",)),
+        "knowledgator/PubMedAbstractsNER",
+        "train.json",
+        "train",
+        (("domain", ("Healthcare",)),),
+        ("tokenized_text", "ner"),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Calls == {
+        "path": "json",
+        "name": None,
+        "kwargs": {"data_files": "hf://datasets/knowledgator/PubMedAbstractsNER/train.json", "split": "train"},
+    }
+    assert Streamed == [("knowledgator/PubMedAbstractsNER", (("script", "PubmedAbstractsScript", ("entities",)), (["Aspirin"], [[0, 6, "Drug"]])))]
+
+
+def test_hf_json_rows_without_a_match_declaration_yield_every_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """an undeclared match_on is the common case: no row is filtered, payload keeps the declared columns"""
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"tokenized_text": ["Aspirin"], "ner": []}, {"tokenized_text": ["Headache"], "ner": []}]
+
+    monkeypatch.setattr(hf_json, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceJsonDataStream = HuggingFaceJsonDataStream(
+        ("script", "PubmedAbstractsScript", ("entities",)),
+        "knowledgator/PubMedAbstractsNER",
+        "train.json",
+        "train",
+        None,
+        ("tokenized_text",),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Streamed == [
+        ("knowledgator/PubMedAbstractsNER", (("script", "PubmedAbstractsScript", ("entities",)), (["Aspirin"],))),
+        ("knowledgator/PubMedAbstractsNER", (("script", "PubmedAbstractsScript", ("entities",)), (["Headache"],))),
+    ]
+
+
+def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a load_dataset error (e.g. the KeyError: 'feature' from a stale dataset_infos.json) is a real
+    ingest failure; the stream must surface it unwrapped"""
+
+    def Boom(path: str, name: Any = None, **kwargs: Any) -> Any:
+        raise RuntimeError("hub exploded")
+
+    monkeypatch.setattr(hf_json, "load_dataset", Boom)
+    Stream: HuggingFaceJsonDataStream = HuggingFaceJsonDataStream(
+        ("script", "PubmedAbstractsScript", ("entities",)),
+        "knowledgator/PubMedAbstractsNER",
+        "train.json",
+        "train",
+        None,
+        ("tokenized_text", "ner"),
+    )
+
+    with pytest.raises(RuntimeError, match="hub exploded"):
+        list(Stream.rows())
