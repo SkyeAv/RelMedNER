@@ -46,20 +46,23 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Three declared datasets (pre-training script, curated-corpus fullmap mining, post-training
-    multi-task script), up to TEST_ROW_LIMIT sampled rows each."""
+    Four declared datasets (pre-training script, pile-ner IOB script, curated-corpus fullmap mining,
+    post-training multi-task script), up to five sampled rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    assert 1 <= len(Records) <= 3 * 5  # five sampled rows per declared dataset
+    # four declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
+    assert 1 <= len(Records) <= 4 * 5
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
         Populated: frozenset[str] = Example.populated()
-        assert Populated and Populated <= Declared  # subset contract, not exact equality
+        # subset contract, not exact equality; every script at minimum emits NER entities
+        assert "entities" in Populated
+        assert Populated <= Declared
         # relation head/tail surfaces must occur in the record text, proving extraction never invents mentions
         for relation in Example.relations:
             Fields: dict[str, str] = {field.name: field.value for field in relation.fields}

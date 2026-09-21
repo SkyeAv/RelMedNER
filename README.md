@@ -4,7 +4,8 @@ Apache Beam pipeline that builds gliner2 training data from biomedical text corp
 Two ingest types share one declarative pipeline:
 
 - **script tasks** — datasets that already carry gold spans
-  (`anthonyyazdaniml/gliner-biomed-pre-training`, and the multi-task
+  (`anthonyyazdaniml/gliner-biomed-pre-training`, the IOB-formatted
+  `disi-unibo-nlp/Pile-NER-biomed-IOB`, and the multi-task
   `anthonyyazdaniml/gliner-biomed-post-training`); spans are relabeled to biolink classes
   via tablassert `Categories` and local fullmap resolution, and relations are
   distant-supervised through a biolink-predicate gazetteer matched between mention surfaces.
@@ -18,25 +19,33 @@ Two ingest types share one declarative pipeline:
 
 ## Ingests
 
-| dataset | task | inputs | outputs |
-| --- | --- | --- | --- |
-| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations |
-| `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations |
-| `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations |
+| dataset | task | inputs | outputs | rows in |
+| --- | --- | --- | --- | --- |
+| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
+| `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
+| `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 
-## Install
+All script tasks share one resolution chain — fullmap first, a shared lowercased
+`FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
+`resolve_mentions(label_map=...)`), raw labels last — and two shared quality gates:
 
-    uv sync
+- `ResolutionGate` rejects fullmap hits contradicting the source corpus's own label
+  (label↔category buckets, model-organism CURIE guard, acronym-over-catch-all guard);
+  rejections fall through to fallback/raw, never dropping the mention. ~20% of fullmap
+  hits rejected on the pile-ner corpus, nearly all true false positives.
+- `PredicateRangeGate` rejects gazetteer relations whose head/tail biolink categories
+  contradict the predicate's domain/range (raw labels impose no constraint). ~21% of
+  candidate relations rejected, all sampled rejects genuinely wrong.
 
-## Build the dataset
+Dataset-format notes (`PileNerBiomedScript`): `tokens`/`ner_tags` are python-repr strings
+(`ast.literal_eval`, malformed rows skip); orphan `I-` tags promote to single-token spans
+rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
+biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
+gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
+each carrying its biolink slot description as `relation_descriptions`).
 
-Smoke run over 5 sampled rows per dataset:
-
-    uv run relmedner build-dataset -t -o ./relmedner-test.avro
-
-Full run:
-
-    uv run relmedner build-dataset -o ./relmedner.avro
+## Output
 
 Output is Avro records of `TrainingExample` (`text`, `entities`, `relations`, ...).
 Relation provenance rides in the Avro records: `negated` (`true` only for sampled
@@ -44,10 +53,15 @@ negatives) and `evidence` (`asserted` for gold-span scripts, `distant` for fullm
 spans, `sampled_negative` for grid-sampled non-observations from the post-training
 corpus). The gliner2 JSONL projection (`to_output()`) emits mention fields only, because
 gliner2 validates every relation value as a mention in the text — sampled negatives
-therefore train under `not_<predicate>` relation names.
+therefore train under `not_<predicate>` relation names. Predicate slot definitions DO
+ride the projection as `relation_descriptions` (the processor consumes them as label
+prompts), mirroring `entity_descriptions`.
 
-The declared-outputs filter is a **permitted-shapes contract**: a row ships if it produced
-something and everything it produced was declared — so entity-only mined rows flow.
+The declared-outputs filter is a **permitted-shapes contract**: a row ships when it
+produced at least one declared shape. Rows may produce fewer shapes than declared
+(entity-only mined rows flow) and may produce extra shapes (the `[entities]`-only
+pile-ner declaration keeps rows whose gazetteer also fired — relations are free signal,
+not a contract violation).
 
 ## How post-training row families work
 
@@ -110,6 +124,28 @@ the only and sufficient lever (~11.5 µs/key lookup).
 A future teacher-distillation pass (gliner-biomed-large agreeing with mined spans) is
 deliberately deferred; `fullmap_mine.resolve_batch` is the interception point.
 
+## Install
+
+    uv sync
+
+## Build the dataset
+
+Smoke run over 5 sampled rows per dataset:
+
+    uv run relmedner build-dataset -t -o ./relmedner-test.avro
+
+Full run on the local DirectRunner — no cluster, no VPN needed (`--direct` skips cluster
+deployment, watching, and shard collection):
+
+    uv run relmedner build-dataset --direct -o ./relmedner.avro
+
+Full run on the LAN flink cluster (requires the VPN route to every `cluster.yaml` worker — the SSH
+gateway alone is not enough, because flink taskmanagers connect back to the laptop's jobmanager
+ports and `YamlClusterParser.jobmanager()` resolves the laptop via a route probe toward the first
+remote):
+
+    uv run relmedner build-dataset -o ./relmedner.avro
+
 ## Testing
 
     uv run pytest -q
@@ -125,5 +161,5 @@ mount is absent, and miner unit tests inject fake `lookup_rows` rows so they nev
 `src/relmedner/data/cluster.yaml`; workers bind-mount the fullmap bundle read-only at
 `/opt/fullmap`. The compute node is only reachable through the gateway SSH hop — from
 off-VPN, add a `ProxyJump` through the gateway in `~/.ssh/config`, or run without the
-cluster entirely: with no pipeline options the DirectRunner keeps output on the local
+cluster entirely: `build-dataset --direct` (no pipeline options) keeps output on the local
 filesystem.

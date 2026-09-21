@@ -214,7 +214,11 @@ def test_gazetteer_shaped_script_relations_validate_through_real_gliner(monkeypa
     Example: TrainingExample = GlinerBiomedScript().run((Tokens, [[0, 0, "Drug"], [5, 5, "Condition"]]))
 
     assert Example.relations == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
+        Relation(
+            name="treats",
+            fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")],
+            description=ScriptUtils.predicate_description("treats"),
+        )
     ]
     GlinerData: ModuleType = load_gliner_data()
     Parsed: Any = GlinerData.InputExample.from_dict(Example.to_output())
@@ -266,3 +270,26 @@ def test_the_generated_schema_matches_its_snapshot() -> None:
     assert Schema["name"] == "TrainingExample"
     assert Schema["namespace"] == "relmedner.ingests"
     assert Fields == ["text", "entities", "classifications", "structures", "relations"]
+
+
+def test_relation_descriptions_are_emitted_and_accepted_by_the_real_gliner_types() -> None:
+    """relations carry biolink slot descriptions; gliner2's processor consumes
+    relation_descriptions as label prompts (processor.py reads schema["relation_descriptions"])
+    even though InputExample does not serialize the key yet -- an upstream gap mirrored in
+    DERIVED_KEYS-style allowances, so assert emission + acceptance, not round-trip"""
+    Described: TrainingExample = TrainingExample(
+        text="dexamethasone treats COPD",
+        entities=[Entity(label="Drug", mentions=["dexamethasone"]), Entity(label="Disease", mentions=["COPD"])],
+        relations=[
+            Relation(
+                name="treats",
+                fields=[RelationField(name="head", value="dexamethasone"), RelationField(name="tail", value="COPD")],
+                description=ScriptUtils.predicate_description("treats"),
+            )
+        ],
+    )
+    Output: dict[str, Any] = Described.to_output()
+    assert set(Output["output"]["relation_descriptions"]) == {"treats"}
+
+    GlinerData: ModuleType = load_gliner_data()
+    assert GlinerData.InputExample.from_dict(Output).validate() == []

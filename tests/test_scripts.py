@@ -159,9 +159,7 @@ def test_the_script_skips_malformed_ner_entries_before_resolution(monkeypatch: p
     _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
 
     assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"], "Disease": ["migraine"]}
-    assert Example.relations == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
 
 
 def test_the_script_emits_gazetteer_relations_between_resolved_mentions(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -178,9 +176,7 @@ def test_the_script_emits_gazetteer_relations_between_resolved_mentions(monkeypa
     Ner: list[list[Any]] = [[0, 0, "Drug"], [5, 5, "Condition"]]
     _, Example = Script.dispatch("GlinerBiomedScript", (("entities",), (Tokens, Ner)))
 
-    assert Example.relations == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
 
 
 def test_the_script_emits_no_relations_on_rows_without_a_trigger(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,3 +204,179 @@ def test_fullmap_resolves_real_mentions_to_biolink_categories() -> None:
     assert ScriptUtils.is_biolink_category(Resolved[0].category)
     assert Resolved[0].curie is not None and ":" in Resolved[0].curie
     assert Resolved[1].origin in {"fallback", "raw"}
+
+
+# ---------------------------------------------------------------------------
+# PileNerBiomedScript + the shared decode/casing/gate primitives (Pile-NER-biomed-IOB ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_literal_list_decodes_python_repr_string_columns() -> None:
+    """the pile-ner parquet stores tokens/ner_tags as python-repr strings, not arrays"""
+    assert ScriptUtils.parse_literal_list("['a', 'b']") == ["a", "b"]
+    assert ScriptUtils.parse_literal_list("['O', 'B-organism', 'I-organism']") == ["O", "B-organism", "I-organism"]
+    assert ScriptUtils.parse_literal_list(["already", "a", "list"]) == ["already", "a", "list"]
+
+
+def test_parse_literal_list_skips_malformed_rows_without_raising() -> None:
+    """skip-don't-coerce: a malformed external row becomes an empty example, never a crash"""
+    assert ScriptUtils.parse_literal_list("'just a string'") == []
+    assert ScriptUtils.parse_literal_list("['a', 1]") == []
+    assert ScriptUtils.parse_literal_list("garbage [") == []
+    assert ScriptUtils.parse_literal_list(None) == []
+    assert ScriptUtils.parse_literal_list(3) == []
+
+
+def test_iob_spans_decodes_iob2_with_inclusive_ends() -> None:
+    assert ScriptUtils.iob_spans(["O", "B-organism", "I-organism", "O", "B-disease", "I-disease", "I-disease", "O"]) == [
+        (1, 2, "organism"),
+        (4, 6, "disease"),
+    ]
+    assert ScriptUtils.iob_spans([]) == []
+    assert ScriptUtils.iob_spans(["O", "O"]) == []
+
+
+def test_iob_spans_promotes_orphan_i_tags_to_single_token_spans() -> None:
+    """1,158 orphan I- tags exist in the corpus; each carries a real mention that must survive"""
+    assert ScriptUtils.iob_spans(["I-orphan", "O", "I-x", "I-x"]) == [(0, 0, "orphan"), (2, 3, "x")]
+    assert ScriptUtils.iob_spans(["B-a", "I-b", "I-a"]) == [(0, 0, "a"), (1, 1, "b"), (2, 2, "a")]
+    assert ScriptUtils.iob_spans(["E-garbage", "O"]) == []
+
+
+def test_normalize_and_pascal_label_collapse_corpus_label_variants() -> None:
+    """97 underscore-variant labels collapse through normalize; pascal_label names raw tail labels
+    the way biolink classes are named so the whole 3,896-type vocabulary stays uniform"""
+    assert ScriptUtils.normalize_iob_label("Anatomical_Structure") == "anatomical structure"
+    assert ScriptUtils.normalize_iob_label("Medical_Condition ") == "medical condition"
+    assert ScriptUtils.pascal_label("medical condition") == "MedicalCondition"
+    assert ScriptUtils.pascal_label("anatomical_structure") == "AnatomicalStructure"
+    assert ScriptUtils.pascal_label("gene/protein") == "GeneProtein"
+    assert ScriptUtils.pascal_label("cell type") == "CellType"
+    assert ScriptUtils.pascal_label("") == ""
+
+
+def test_every_pile_ner_fallback_label_maps_to_a_biolink_category() -> None:
+    """the extended map serves both corpora; every value must stay a real biolink class"""
+    for raw_label, category in ScriptUtils.FALLBACK_LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
+
+
+def test_the_fallback_lookup_normalizes_pile_ner_labels() -> None:
+    """pile-ner labels are lowercase; the map lookup normalizes so both corpora share one map"""
+    Resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions([])
+    assert Resolved == []
+    assert "medical condition" in ScriptUtils.FALLBACK_LABEL_MAP
+    assert ScriptUtils.FALLBACK_LABEL_MAP["medical condition"] == "Disease"
+
+
+def test_the_pile_ner_script_decodes_real_row_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end-to-end: python-repr columns, IOB decode, resolution, grouping, and relation extraction"""
+
+    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+        assert mentions == [("Trypanosoma cruzi", "organism"), ("Chagas disease", "disease"), ("DTUs", "abbreviation")]
+        return [
+            ResolvedMention(
+                mention="Trypanosoma cruzi",
+                category="OrganismTaxon",
+                curie="NCBITaxon:5693",
+                preferred_name="Trypanosoma cruzi",
+                origin="fullmap",
+            ),
+            ResolvedMention(
+                mention="Chagas disease",
+                category="Disease",
+                curie="MONDO:0001444",
+                preferred_name="Chagas disease",
+                origin="fullmap",
+            ),
+            ResolvedMention(mention="DTUs", category="Abbreviation", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens = "['Trypanosoma', 'cruzi', ',', 'the', 'agent', 'of', 'Chagas', 'disease', '.', 'DTUs', '.']"
+    Tags = "['B-organism', 'I-organism', 'O', 'O', 'O', 'O', 'B-disease', 'I-disease', 'O', 'B-abbreviation', 'O']"
+    _, Example = Script.dispatch("PileNerBiomedScript", (("entities",), (Tokens, Tags)))
+
+    assert Example.text == "Trypanosoma cruzi , the agent of Chagas disease . DTUs ."
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "OrganismTaxon": ["Trypanosoma cruzi"],
+        "Disease": ["Chagas disease"],
+        "Abbreviation": ["DTUs"],
+    }
+    assert Example.entities[0].description is not None and "[fullmap: NCBITaxon:5693 | Trypanosoma cruzi]" in Example.entities[0].description
+    assert Example.entities[2].description is None  # raw tail labels carry no description
+
+
+def test_the_pile_ner_script_pascalcases_raw_labels_but_keeps_fallback_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """raw labels surface biolink-cased (decision: keep the tail, case it like biolink);
+    fallback-resolved labels already name a biolink class and must stay untouched"""
+
+    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="ibuprofen", category="Drug", origin="fallback"),
+            ResolvedMention(mention="some widget", category="job title", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens = "['ibuprofen', 'is', 'a', 'some', 'widget', '.']"
+    Tags = "['B-drug', 'O', 'O', 'B-job title', 'I-job title', 'O']"
+    _, Example = Script.dispatch("PileNerBiomedScript", (("entities",), (Tokens, Tags)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Drug": ["ibuprofen"],
+        "JobTitle": ["some widget"],
+    }
+
+
+def test_the_pile_ner_script_emits_nothing_for_empty_or_mismatched_rows() -> None:
+    _, Empty = Script.dispatch("PileNerBiomedScript", (("entities",), ("[]", "[]")))
+    assert Empty.text == ""
+    assert Empty.populated() == frozenset()
+    _, Malformed = Script.dispatch("PileNerBiomedScript", (("entities",), ("garbage [", "'not a list'")))
+    assert Malformed.text == ""
+    _, Mismatched = Script.dispatch("PileNerBiomedScript", (("entities",), ("['a', 'b']", "['O']")))
+    assert Mismatched.text == "a b"
+    assert Mismatched.populated() == frozenset()
+
+
+def test_the_pile_ner_script_extracts_relations_over_resolved_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gates live inside extract_relations over span categories; a compatible pair emits an edge"""
+
+    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="dexamethasone", category="SmallMolecule", curie="CHEBI:41180", preferred_name="dexamethasone", origin="fullmap"),
+            ResolvedMention(mention="COPD", category="Disease", curie="MONDO:0005002", preferred_name="COPD", origin="fullmap"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens = "['dexamethasone', 'in', 'the', 'treatment', 'of', 'COPD', '.']"
+    Tags = "['B-drug', 'O', 'O', 'O', 'O', 'B-disease', 'O']"
+    _, Example = Script.dispatch("PileNerBiomedScript", (("entities",), (Tokens, Tags)))
+
+    assert Example.relations == [expected_relation("treats", "dexamethasone", "COPD")]
+
+
+def test_the_pile_ner_script_relation_gate_rejects_incompatible_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """biolink domain/range: expressed_in needs a gene-ish head; a chemical head must not emit"""
+
+    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="benzene", category="ChemicalEntity", curie="CHEBI:167164", preferred_name="benzene", origin="fullmap"),
+            ResolvedMention(mention="epithelial cells", category="Cell", curie="CL:0000066", preferred_name="epithelial cell", origin="fullmap"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens = "['benzene', 'expressed', 'in', 'epithelial', 'cells', '.']"
+    Tags = "['B-chemical', 'O', 'O', 'B-cell type', 'I-cell type', 'O']"
+    _, Example = Script.dispatch("PileNerBiomedScript", (("entities",), (Tokens, Tags)))
+
+    assert Example.relations == []
+
+
+def expected_relation(name: str, head: str, tail: str) -> Relation:
+    """emitted relations carry their biolink slot description; build the matching expectation"""
+    return Relation(
+        name=name,
+        fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
+        description=ScriptUtils.predicate_description(name),
+    )

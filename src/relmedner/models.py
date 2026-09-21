@@ -166,6 +166,9 @@ class RelationField(StrictBase):
 class Relation(StrictBase):
     name: str = Field(...)
     fields: list[RelationField] = Field(...)
+    description: str | None = Field(None)
+    """biolink slot definition for the predicate (ScriptUtils.predicate_description); emitted as
+    relation_descriptions and consumed by gliner2's processor as a label prompt"""
     negated: bool = Field(False)
     """biolink Association.negated: True asserts the relation is false; this pipeline never
     asserts negations, so every emitted relation carries False (post-training-plan decision)"""
@@ -221,8 +224,15 @@ class TrainingExample(StrictBase):
         # negated/evidence deliberately stay OUT of the gliner2 projection: gliner2's
         # Relation(name, **fields) swallows extra keys into _fields (dropping head/tail on
         # round-trip) and InputExample.validate() requires every relation value to occur in
-        # the text. Provenance rides in the avro records (asdict) instead.
-        return {"relations": [{relation.name: {field.name: field.value for field in relation.fields}} for relation in self.relations]}
+        # the text. Provenance rides in the avro records (asdict) instead. Descriptions DO
+        # ride the projection: the processor consumes them as label prompts.
+        described: list[Description] = [
+            Description(key=relation.name, description=relation.description) for relation in self.relations if relation.description
+        ]
+        output: dict[str, Any] = {
+            "relations": [{relation.name: {field.name: field.value for field in relation.fields}} for relation in self.relations]
+        }
+        return output | ({"relation_descriptions": describe(described)} if described else {})
 
     def to_output(self: Self) -> dict[str, Any]:
         populated: frozenset[str] = self.populated()
