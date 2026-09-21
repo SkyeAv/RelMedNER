@@ -6,11 +6,45 @@ from tablassert.biolink import Predicates
 from relmedner import gazetteer
 from relmedner.gazetteer import MAX_TRIGGER_DISTANCE, PREDICATE_TRIGGERS, SENTENCE_BREAKS, extract_relations, find_triggers, validate_trigger_table
 from relmedner.models import Relation, RelationField
+from relmedner.utils import ScriptUtils
+
+EXPECTED_PREDICATES: frozenset[str] = frozenset(
+    {
+        "treats",
+        "treated_by",
+        "preventative_for_condition",
+        "causes",
+        "caused_by",
+        "associated_with",
+        "correlated_with",
+        "interacts_with",
+        "binds",
+        "biomarker_for",
+        "expressed_in",
+        "located_in",
+        "decreases_amount_or_activity_of",
+        "increases_amount_or_activity_of",
+        "has_adverse_event",
+        "diagnoses",
+        "has_phenotype",
+        "part_of",
+        "in_taxon",
+        "superclass_of",
+        "participates_in",
+        "precedes",
+        "occurs_in",
+    }
+)
 
 
-def test_the_vocabulary_covers_exactly_the_six_starter_predicates() -> None:
-    """locks the predicate surface so US-002 consumers see exactly the planned starters and nothing else"""
-    assert set(PREDICATE_TRIGGERS) == {"treats", "associated_with", "interacts_with", "causes", "biomarker_for", "expressed_in"}
+def test_the_vocabulary_covers_exactly_the_planned_predicates() -> None:
+    """locks the predicate surface so consumers see exactly the planned starters and nothing else"""
+    assert set(PREDICATE_TRIGGERS) == EXPECTED_PREDICATES
+
+
+def test_the_table_stays_at_the_planned_phrase_count() -> None:
+    """the lexicon was mined corpus-wide; silent phrase drift would change trigger recall unnoticed"""
+    assert sum(len(phrases) for phrases in PREDICATE_TRIGGERS.values()) == 129
 
 
 def test_every_predicate_key_is_a_biolink_predicates_member() -> None:
@@ -20,25 +54,90 @@ def test_every_predicate_key_is_a_biolink_predicates_member() -> None:
 
 
 def test_the_starter_phrases_are_pinned_exactly() -> None:
-    """silent phrase drift would change trigger recall with no other test noticing"""
+    """silent phrase drift would change trigger recall with no other test noticing;
+    direction-bearing phrases are pinned hardest: caused_by and superclass_of were corrected
+    away from causes/subclass_of and must never drift back"""
+    assert PREDICATE_TRIGGERS["caused_by"] == (
+        ("caused", "by"),
+        ("induced", "by"),
+        ("due", "to"),
+        ("secondary", "to"),
+        ("resulting", "from"),
+        ("attributable", "to"),
+    )
+    assert (
+        (  # and no other predicate may claim the direction-bearing "caused by" phrase
+            "caused by",
+            "induced by",
+            "due to",
+        )
+        == tuple(" ".join(p) for p in PREDICATE_TRIGGERS["caused_by"][:3])
+    )
+    assert PREDICATE_TRIGGERS["superclass_of"] == (
+        ("such", "as"),
+        ("including",),
+        ("includes",),
+        ("include",),
+        ("a", "type", "of"),
+        ("a", "form", "of"),
+        ("classified", "as"),
+    )
     assert PREDICATE_TRIGGERS["treats"] == (
         ("treats",),
         ("to", "treat"),
         ("is", "used", "to", "treat"),
+        ("used", "to", "treat"),
         ("for", "the", "treatment", "of"),
         ("in", "the", "treatment", "of"),
+        ("therapy", "for"),
+        ("effective", "against"),
     )
-    assert PREDICATE_TRIGGERS["associated_with"] == (("associated", "with"),)
-    assert PREDICATE_TRIGGERS["interacts_with"] == (("interacts", "with"), ("interaction", "with"))
-    assert PREDICATE_TRIGGERS["causes"] == (("causes",), ("caused", "by"), ("cause", "of"))
-    assert PREDICATE_TRIGGERS["biomarker_for"] == (("biomarker", "for"),)
-    assert PREDICATE_TRIGGERS["expressed_in"] == (("expressed", "in"),)
+    assert PREDICATE_TRIGGERS["associated_with"] == (
+        ("associated", "with"),
+        ("is", "associated", "with"),
+        ("are", "associated", "with"),
+        ("was", "associated", "with"),
+        ("were", "associated", "with"),
+        ("linked", "to"),
+        ("in", "association", "with"),
+    )
+    assert PREDICATE_TRIGGERS["interacts_with"] == (
+        ("interacts", "with"),
+        ("interaction", "with"),
+        ("interacting", "with"),
+        ("interactions", "with"),
+    )
+    assert PREDICATE_TRIGGERS["causes"] == (
+        ("causes",),
+        ("cause", "of"),
+        ("induces",),
+        ("leads", "to"),
+        ("leading", "to"),
+        ("results", "in"),
+        ("resulting", "in"),
+        ("triggers",),
+    )
+    assert PREDICATE_TRIGGERS["biomarker_for"] == (
+        ("biomarker", "for"),
+        ("biomarkers", "for"),
+        ("marker", "for"),
+        ("predictor", "of"),
+        ("indicative", "of"),
+    )
+    assert PREDICATE_TRIGGERS["expressed_in"] == (
+        ("expressed", "in"),
+        ("expression", "in"),
+        ("is", "expressed", "in"),
+        ("are", "expressed", "in"),
+        ("overexpressed", "in"),
+    )
 
 
 def test_find_triggers_matches_single_and_multi_token_phrases_with_inclusive_ends() -> None:
-    """end index is inclusive so US-002 can slice mention spans the same way GLiNER spans do"""
+    """end index is inclusive so US-002 can slice mention spans the same way GLiNER spans do;
+    the longest phrase wins, so "is associated with" beats its nested "associated with"""
     Tokens: list[str] = ["Aspirin", "treats", "headache", ";", "smoking", "is", "associated", "with", "cancer"]
-    assert find_triggers(Tokens) == [(1, 1, "treats"), (6, 7, "associated_with")]
+    assert find_triggers(Tokens) == [(1, 1, "treats"), (5, 7, "associated_with")]
 
 
 def test_find_triggers_is_case_insensitive() -> None:
@@ -47,9 +146,10 @@ def test_find_triggers_is_case_insensitive() -> None:
 
 
 def test_find_triggers_returns_every_occurrence_in_left_to_right_order() -> None:
-    """US-002 pairs each trigger with nearby mentions, so no occurrence may be dropped after the first"""
+    """US-002 pairs each trigger with nearby mentions, so no occurrence may be dropped after the first;
+    "caused by" is the reversed direction of "causes" and must map to caused_by, never causes"""
     Tokens: list[str] = ["statins", "cause", "of", "myalgia", "?", "injury", "caused", "by", "statins"]
-    assert find_triggers(Tokens) == [(1, 2, "causes"), (6, 7, "causes")]
+    assert find_triggers(Tokens) == [(1, 2, "causes"), (6, 7, "caused_by")]
 
 
 def test_find_triggers_prefers_the_longest_phrase_and_consumes_nested_matches() -> None:
@@ -121,9 +221,7 @@ def test_extract_relations_emits_a_basic_treats_pair() -> None:
     """the happy path must produce one treats relation joining the nearest mentions by surface"""
     Tokens: list[str] = ["Aspirin", "is", "used", "to", "treat", "migraine"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (5, 5, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "Aspirin", "migraine")]
 
 
 def test_extract_relations_skips_triggers_with_no_head_mention() -> None:
@@ -172,18 +270,14 @@ def test_extract_relations_keeps_mentions_exactly_at_the_window_boundary() -> No
     """the distance cap is inclusive: a gap of exactly fifteen tokens on either side still binds"""
     Tokens: list[str] = ["Aspirin", *["fill"] * 14, "treats", "migraine"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (16, 16, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "Aspirin", "migraine")]
 
 
 def test_extract_relations_keeps_a_tail_exactly_at_the_window_boundary() -> None:
     """the tail cap is inclusive: a gap of exactly fifteen tokens after the trigger end still binds"""
     Tokens: list[str] = ["Aspirin", "treats", *["fill"] * 15, "migraine"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (17, 17, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "Aspirin", "migraine")]
 
 
 def test_extract_relations_skips_a_tail_one_past_the_window_boundary() -> None:
@@ -225,9 +319,7 @@ def test_extract_relations_deduplicates_identical_predicate_head_tail_triples() 
     """two identical triggers binding the same spans describe one fact, so only the first survives"""
     Tokens: list[str] = ["smoking", "causes", "causes", "cancer"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "Behavior"), (3, 3, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="causes", fields=[RelationField(name="head", value="smoking"), RelationField(name="tail", value="cancer")])
-    ]
+    assert extract_relations(Tokens, Spans) == [expected_relation("causes", "smoking", "cancer")]
 
 
 def test_extract_relations_deduplicates_same_endpoint_coordinates_across_categories(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -238,24 +330,28 @@ def test_extract_relations_deduplicates_same_endpoint_coordinates_across_categor
     monkeypatch.setattr(gazetteer, "_nearest_before", lambda spans, trigger_start: next(Heads))
     monkeypatch.setattr(gazetteer, "_nearest_after", lambda spans, trigger_end: next(Tails))
 
-    assert extract_relations(Tokens, []) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="aspirin"), RelationField(name="tail", value="migraine")])
-    ]
+    assert extract_relations(Tokens, []) == [expected_relation("treats", "aspirin", "migraine")]
 
 
 def test_extract_relations_picks_the_nearest_overlapping_mention_on_each_side() -> None:
-    """among overlapping candidates the closest span wins: greatest end before, smallest start after"""
+    """among overlapping candidates the closest span wins: greatest end before, smallest start after;
+    labels respect biolink domain/range (treats needs a chemical-ish head and a disease-ish tail)"""
     Tokens: list[str] = ["alpha", "fill", "beta", "gamma", "treats", "delta", "fill", "epsilon"]
-    Spans: list[tuple[int, int, str]] = [(0, 0, "Disease"), (2, 3, "Disease"), (5, 5, "ChemicalEntity"), (7, 7, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="beta gamma"), RelationField(name="tail", value="delta")])
-    ]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Disease"), (2, 3, "ChemicalEntity"), (5, 5, "Disease"), (7, 7, "ChemicalEntity")]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "beta gamma", "delta")]
 
 
 def test_extract_relations_matches_triggers_case_insensitively_and_preserves_surfaces() -> None:
     """trigger matching ignores case while the emitted surfaces keep the original casing"""
     Tokens: list[str] = ["ASPIRIN", "TREATS", "MIGRAINE"]
     Spans: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
-    assert extract_relations(Tokens, Spans) == [
-        Relation(name="treats", fields=[RelationField(name="head", value="ASPIRIN"), RelationField(name="tail", value="MIGRAINE")])
-    ]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "ASPIRIN", "MIGRAINE")]
+
+
+def expected_relation(name: str, head: str, tail: str) -> Relation:
+    """emitted relations carry their biolink slot description; build the matching expectation"""
+    return Relation(
+        name=name,
+        fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
+        description=ScriptUtils.predicate_description(name),
+    )

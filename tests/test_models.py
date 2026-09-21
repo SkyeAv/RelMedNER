@@ -17,6 +17,7 @@ from relmedner.models import (
     TrainingExample,
 )
 from relmedner.pipeline import matches_declared_outputs
+from relmedner.utils import ScriptUtils
 
 
 def every_strict_subclass(base: type[StrictBase] = StrictBase) -> list[type[StrictBase]]:
@@ -76,6 +77,26 @@ def test_matches_declared_outputs_keeps_any_nonempty_subset_of_the_declared_shap
     assert matches_declared_outputs((outputs, Example)) is expected
 
 
+@pytest.mark.parametrize(
+    ("outputs", "expected"),
+    [
+        (("entities",), True),
+        (("entities", "relations"), True),
+        (("relations",), True),
+        (("classifications",), False),
+    ],
+)
+def test_matches_declared_outputs_keeps_extra_populated_shapes(outputs: tuple[str, ...], expected: bool) -> None:
+    """subset semantics: a declared [entities] ingest keeps rows that also extracted relations"""
+    Example: TrainingExample = TrainingExample(
+        text="Aspirin treats headache",
+        entities=[Entity(label="Drug", mentions=["Aspirin"])],
+        relations=[Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="headache")])],
+    )
+
+    assert matches_declared_outputs((outputs, Example)) is expected
+
+
 def test_an_example_with_no_tasks_never_matches_a_declaration() -> None:
     assert matches_declared_outputs((("entities",), TrainingExample(text="nothing here"))) is False
 
@@ -88,6 +109,37 @@ def test_to_output_emits_descriptions_only_when_they_are_declared() -> None:
 
     assert "entity_descriptions" not in Bare["output"]
     assert Described["output"]["entity_descriptions"] == {"person": "Names of people"}
+
+
+def test_to_output_emits_relation_descriptions_only_when_they_are_declared() -> None:
+    """relation_descriptions mirrors entity_descriptions: emitted only when a relation carries one"""
+    Bare: TrainingExample = TrainingExample(
+        text="Aspirin treats headache",
+        relations=[Relation(name="treats", fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="headache")])],
+    )
+    Described: TrainingExample = TrainingExample(
+        text="Aspirin treats headache",
+        relations=[
+            Relation(
+                name="treats",
+                fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="headache")],
+                description="holds between an intervention and a condition it ameliorates",
+            )
+        ],
+    )
+
+    assert "relation_descriptions" not in Bare.to_output()["output"]
+    assert Described.to_output()["output"]["relation_descriptions"] == {"treats": "holds between an intervention and a condition it ameliorates"}
+
+
+def test_predicate_description_reads_biolink_slots_for_every_declared_predicate() -> None:
+    """the biolink slot yaml covers all 23 gazetteer predicates; the lookup normalizes underscores"""
+    from relmedner.gazetteer import PREDICATE_TRIGGERS
+
+    missing: list[str] = [predicate for predicate in PREDICATE_TRIGGERS if ScriptUtils.predicate_description(predicate) is None]
+    assert not missing, missing
+    assert ScriptUtils.predicate_description("superclass_of") is not None
+    assert ScriptUtils.predicate_description("not_a_biolink_predicate") is None
 
 
 def test_choice_fields_round_trip_into_the_gliner_choice_shape() -> None:

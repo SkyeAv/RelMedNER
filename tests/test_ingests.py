@@ -41,6 +41,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner", "negatives"),
         ),
     ),
+    "disi-unibo-nlp/Pile-NER-biomed-IOB": (
+        "hf",
+        (
+            ("script", "PileNerBiomedScript", ("entities",)),
+            "disi-unibo-nlp/Pile-NER-biomed-IOB",
+            None,
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
 }
 
 

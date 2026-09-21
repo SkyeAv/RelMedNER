@@ -12,6 +12,17 @@ datasets:
       - tokenized_text
       - ner
   - task:
+      type: script
+      name: PileNerBiomedScript
+      outputs:
+        - entities
+    source: hf
+    dataset: disi-unibo-nlp/Pile-NER-biomed-IOB
+    split: train
+    columns_out:
+      - tokens
+      - ner_tags
+  - task:
       type: fullmap
       outputs:
         - entities

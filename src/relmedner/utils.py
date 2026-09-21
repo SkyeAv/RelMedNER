@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import re
 from dataclasses import dataclass
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
@@ -39,15 +41,297 @@ class ResolvedMention:
     origin: str = "raw"  # "fullmap" | "fallback" | "raw"
 
 
+def _bucket(keys: str, categories: str) -> tuple[tuple[str, ...], frozenset[str]]:
+    """parse a ResolutionGate BUCKETS entry: space-separated substrings + allowed biolink ancestors"""
+    return tuple(keys.split()), frozenset(categories.split())
+
+
+LABEL_SPLIT: re.Pattern[str] = re.compile(r"[\s_/\-]+")
+ACRONYM_MENTION: re.Pattern[str] = re.compile(r"^[A-Z0-9][A-Z0-9\-/]{0,3}$")
+MODEL_ORGANISM_PREFIXES: tuple[str, ...] = ("FB:", "ZFIN:", "WB:", "MGI:", "SGD:", "RGD:", "DICTYBASE:", "POMBASE:", "TAIR:", "XENBASE:")
+
+
+class ResolutionGate:
+    """rejects fullmap hits that contradict the source corpus's own label;
+    shared by every Script so the gate improves all ingests at once.
+
+    Rejections fall through to the fallback map / raw label (the mention is never dropped).
+    Three independent checks, each measured against the Pile-NER-biomed-IOB probe:
+
+    1. model-organism CURIE guard -- human biomed text rarely means the Drosophila gene "flu"
+    2. label<->category bucket compatibility -- "organization" must not resolve to SmallMolecule
+    3. acronym guard -- short uppercase mentions over catch-all labels are fullmap collision bait
+    """
+
+    # catch-all labels the corpus uses as placeholders; they carry no semantic signal in either
+    # direction, so they never trigger the bucket check and only gate the acronym check
+    OPEN_LABELS: ClassVar[frozenset[str]] = frozenset(
+        {
+            "concept",
+            "entity",
+            "entity type",
+            "other",
+            "biological",
+            "biological entity",
+            "biomolecule",
+            "medical",
+            "medical term",
+            "medical concept",
+            "thing",
+            "item",
+            "term",
+            "object",
+            "type",
+            "name",
+            "structure",
+            "component",
+            "factor",
+            "element",
+            "system",
+            "field",
+            "biological_entity",
+            "material",
+            "product",
+            "technology",
+            "method",
+            "activity",
+            "event",
+            "data",
+            "value",
+            "level",
+            "number",
+            "time",
+            "date",
+            "age",
+            "study",
+            "class",
+            "category",
+            "attribute value",
+        }
+    )
+
+    # label-substring -> allowed biolink ancestors; an unknown label is ungated (no opinion).
+    # entries are space-separated for readability and split at import time
+    BUCKETS: ClassVar[dict[str, tuple[tuple[str, ...], frozenset[str]]]] = {
+        "chemical": _bucket(
+            "chemical drug compound substance molecule medication nutrient metabolite reagent hormone toxin ingredient pharmac",
+            "ChemicalEntity MolecularEntity Drug Food ChemicalMixture Treatment Protein Polypeptide",
+        ),
+        "gene": _bucket(
+            "gene protein enzyme peptide receptor transcript rna dna cytokine antibody antigen kinase mutation genetic variation variant allele",
+            "GenomicEntity Gene Protein Polypeptide NucleicAcidEntity MacromolecularComplex"
+            " ChemicalEntity GeneFamily ProteinFamily ProteinDomain SequenceVariant",
+        ),
+        "disease": _bucket(
+            "disease disorder condition syndrome symptom illness pathology injury infection cancer tumor psychopathology phenotype sign",
+            "DiseaseOrPhenotypicFeature Disease PhenotypicFeature PathologicalProcess"
+            " ClinicalFinding BiologicalProcess OrganismTaxon Phenomenon ClinicalAttribute",
+        ),
+        "anatomy": _bucket(
+            "anatom body part organ tissue cell region body fluid gland muscle bone",
+            "AnatomicalEntity Cell CellLine GrossAnatomicalStructure CellularComponent OrganismalEntity MacromolecularComplex",
+        ),
+        "organism": _bucket(
+            "organism species animal plant bacteri virus fungus fungi pathogen microorganism taxon strain",
+            "OrganismTaxon OrganismalEntity IndividualOrganism Virus Bacterium Fungus Plant Cell ChemicalEntity PopulationOfIndividualOrganisms",
+        ),
+        "process": _bucket(
+            "process pathway mechanism function physiolog metabolism",
+            "BiologicalProcessOrActivity BiologicalProcess Pathway MolecularActivity"
+            " PhysiologicalProcess Activity Behavior Phenomenon PathologicalProcess",
+        ),
+        "procedure": _bucket(
+            "procedure treatment therapy test intervention surgery assay technique diagnos screening examination imaging vaccination",
+            "Procedure Treatment ClinicalIntervention Device DiagnosticAid Activity Study ClinicalEntity ChemicalEntity",
+        ),
+        "person": _bucket(
+            "person patient group population cohort demographic occupation profession job ethnicity nationality people age group gender",
+            "PopulationOfIndividualOrganisms Cohort StudyPopulation IndividualOrganism Human Agent Attribute BiologicalSex OrganismTaxon Behavior",
+        ),
+        "place": _bucket(
+            "location country city place geograph facility",
+            "GeographicLocation PlanetaryEntity EnvironmentalFeature AdministrativeEntity AnatomicalEntity",
+        ),
+        "org": _bucket(
+            "organization institution company agency university hospital publisher",
+            "Agent AdministrativeEntity InformationContentEntity PopulationOfIndividualOrganisms",
+        ),
+        "info": _bucket(
+            "publication study document database article journal report dataset abbreviation topic",
+            "InformationContentEntity Publication Study Dataset Attribute Activity",
+        ),
+        "measure": _bucket(
+            "measurement quantity unit percentage statistic parameter score rate dose attribute property characteristic trait",
+            "Attribute ClinicalAttribute ClinicalMeasurement OrganismAttribute PhenotypicQuality"
+            " SocioeconomicAttribute StudyVariable InformationContentEntity PhenotypicFeature"
+            " Procedure",
+        ),
+        "device": _bucket(
+            "device equipment instrument tool machine",
+            "Device ProcessedMaterial ChemicalEntity MaterialSample InformationContentEntity Procedure",
+        ),
+    }
+
+    # labels carrying genomic signal are allowed to keep model-organism CURIE hits (KRT6 -> MGI Krt6)
+    GENEISH_LABEL_MARKERS: ClassVar[tuple[str, ...]] = ("gene", "protein", "enzyme", "biomarker", "rna", "dna", "allele", "locus", "transcript")
+
+    def __init__(self: Self) -> None:
+        raise NotImplementedError("ResolutionGate is a namespace of classmethods")
+
+    @classmethod
+    def accept(cls, mention: str, raw_label: str, curie: str | None, category: str) -> bool:
+        """True when a fullmap hit is semantically compatible with the corpus's own IOB label"""
+        label: str = ScriptUtils.normalize_iob_label(raw_label)
+        if cls.is_model_organism_mismatch(curie, label):
+            return False
+        if not cls.is_label_compatible(label, category):
+            return False
+        if cls.is_acronym_over_open_label(mention, label):
+            return False
+        return True
+
+    @classmethod
+    def is_model_organism_mismatch(cls, curie: str | None, normalized_label: str) -> bool:
+        """model-organism gene CURIEs are systematic false positives on non-genomic labels"""
+        if not curie:
+            return False
+        prefix_hit = curie.upper().startswith(MODEL_ORGANISM_PREFIXES)
+        genomic_label = any(marker in normalized_label for marker in cls.GENEISH_LABEL_MARKERS)
+        return prefix_hit and not genomic_label
+
+    @classmethod
+    def is_label_compatible(cls, normalized_label: str, category: str) -> bool:
+        """every bucket the label triggers must be consistent with the resolved category's ancestors;
+        OPEN labels, labels matching no bucket, and non-biolink categories carry no opinion"""
+        if normalized_label in cls.OPEN_LABELS:
+            return True
+        triggered: list[frozenset[str]] = [allowed for keys, allowed in cls.BUCKETS.values() if any(key in normalized_label for key in keys)]
+        if not triggered:
+            return True
+        ancestors: frozenset[str] = cls.ancestors(category)
+        return not ancestors or any(ancestors & allowed for allowed in triggered)
+
+    @classmethod
+    def is_acronym_over_open_label(cls, mention: str, normalized_label: str) -> bool:
+        """short uppercase mentions (HVA, US, CP) over catch-all labels are fullmap collision bait"""
+        return bool(ACRONYM_MENTION.match(mention)) and normalized_label in cls.OPEN_LABELS
+
+    @staticmethod
+    @cache
+    def ancestors(category: str) -> frozenset[str]:
+        """biolink class mro names; a non-biolink category has empty ancestors (no opinion downstream)"""
+        from biolink_model.datamodel import pydanticmodel_v2
+
+        model = getattr(pydanticmodel_v2, category, None)
+        if not isinstance(model, type):
+            return frozenset()
+        return frozenset(ancestor.__name__ for ancestor in model.__mro__)
+
+
+def _names(names: str) -> frozenset[str]:
+    """parse a space-separated biolink ancestor list into a frozenset"""
+    return frozenset(names.split())
+
+
+class PredicateRangeGate:
+    """rejects gazetteer relations whose head/tail biolink categories contradict the predicate's
+    biolink domain/range; hand-authored from biolink-model association classes and slot ranges
+    (the pure YAML derivation is too brittle: one association subclass per predicate).
+
+    No-opinion rules, both measured against the Pile-NER-biomed-IOB probe:
+    - ANY (None) sides are unconstrained
+    - a side whose category is not a biolink class (PascalCased raw label) has empty ancestors
+      and imposes no constraint -- without this, correct edges like
+      caused_by: Respiratory insufficiency -> dapsone-induced methemoglobinemia die on a raw tail
+    """
+
+    CHEM: ClassVar[frozenset[str]] = _names("ChemicalEntity MolecularEntity Drug ChemicalMixture Food Treatment Protein Polypeptide")
+    MOL: ClassVar[frozenset[str]] = _names(
+        "ChemicalEntity MolecularEntity Drug GenomicEntity Protein Polypeptide MacromolecularComplex NucleicAcidEntity GeneFamily ProteinFamily"
+    )
+    GENEP: ClassVar[frozenset[str]] = _names(
+        "GenomicEntity Gene Protein Polypeptide ProteinDomain ProteinFamily GeneFamily MacromolecularComplex NucleicAcidEntity"
+    )
+    DIS: ClassVar[frozenset[str]] = _names(
+        "DiseaseOrPhenotypicFeature Disease PhenotypicFeature ClinicalFinding PathologicalProcess OrganismTaxon OrganismalEntity"
+    )
+    ANAT: ClassVar[frozenset[str]] = _names(
+        "AnatomicalEntity Cell CellLine GrossAnatomicalStructure CellularComponent OrganismalEntity MacromolecularComplex"
+    )
+    PROC: ClassVar[frozenset[str]] = _names(
+        "BiologicalProcessOrActivity BiologicalProcess Pathway MolecularActivity"
+        " PhysiologicalProcess PathologicalProcess Activity Behavior Phenomenon"
+    )
+    TAXON: ClassVar[frozenset[str]] = _names(
+        "OrganismTaxon IndividualOrganism CellularOrganism Virus Bacterium Fungus Plant Mammal"
+        " Vertebrate Invertebrate Cell CellLine PopulationOfIndividualOrganisms"
+    )
+
+    # predicate -> (allowed head-ancestor sets joined by "|", allowed tail-ancestor sets joined by "|");
+    # None means ANY. Ancestor groups are ORs; head and tail are ANDs.
+    DOMRANGE: ClassVar[dict[str, tuple[str | None, str | None]]] = {
+        "treats": ("CHEM|Treatment|Procedure", "DIS"),
+        "treated_by": ("DIS|OrganismalEntity|PopulationOfIndividualOrganisms|IndividualOrganism|Human", "CHEM|Treatment|Procedure"),
+        "preventative_for_condition": ("CHEM|Treatment|Procedure", "DIS"),
+        "causes": ("CHEM|MOL|GENEP|PROC|DIS|TAXON", "DIS|PROC"),
+        "caused_by": ("DIS|PROC", "CHEM|MOL|GENEP|PROC|DIS|TAXON"),
+        "associated_with": (None, None),
+        "correlated_with": (None, None),
+        "interacts_with": ("MOL", "MOL"),
+        "binds": ("MOL", "MOL"),
+        "biomarker_for": ("MOL|ClinicalMeasurement|Attribute|InformationContentEntity", "DIS|PROC"),
+        "expressed_in": ("GENEP", "ANAT|TAXON"),
+        "located_in": ("MOL|ANAT|TAXON|PROC", "ANAT|GeographicLocation|PlanetaryEntity|CellularComponent|Cell"),
+        "decreases_amount_or_activity_of": ("CHEM|MOL|GENEP|PROC|Treatment", "MOL|GENEP|PROC|DIS|ClinicalMeasurement|Attribute"),
+        "increases_amount_or_activity_of": ("CHEM|MOL|GENEP|PROC|Treatment", "MOL|GENEP|PROC|DIS|ClinicalMeasurement|Attribute"),
+        "has_adverse_event": ("CHEM|Treatment|Procedure|Drug", "DIS"),
+        "diagnoses": ("Procedure|DiagnosticAid|ClinicalMeasurement|InformationContentEntity|Device|Treatment|ChemicalEntity", "DIS|ClinicalFinding"),
+        "has_phenotype": ("DIS|Genotype|IndividualOrganism|PopulationOfIndividualOrganisms|OrganismalEntity|Human", "DIS"),
+        "part_of": (None, None),
+        "in_taxon": ("MOL|ANAT|SequenceVariant|Gene|Protein|GenomicEntity|NucleicAcidEntity|ChemicalEntity|Cell|CellLine", "TAXON"),
+        "superclass_of": (None, None),
+        "participates_in": ("GENEP|MOL|ANAT|Cell", "PROC"),
+        "precedes": ("PROC|ANAT|MOL|GENEP", "PROC|ANAT|MOL|GENEP|DIS"),
+        "occurs_in": ("PROC|MOL|GENEP|DIS|ANAT", "ANAT|TAXON|PROC|GeographicLocation|PopulationOfIndividualOrganisms|IndividualOrganism"),
+    }
+
+    def __init__(self: Self) -> None:
+        raise NotImplementedError("PredicateRangeGate is a namespace of classmethods")
+
+    @classmethod
+    def accept(cls, predicate: str, head_category: str, tail_category: str) -> bool:
+        """True when head/tail biolink categories are compatible with the predicate's domain/range;
+        a side that is not a biolink class (empty ancestors) imposes no constraint on its side"""
+        entry: tuple[str | None, str | None] | None = cls.DOMRANGE.get(predicate)
+        if entry is None:
+            return True
+        head_ancestors: frozenset[str] = ResolutionGate.ancestors(head_category)
+        tail_ancestors: frozenset[str] = ResolutionGate.ancestors(tail_category)
+        return cls._side_ok(entry[0], head_ancestors) and cls._side_ok(entry[1], tail_ancestors)
+
+    @classmethod
+    def _side_ok(cls, allowed: str | None, ancestors: frozenset[str]) -> bool:
+        if allowed is None or not ancestors:
+            return True
+        return any(ancestors & cls._group(group) for group in allowed.split("|"))
+
+    @classmethod
+    @cache
+    def _group(cls, group: str) -> frozenset[str]:
+        """resolve one OR-group name to its ancestor set; bare class names form a singleton"""
+        named: frozenset[str] | None = getattr(cls, group, None)
+        return named if named is not None else frozenset({group})
+
+
 class ScriptUtils:
     """helpers shared across Script classes; factor out later if this grows"""
 
     BIOLINK_PREFIX: ClassVar[str] = BIOLINK_PREFIX
     FULLMAP_TAXON: ClassVar[str] = "9606"
-    # raw gliner-biomed labels -> biolink classes, consulted only after fullmap misses;
-    # keys are lowercase and looked up on raw_label.lower(); values must be members of
-    # tablassert Categories (validated by test_every_fallback_label_maps_to_a_biolink_category);
-    # dataset-specific vocabularies ride on top via resolve_mentions(label_map=...)
+    # raw gliner-biomed labels -> biolink classes, consulted only after fullmap misses. Keys are
+    # lowercase and looked up on raw_label.lower(); values must be members of tablassert Categories
+    # (validated by test_every_fallback_label_maps_to_a_biolink_category); dataset-specific
+    # vocabularies ride on top via resolve_mentions(label_map=...) and live with their dataset
     FALLBACK_LABEL_MAP: ClassVar[dict[str, str]] = {
         "drug": "Drug",
         "drug product": "Drug",
@@ -76,6 +360,45 @@ class ScriptUtils:
     @staticmethod
     def join_tokens(tokens: list[str]) -> str:
         return " ".join(tokens)
+
+    @staticmethod
+    def parse_literal_list(value: Any) -> list[str]:
+        """safely decode python-repr string columns (ast.literal_eval, no code execution);
+        malformed rows yield [] so callers skip them instead of crashing (skip-don't-coerce)"""
+        try:
+            decoded = ast.literal_eval(value) if isinstance(value, str) else value
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            return []
+        if not isinstance(decoded, list) or any(not isinstance(item, str) for item in decoded):
+            return []
+        return decoded
+
+    @staticmethod
+    def iob_spans(tags: list[str]) -> list[tuple[int, int, str]]:
+        """decode IOB2 tags into (start, end_inclusive, label) triples; orphan I- tags
+        (no matching B- of the same type) are promoted to single-token spans rather than dropped"""
+        spans: list[list[int]] = []
+        labels: list[str] = []
+        for index, tag in enumerate(tags):
+            kind, _, name = tag.partition("-")
+            if kind not in ("B", "I") or not name:
+                continue
+            if kind == "I" and labels and labels[-1] == name:
+                spans[-1][1] = index
+                continue
+            spans.append([index, index])
+            labels.append(name)
+        return [(start, end, label) for (start, end), label in zip(spans, labels, strict=True)]
+
+    @staticmethod
+    def normalize_iob_label(label: str) -> str:
+        """collapse underscore/case variants (anatomical_structure == anatomical structure)"""
+        return label.lower().replace("_", " ").strip()
+
+    @staticmethod
+    def pascal_label(label: str) -> str:
+        """case a raw IOB label the way biolink classes are named (medical condition -> MedicalCondition)"""
+        return "".join(part[:1].upper() + part[1:] for part in LABEL_SPLIT.split(label.lower()) if part)
 
     @staticmethod
     def mention_spans(tokens: list[str], ner: list[Any]) -> list[tuple[int, int, str]]:
@@ -186,23 +509,26 @@ class ScriptUtils:
         row: dict[str, object] | None = best.get(normalized) if normalized else None
         if row is not None:
             category = strip_biolink_prefix(str(row["CATEGORY_NAME"]))
-            if cls.is_biolink_category(category):
+            curie = str(row["CURIE"])
+            # the shared gate falls through on rejection: the mention keeps its fallback/raw path
+            # instead of keeping a semantically incompatible fullmap category
+            if cls.is_biolink_category(category) and ResolutionGate.accept(mention, raw_label, curie, category):
                 return ResolvedMention(
                     mention=mention,
                     category=category,
-                    curie=str(row["CURIE"]),
+                    curie=curie,
                     preferred_name=str(row["PREFERRED_NAME"]),
                     origin="fullmap",
                 )
-        fallback: str | None = fallback_map.get(raw_label.lower())
+        fallback: str | None = fallback_map.get(raw_label.lower()) or fallback_map.get(cls.normalize_iob_label(raw_label))
         if fallback is not None and cls.is_biolink_category(fallback):
             return ResolvedMention(mention=mention, category=fallback, origin="fallback")
         return ResolvedMention(mention=mention, category=raw_label, origin="raw")
 
-    @staticmethod
-    def group_entities(resolved: list[ResolvedMention]) -> list[Entity]:
-        """group resolved mentions by category, attaching the first fullmap evidence found per label
-        (shared by every NER-shaped dataset; the curated-corpus worktree needs exactly this)"""
+    @classmethod
+    def group_entities(cls, resolved: list[ResolvedMention]) -> list[Entity]:
+        """group resolved mentions by category with one fullmap evidence string per label --
+        the shared entity shape every Script emits"""
         mentions_by_label: dict[str, list[str]] = {}
         evidence_by_label: dict[str, tuple[str | None, str | None]] = {}
         for item in resolved:
@@ -215,11 +541,47 @@ class ScriptUtils:
             Entity(
                 label=label,
                 mentions=mentions,
-                description=ScriptUtils.biolink_category_description(label, *evidence_by_label.get(label, (None, None))),
+                description=cls.biolink_category_description(label, *evidence_by_label.get(label, (None, None))),
             )
             for label, mentions in mentions_by_label.items()
             if mentions
         ]
+
+    _predicate_descriptions: ClassVar[dict[str, str] | None] = None
+
+    @classmethod
+    def predicate_description(cls, predicate: str) -> str | None:
+        """biolink slot definition for a predicate (underscore-normalized lookup, is_a walk);
+        all 23 declared gazetteer predicates carry one -- mirrors biolink_category_description"""
+        if cls._predicate_descriptions is None:
+            cls._predicate_descriptions = cls._load_slot_descriptions()
+        return cls._predicate_descriptions.get(predicate)
+
+    @staticmethod
+    def _load_slot_descriptions() -> dict[str, str]:
+        """flattened biolink-model slot definitions keyed snake_case, inheriting along is_a"""
+        from importlib.resources import files
+
+        import yaml
+
+        schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text()
+        slots: dict[str, dict[str, Any]] = yaml.safe_load(schema)["slots"]
+
+        def definition(name: str, seen: frozenset[str] = frozenset()) -> str | None:
+            slot = slots.get(name)
+            if slot is None or name in seen:
+                return None
+            described: str | None = slot.get("description")
+            if described:
+                return " ".join(str(described).split())
+            return definition(str(slot.get("is_a")), seen | {name}) if slot.get("is_a") else None
+
+        flattened: dict[str, str] = {}
+        for name in slots:
+            described = definition(name)
+            if described:
+                flattened[str(name).replace(" ", "_")] = described
+        return flattened
 
     @classmethod
     @cache
