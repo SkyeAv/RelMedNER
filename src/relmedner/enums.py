@@ -4,7 +4,7 @@ from enum import StrEnum
 
 
 class ProcessingTypes(StrEnum):
-    BABEL = "babel"
+    FULLMAP = "fullmap"
     SCRIPT = "script"
 
 

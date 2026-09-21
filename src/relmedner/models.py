@@ -53,14 +53,24 @@ class ScriptTask(TaskBase):
     outputs: list[OutputShapes] = Field(..., min_length=1)
 
 
-class BabelTask(TaskBase):
-    """placeholder to get the annotated Task type to work"""
+class FullmapTask(TaskBase):
+    """distant-supervision entity/relation mining over unlabeled text via the fullmap redb
 
-    type: Literal[ProcessingTypes.BABEL] = Field(...)
+    Measured-good gates (function-word guards, GENELIKE casing rule, strict unigram name
+    agreement, junk-category gate, NONHUMAN_PREFIXES exclusion) live as constants in
+    relmedner.constants / relmedner.fullmap_mine with the measurements that fixed them;
+    add fields here later to make any of them tunable.
+    """
+
+    type: Literal[ProcessingTypes.FULLMAP] = Field(...)
+    max_ngram: int = Field(6, ge=1, le=10)
+    taxon: str = Field("9606")
+    relations: bool = Field(True)
+    outputs: list[OutputShapes] = Field(..., min_length=1)
 
 
 Task: Annotated = Annotated[
-    ScriptTask | BabelTask,
+    ScriptTask | FullmapTask,
     Field(discriminator="type"),
 ]
 
@@ -156,6 +166,12 @@ class RelationField(StrictBase):
 class Relation(StrictBase):
     name: str = Field(...)
     fields: list[RelationField] = Field(...)
+    negated: bool = Field(False)
+    """biolink Association.negated: True asserts the relation is false; this pipeline never
+    asserts negations, so every emitted relation carries False (post-training-plan decision)"""
+    evidence: str = Field("asserted")
+    """how the triple was observed: asserted (gold spans), distant (fullmap-mined spans),
+    sampled_negative (grid-sampled non-observation from the post-training corpus)"""
 
 
 def describe(descriptions: list[Description] | None) -> dict[str, str]:
@@ -202,6 +218,10 @@ class TrainingExample(StrictBase):
         return output | ({"json_descriptions": described} if described else {})
 
     def relations_out(self: Self) -> dict[str, Any]:
+        # negated/evidence deliberately stay OUT of the gliner2 projection: gliner2's
+        # Relation(name, **fields) swallows extra keys into _fields (dropping head/tail on
+        # round-trip) and InputExample.validate() requires every relation value to occur in
+        # the text. Provenance rides in the avro records (asdict) instead.
         return {"relations": [{relation.name: {field.name: field.value for field in relation.fields}} for relation in self.relations]}
 
     def to_output(self: Self) -> dict[str, Any]:

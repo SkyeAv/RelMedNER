@@ -41,23 +41,28 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 
 
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
-def test_build_dataset_test_run_writes_five_biolink_labeled_rows(tmp_path: Path) -> None:
-    """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap"""
+def test_build_dataset_test_run_writes_five_rows_per_declared_dataset(tmp_path: Path) -> None:
+    """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
+    Two declared datasets (script + fullmap mining), up to TEST_ROW_LIMIT sampled rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    assert 1 <= len(Records) <= 5
+    assert 1 <= len(Records) <= 2 * 5
 
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
-        assert Example.populated() == frozenset({"entities", "relations"})
+        # permitted-shapes contract: everything produced was declared, and something was
+        assert Example.populated()
+        assert Example.populated() <= frozenset({"entities", "relations"})
         # relation head/tail surfaces must occur in the record text, proving extraction never invents mentions
         for relation in Example.relations:
             Fields: dict[str, str] = {field.name: field.value for field in relation.fields}
             for side in ("head", "tail"):
                 assert Fields[side].lower() in Example.text.lower()
+            assert Fields["head"].lower() != Fields["tail"].lower()  # no mined self-loops
+            assert relation.evidence in {"asserted", "distant"}
         for entity in Example.entities:
             assert entity.label and not entity.label.startswith("biolink:")
             assert entity.mentions

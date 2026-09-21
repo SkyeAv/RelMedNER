@@ -16,6 +16,7 @@ from relmedner.models import (
     Classification,
     Description,
     Entity,
+    FullmapTask,
     Relation,
     RelationField,
     Structure,
@@ -157,6 +158,46 @@ def test_an_example_with_a_mention_outside_the_text_is_rejected_by_gliner() -> N
     Parsed: Any = GlinerData.InputExample.from_dict(Invalid.to_output())
 
     assert Parsed.validate() != []
+
+
+def test_a_fullmap_mined_row_validates_through_real_gliner(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the miner's exact output shape -- entities with fullmap-evidence descriptions plus
+    distant relations -- must pass gliner2's strict mention-in-text validation"""
+    from tablassert import rs
+
+    def fake_rows(_db: object, distinct: list[str]) -> list[dict[str, object]]:
+        table = {
+            "aspirin": ("CHEBI:15365", "aspirin", "SmallMolecule"),
+            "headach": ("HP:0000001", "headache", "Disease"),
+        }
+        return [
+            {
+                "term": term,
+                "CURIE": curie,
+                "PREFERRED_NAME": name,
+                "CATEGORY_NAME": category,
+                "TAXON_ID": 0,
+                "SOURCE_NAME": "t",
+                "SOURCE_VERSION": "t",
+            }
+            for term in distinct
+            for curie, name, category in [table.get(term, (None, None, None))]
+            if curie is not None
+        ]
+
+    import relmedner.fullmap_mine as mine
+
+    monkeypatch.setattr(mine, "lookup_rows", fake_rows)
+    assert rs.normalize_terms(["headache"])[0] == "headach"
+    Example: TrainingExample = mine.FullmapMiner.resolve_batch(
+        [("Aspirin is associated with headache.", FullmapTask(type="fullmap", outputs=["entities", "relations"]))], db=None
+    )[0]
+
+    assert Example.entities and Example.relations
+    GlinerData: ModuleType = load_gliner_data()
+    Parsed: Any = GlinerData.InputExample.from_dict(Example.to_output())
+
+    assert Parsed.validate() == []
 
 
 def test_gazetteer_shaped_script_relations_validate_through_real_gliner(monkeypatch: pytest.MonkeyPatch) -> None:

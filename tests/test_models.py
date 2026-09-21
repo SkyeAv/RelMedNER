@@ -63,10 +63,12 @@ def test_populated_reports_only_the_fields_that_carry_tasks() -> None:
     [
         (("entities",), True),
         (("relations",), False),
-        (("entities", "relations"), False),
+        (("entities", "relations"), True),
+        (("classifications",), False),
     ],
 )
 def test_matches_declared_outputs_enforces_the_declared_contract(outputs: tuple[str, ...], expected: bool) -> None:
+    """permitted-shapes contract: everything produced must be declared, subsets ship"""
     Example: TrainingExample = TrainingExample(text="Alice", entities=[Entity(label="person", mentions=["Alice"])])
 
     assert matches_declared_outputs((outputs, Example)) is expected
@@ -118,3 +120,36 @@ def test_multi_label_and_label_descriptions_survive_projection() -> None:
     assert Projected["multi_label"] is True
     assert Projected["true_label"] == ["camera", "battery"]
     assert Projected["label_descriptions"] == {"camera": "Photo quality"}
+
+
+def test_relations_carry_provenance_defaults() -> None:
+    Relation_: Relation = Relation(
+        name="treats",
+        fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="headache")],
+    )
+
+    assert Relation_.negated is False and Relation_.evidence == "asserted"
+
+
+def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projection() -> None:
+    """gliner2's Relation(**fields) swallows extra keys (dropping head/tail) and validates
+    every string value as a mention -- so evidence/negated ride in avro records only"""
+    import io
+
+    from fastavro import reader, writer
+
+    Mined: Relation = Relation(
+        name="treats",
+        fields=[RelationField(name="head", value="Aspirin"), RelationField(name="tail", value="headache")],
+        negated=False,
+        evidence="distant",
+    )
+    Example: TrainingExample = TrainingExample(text="Aspirin treats headache.", relations=[Mined])
+
+    Buffer: io.BytesIO = io.BytesIO()
+    writer(Buffer, Example.avro_schema_to_python(), [Example.asdict()])
+    Buffer.seek(0)
+    Restored: TrainingExample = TrainingExample(**next(iter(reader(Buffer))))
+
+    assert Restored == Example and Restored.relations[0].evidence == "distant"
+    assert Restored.to_output()["output"]["relations"] == [{"treats": {"head": "Aspirin", "tail": "headache"}}]
