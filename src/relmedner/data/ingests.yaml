@@ -57,3 +57,14 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: script
+      name: GlinerMultilingualScript
+      outputs:
+        - entities
+    source: hf
+    dataset: knowledgator/gliner-multilingual-synthetic
+    split: train
+    columns_out:
+      - tokenized_text
+      - ner

@@ -63,6 +63,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    "knowledgator/gliner-multilingual-synthetic": (
+        "hf",
+        (
+            ("script", "GlinerMultilingualScript", ("entities",)),
+            "knowledgator/gliner-multilingual-synthetic",
+            None,
+            "train",
+            None,
+            ("tokenized_text", "ner"),
+        ),
+    ),
 }
 
 
