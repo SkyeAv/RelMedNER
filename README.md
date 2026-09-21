@@ -1,7 +1,9 @@
 # relmedner
 
 Apache Beam pipeline that builds gliner2 training data from biomedical text corpora.
-Two ingest types share one declarative pipeline:
+Datasets come from the HuggingFace hub (`source: hf`) or from a local avro container built
+out-of-band (`source: local`, see [CTKP interventions](#ctkp-interventions)). Two ingest
+types share one declarative pipeline:
 
 - **script tasks** — datasets that already carry gold spans
   (`anthonyyazdaniml/gliner-biomed-pre-training`, the IOB-formatted
@@ -28,6 +30,7 @@ Two ingest types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
+| `~/Desktop/interventions.avro` (local) | `script` → `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 
 All script tasks share one resolution chain — fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
@@ -65,6 +68,48 @@ produced at least one declared shape. Rows may produce fewer shapes than declare
 (entity-only mined rows flow) and may produce extra shapes (the `[entities]`-only
 pile-ner declaration keeps rows whose gazetteer also fired — relations are free signal,
 not a contract violation).
+
+## CTKP interventions
+
+The one `source: local` ingest. `LocalAvroDataStream` reads an avro container off disk and
+ships each whole record to the declared script — there is no `columns_out` projection,
+because the file's own schema is the contract. This keeps a dataset that cannot live on
+the hub (rebuilt per AACT snapshot) on the same declarative path as everything else.
+
+The file is built out-of-band from the clinical trials KP (CTKP) build on the Hypatia box:
+the raw AACT `interventions` + `intervention_other_names` tables joined against the KP's
+NameResolver output (`interventions_mapped`, `interventions_unmapped`,
+`interventions_synonyms`, `interventions_synonyms_restored`). Record
+`relmedner.ingests.Intervention`:
+
+```
+nct_id, intervention_type, name, description
+matches: array<Match{curie, category, preferred_name, source, matched_text, unmapped}>
+other_names: array<string>, synonym_curies: array<string>, unmapped: boolean
+```
+
+`matches` is an array because 177,979 of the 1,020,749 interventions carry more than one
+normalization hit ("Nab-paclitaxel plus Gemcitabine" → `CHEBI:175901` + `MESH:C520255`),
+and each hit keeps its own `matched_text` — the actual mention span, which is what makes
+the record supervision rather than just text.
+
+`CtkpInterventionsScript` therefore does **not** re-resolve through fullmap: these spans
+are the KP's own gold CURIEs. It only enforces the shared contracts — biolink-class
+membership (`biolink:Procedure` and `Procedure` collapse to one label) and gliner2's
+occurs-in-text rule. Records the KP never normalized fall back to their AACT
+`intervention_type` keyed on the trial's own name, so the 41k DEVICE / 36k PROCEDURE /
+39k BEHAVIORAL rows still teach something; `OTHER` has no defensible biolink class and is
+deliberately absent from `LABEL_MAP`, so those rows ship text with no entity and the
+declared-outputs filter drops them.
+
+Measured over the first 20,000 records: 83% ship with at least one entity, across 12
+biolink classes (SmallMolecule, Procedure, Drug, Device, BehavioralFeature,
+ChemicalEntity, DiagnosticAid, Protein, BiologicalEntity, MolecularMixture, Food,
+GenomicEntity).
+
+The declared `path` is expanded with `expanduser` at stream time. To point at a different
+snapshot, edit `path` in `src/relmedner/data/ingests.yaml`; the rebuild scripts live on
+wenceslaus at `/users/sgoetz/ctkp-staging/`.
 
 ## How post-training row families work
 

@@ -97,7 +97,12 @@ class HuggingFaceDataset(DatasetBase):
 
 
 class LocalDataset(DatasetBase):
-    """placeholder to get the annotated Dataset type to work"""
+    """an avro container built out-of-band and read from disk by LocalAvroDataStream
+
+    path is resolved with expanduser at stream time; the whole avro record ships to the declared
+    script, which owns the record shape (there is no columns_out projection like the hf streams
+    have, because the file's own schema is already the contract)
+    """
 
     source: Literal["local"] = Field(...)
     path: str = Field(...)

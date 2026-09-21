@@ -63,6 +63,15 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
+    # tuple is deliberately shorter than the hf ones above
+    "~/Desktop/interventions.avro": (
+        "local",
+        (
+            ("script", "CtkpInterventionsScript", ("entities",)),
+            "~/Desktop/interventions.avro",
+        ),
+    ),
 }
 
 
