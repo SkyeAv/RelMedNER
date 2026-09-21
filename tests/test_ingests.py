@@ -63,6 +63,14 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    "qualifiers/qualifier_corpus.tsv": (
+        "local",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            "qualifiers/qualifier_corpus.tsv",
+            ("text",),
+        ),
+    ),
 }
 
 

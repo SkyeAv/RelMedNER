@@ -1,10 +1,22 @@
 from __future__ import annotations
 
 import pytest
-from tablassert.biolink import Predicates
+from tablassert.biolink import Predicates, Qualifiers
 
 from relmedner import gazetteer
-from relmedner.gazetteer import MAX_TRIGGER_DISTANCE, PREDICATE_TRIGGERS, SENTENCE_BREAKS, extract_relations, find_triggers, validate_trigger_table
+from relmedner.gazetteer import (
+    DISABLED_QUALIFIERS,
+    MAX_TRIGGER_DISTANCE,
+    NEGATION_CUES,
+    PREDICATE_TRIGGERS,
+    QUALIFIER_RANGES,
+    QUALIFIER_TRIGGERS,
+    SENTENCE_BREAKS,
+    extract_relations,
+    find_triggers,
+    validate_qualifier_table,
+    validate_trigger_table,
+)
 from relmedner.models import Relation, RelationField
 from relmedner.utils import ScriptUtils
 
@@ -355,3 +367,207 @@ def expected_relation(name: str, head: str, tail: str) -> Relation:
         fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
         description=ScriptUtils.predicate_description(name),
     )
+
+
+def expected_negated_relation(name: str, head: str, tail: str) -> Relation:
+    return Relation(
+        name=name,
+        fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
+        negated=True,
+        description=ScriptUtils.predicate_description(name.removeprefix(gazetteer.NEGATION_NAME_PREFIX)),
+    )
+
+
+# ------------------------------------------------------------------------ qualifier subset --
+
+DAKP_QUALIFIERS: frozenset[str] = frozenset(
+    {
+        "disease_context_qualifier",
+        "anatomical_context_qualifier",
+        "sex_qualifier",
+        "population_context_qualifier",
+        "frequency_qualifier",
+        "temporal_context_qualifier",
+    }
+)
+
+
+def test_the_qualifier_subset_is_exactly_dakps_declared_slots() -> None:
+    """DAKP tables/*.yaml declare six nullable qualifiers; the gazetteer ships the same subset"""
+    assert set(QUALIFIER_TRIGGERS) == DAKP_QUALIFIERS
+    assert set(QUALIFIER_RANGES) == DAKP_QUALIFIERS
+
+
+def test_every_qualifier_slot_is_a_qualifiers_member() -> None:
+    """KGX edges built from these slots must validate against the installed tablassert enum,
+    the same enum DAKP's own qualifier tests pin"""
+    Values: frozenset[str] = frozenset(slot.value for slot in Qualifiers)
+    assert all(slot in Values for slot in QUALIFIER_TRIGGERS)
+
+
+def test_the_species_slot_is_deliberately_absent() -> None:
+    """tablassert marks species_context_qualifier DISABLED_EDGE_FIELDS (never emittable; v12
+    disabled its derivation), so the gazetteer must never claim it"""
+    assert DISABLED_QUALIFIERS == frozenset({"species_context_qualifier"})
+    assert "species_context_qualifier" not in QUALIFIER_TRIGGERS
+    Table = dict(QUALIFIER_TRIGGERS) | {"species_context_qualifier": (())}
+    with pytest.raises(ValueError, match="tablassert-disabled"):
+        validate_qualifier_table(Table)
+
+
+def test_the_qualifier_phrase_table_is_pinned() -> None:
+    """silent phrase drift would change qualifier recall unnoticed, mirroring the predicate pins"""
+    assert sum(len(phrases) for phrases in QUALIFIER_TRIGGERS.values()) == 17
+    assert QUALIFIER_TRIGGERS["disease_context_qualifier"] == (
+        ("in", "patients", "with"),
+        ("among", "patients", "with"),
+        ("in", "those", "with"),
+        ("in", "people", "with"),
+        ("in", "subjects", "with"),
+        ("in", "individuals", "with"),
+        ("in", "patients", "who", "have"),
+        ("in", "patients", "having"),
+        ("in", "patients", "diagnosed", "with"),
+        ("in", "patients", "suffering", "from"),
+    )
+    assert QUALIFIER_TRIGGERS["anatomical_context_qualifier"] == ()
+    assert QUALIFIER_TRIGGERS["sex_qualifier"] == ()
+    assert QUALIFIER_TRIGGERS["population_context_qualifier"] == ()
+    assert QUALIFIER_TRIGGERS["frequency_qualifier"] == (("twice", "daily"), ("once", "daily"), ("three", "times", "daily"), ("once", "a", "week"))
+    assert QUALIFIER_TRIGGERS["temporal_context_qualifier"] == (("during",), ("after", "surgery"), ("following", "surgery"))
+
+
+def test_the_qualifier_ranges_match_the_dakp_field_map() -> None:
+    """DAKP maps AnatomicalEntity/BiologicalSex/PopulationOfIndividualOrganisms mentions to
+    context fields; the range groups encode the same typing with biolink ancestors"""
+    assert QUALIFIER_RANGES["anatomical_context_qualifier"] == "ANAT"
+    assert QUALIFIER_RANGES["sex_qualifier"] == "SEX"
+    assert QUALIFIER_RANGES["population_context_qualifier"] == "POP"
+    assert QUALIFIER_RANGES["disease_context_qualifier"] == "DIS"
+    assert QUALIFIER_RANGES["frequency_qualifier"] is None  # value-style slots carry literal text
+    assert QUALIFIER_RANGES["temporal_context_qualifier"] is None
+
+
+def test_the_negation_cue_table_is_pinned() -> None:
+    """closed, word-bounded cue list in DAKP PREVENTION_CUE style; longest phrase wins at scan time"""
+    assert len(NEGATION_CUES) == 15
+    assert ("no", "evidence", "that") in NEGATION_CUES
+    assert ("not", "been", "shown", "to") in NEGATION_CUES
+    assert ("failed", "to") in NEGATION_CUES
+    assert ("did", "not") in NEGATION_CUES
+    assert ("without",) in NEGATION_CUES
+    assert ("not",) in NEGATION_CUES
+
+
+# ------------------------------------------------------------------------- qualifier extraction --
+
+
+def test_a_negation_cue_reencodes_the_statement_as_not_predicate() -> None:
+    """biolink's negated slot: 'if set to true, then the association is negated'; the gazetteer
+    reuses RelationFamily's gliner2-safe not_<predicate> encoding instead of a third field"""
+    Tokens: list[str] = "Aspirin failed to prevent stroke in women".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (4, 4, "Disease"), (6, 6, "BiologicalSex")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_negated_relation("not_preventative_for_condition", "Aspirin", "stroke"),
+        expected_relation("sex_qualifier", "stroke", "women"),
+    ]
+
+
+def test_a_statement_without_a_cue_stays_positive() -> None:
+    Tokens: list[str] = "Aspirin protects against stroke".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == [expected_relation("preventative_for_condition", "Aspirin", "stroke")]
+
+
+def test_the_longest_cue_wins_over_its_nested_bare_not() -> None:
+    """greedy longest-match at scan time means 'did not' is one cue, never two"""
+    Tokens: list[str] = "Aspirin is not shown to treat stroke".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (6, 6, "Disease")]
+    Relations = extract_relations(Tokens, Spans)
+
+    assert [relation.name for relation in Relations] == ["not_treats"]
+    assert [relation.negated for relation in Relations] == [True]
+
+
+def test_a_cue_never_crosses_a_sentence_break() -> None:
+    """negation is a same-sentence scope; a cue in the previous sentence must not leak"""
+    Tokens: list[str] = ["No", "evidence", "that", "aspirin", ".", "statins", "treats", "migraine"]
+    Spans: list[tuple[int, int, str]] = [(3, 3, "Drug"), (5, 5, "Drug"), (7, 7, "Disease")]
+    assert [relation.name for relation in extract_relations(Tokens, Spans)] == ["treats"]
+
+
+def test_disease_context_attaches_to_the_statement_tail_host() -> None:
+    """DAKP hosts qualifiers on the object/disease mention; tail preference encodes that here"""
+    Tokens: list[str] = "Metformin treats type 2 diabetes in patients with chronic kidney disease".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 4, "Disease"), (9, 10, "Disease"), (12, 14, "AnatomicalEntity")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("treats", "Metformin", "type 2 diabetes"),
+        expected_relation("disease_context_qualifier", "type 2 diabetes", "kidney disease"),
+    ]
+
+
+def test_type_gazetteer_attaches_anatomy_and_sex_contexts() -> None:
+    """DAKP's field map is type-driven for anatomy/sex/population (no cue regex); the same
+    typed-mention gazetteer applies here whenever a statement already fired"""
+    Tokens: list[str] = "Aspirin treats stroke in the myocardium of women".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Disease"), (5, 5, "AnatomicalEntity"), (7, 7, "BiologicalSex")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("treats", "Aspirin", "stroke"),
+        expected_relation("anatomical_context_qualifier", "stroke", "myocardium"),
+        expected_relation("sex_qualifier", "stroke", "women"),
+    ]
+
+
+def test_qualifiers_only_fire_where_a_statement_already_fired() -> None:
+    """biolink: a qualifier is a statement qualifier; without a statement there is nothing to qualify"""
+    Tokens: list[str] = "The myocardium and the women were examined".split()
+    Spans: list[tuple[int, int, str]] = [(1, 1, "AnatomicalEntity"), (4, 4, "BiologicalSex")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_a_typed_disease_mention_never_becomes_a_bare_context() -> None:
+    """DAKP excludes disease mentions from generic qualifier attachment (the object path owns
+    them); disease contexts only fire through the patient-template phrases"""
+    Tokens: list[str] = "Metformin treats diabetes and comorbid hypertension".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Disease"), (5, 5, "Disease")]
+    assert extract_relations(Tokens, Spans) == [expected_relation("treats", "Metformin", "diabetes")]
+
+
+def test_the_restatement_guard_rejects_endpoint_contexts() -> None:
+    """DAKP qualifier_restarts_object: a context overlapping a statement endpoint is a
+    restatement, not a qualifier"""
+    Tokens: list[str] = "Aspirin is associated with women".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (4, 4, "BiologicalSex")]
+    Relations = extract_relations(Tokens, Spans)
+
+    assert [relation.name for relation in Relations] == ["associated_with"]
+    assert all(relation.name != "sex_qualifier" for relation in Relations)
+
+
+def test_value_slots_fall_back_to_the_phrase_surface() -> None:
+    """DAKP emits frequency/temporal qualifiers as the cell's literal text; when no entity
+    mention follows the phrase, the phrase surface itself is the qualifier value"""
+    Tokens: list[str] = "This drug treats diabetes twice daily".split()
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Drug"), (3, 3, "Disease")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("treats", "drug", "diabetes"),
+        expected_relation("frequency_qualifier", "diabetes", "twice daily"),
+    ]
+
+
+def test_validate_qualifier_table_rejects_a_non_qualifier_slot() -> None:
+    with pytest.raises(ValueError, match="Qualifiers member"):
+        validate_qualifier_table({"flavor_qualifier": (("sweet",),)})
+
+
+def test_validate_qualifier_table_rejects_uppercase_and_duplicate_phrases() -> None:
+    with pytest.raises(ValueError, match="uppercase token"):
+        validate_qualifier_table({"sex_qualifier": (("Women",),)})
+    Table = {"frequency_qualifier": (("twice", "daily"),), "temporal_context_qualifier": (("twice", "daily"),)}
+    with pytest.raises(ValueError, match="claimed by both"):
+        validate_qualifier_table(Table)
+
+
+def test_validate_qualifier_table_accepts_empty_phrase_tuples_for_type_gazetteer_slots() -> None:
+    """anatomy/sex/population attach by DAKP's type map with no cue regex, so empty is correct"""
+    assert validate_qualifier_table(dict.fromkeys(("anatomical_context_qualifier", "sex_qualifier", "population_context_qualifier"), ())) is None

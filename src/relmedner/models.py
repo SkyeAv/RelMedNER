@@ -97,10 +97,9 @@ class HuggingFaceDataset(DatasetBase):
 
 
 class LocalDataset(DatasetBase):
-    """placeholder to get the annotated Dataset type to work"""
-
     source: Literal["local"] = Field(...)
     path: str = Field(...)
+    columns_out: list[str] = Field(..., min_length=1)
 
 
 Dataset: Annotated = Annotated[

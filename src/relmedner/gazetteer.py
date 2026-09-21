@@ -3,8 +3,9 @@ from __future__ import annotations
 import string
 from collections.abc import Mapping
 
-from tablassert.biolink import Predicates
+from tablassert.biolink import Predicates, Qualifiers
 
+from relmedner.constants import JUNKY_CATEGORIES
 from relmedner.models import Relation, RelationField
 from relmedner.utils import PredicateRangeGate, ScriptUtils
 
@@ -218,25 +219,31 @@ def validate_trigger_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> 
                 raise ValueError(f"phrase {phrase!r} is claimed by both {owner!r} and {predicate!r}")
 
 
-def find_triggers(tokens: list[str]) -> list[tuple[int, int, str]]:
-    """left-to-right greedy scan; the longest phrase matching at a start position wins and consumes its span"""
+def _scan(table: Mapping[str, tuple[tuple[str, ...], ...]], tokens: list[str]) -> list[tuple[int, int, str]]:
+    """left-to-right greedy scan over a phrase table; the longest phrase matching at a start
+    position wins and consumes its span (empty phrase tuples attach by type and never match)"""
     lowered: list[str] = [token.lower() for token in tokens]
     triggers: list[tuple[int, int, str]] = []
     start = 0
     while start < len(lowered):
         best_length: int = 0
-        best_predicate: str | None = None
-        for predicate, phrases in PREDICATE_TRIGGERS.items():
+        best_key: str | None = None
+        for key, phrases in table.items():
             for phrase in phrases:
                 length = len(phrase)
                 if length > best_length and lowered[start : start + length] == list(phrase):
-                    best_length, best_predicate = length, predicate
-        if best_predicate is None:
+                    best_length, best_key = length, key
+        if best_key is None:
             start += 1
             continue
-        triggers.append((start, start + best_length - 1, best_predicate))
+        triggers.append((start, start + best_length - 1, best_key))
         start += best_length
     return triggers
+
+
+def find_triggers(tokens: list[str]) -> list[tuple[int, int, str]]:
+    """predicate-trigger scan; the longest phrase matching at a start position wins and consumes its span"""
+    return _scan(PREDICATE_TRIGGERS, tokens)
 
 
 def _nearest_before(mention_spans: list[tuple[int, int, str]], trigger_start: int) -> tuple[int, int, str] | None:
@@ -267,12 +274,144 @@ def _is_punctuation_only(surface: str) -> bool:
     return not surface.strip(string.punctuation).strip()
 
 
+# mirrors families.NEGATIVE_NAME_PREFIX, which cannot be imported here (families imports
+# this module's extract_relations)
+NEGATION_NAME_PREFIX: str = "not_"
+
+
+def _has_sentence_break(tokens: list[str], start: int, end_exclusive: int) -> bool:
+    return any(tokens[index] in SENTENCE_BREAKS for index in range(start, end_exclusive))
+
+
+def _cue_covers(lowered: list[str], tokens: list[str], trigger_start: int, trigger_end: int) -> bool:
+    """a negation cue left-scopes a trigger when the cue starts before it and ends no later
+    than the trigger's last token, in the same sentence ('failed to prevent': the cue shares
+    the auxiliary 'to' with the trigger); greedy longest-match mirrors the trigger scan so
+    'did not' beats bare 'not'"""
+    start = 0
+    while start < trigger_start:
+        best_length: int = 0
+        for phrase in NEGATION_CUES:
+            length = len(phrase)
+            if length > best_length and lowered[start : start + length] == list(phrase):
+                best_length = length
+        if best_length:
+            cue_end = start + best_length
+            if cue_end <= trigger_end and not _has_sentence_break(tokens, cue_end, trigger_start):
+                return True
+            start += max(best_length, 1)
+        else:
+            start += 1
+    return False
+
+
+def _overlap(a: tuple[int, int, str], b: tuple[int, int, str]) -> bool:
+    return a[0] <= b[1] and b[0] <= a[1]
+
+
+def _gap(a: tuple[int, int, str], b: tuple[int, int, str]) -> int:
+    """token distance between two spans (0 when they touch/overlap, which callers reject)"""
+    return max(a[0] - b[1], b[0] - a[1], 0)
+
+
+def _qualifiers(
+    tokens: list[str],
+    mention_spans: list[tuple[int, int, str]],
+    endpoints: list[tuple[int, int, str]],
+    tails: frozenset[tuple[int, int, str]],
+) -> list[Relation]:
+    """attach DAKP's qualifier subset to statement endpoints. A qualifier relation only fires
+    in a sentence where a predicate relation already fired (biolink: a qualifier is a
+    *statement* qualifier); the host is the endpoint nearest the context span with tail
+    preference on ties (DAKP hosts are the object/disease mentions). Context mentions are
+    introduced by the slot's trigger phrases (patient templates, frequency/temporal cues) or
+    identified by the slot's type gazetteer (anatomy/sex/population, DAKP's type-driven field
+    map), must clear the slot's range gate, and never restate a statement endpoint (DAKP
+    qualifier_restarts_object guard)."""
+    relations: list[Relation] = []
+    seen: set[tuple[str, int, int, int, int]] = set()
+    phrase_contexts: dict[str, list[tuple[int, int, str]]] = {}
+    for _phrase_start, phrase_end, slot in _scan(QUALIFIER_TRIGGERS, tokens):
+        context = _nearest_after(mention_spans, phrase_end)
+        if (
+            context is not None
+            and context[0] - (phrase_end + 1) <= MAX_TRIGGER_DISTANCE
+            and not _has_sentence_break(tokens, phrase_end + 1, context[0])
+            and PredicateRangeGate.category_ok(QUALIFIER_RANGES[slot], context[2])
+            and context[2] not in JUNKY_CATEGORIES
+            and not any(_overlap(context, endpoint) for endpoint in endpoints)
+            and not _is_punctuation_only(_surface(tokens, context))
+        ):
+            phrase_contexts.setdefault(slot, []).append(context)
+        elif (
+            phrase_end - _phrase_start >= 1
+            and QUALIFIER_RANGES[slot] is None
+            and not _is_punctuation_only(_surface(tokens, (_phrase_start, phrase_end, slot)))
+        ):
+            # value-style slots (frequency/temporal): DAKP emits them as the cell's literal
+            # text, so when no entity mention follows the phrase the multi-token phrase
+            # surface itself is the qualifier value ("twice daily"), hosted by the nearest
+            # statement endpoint (the shared emit loop picks it; endpoint overlap rejection
+            # drops mid-statement values). Single-token cue words carry no value and never
+            # fall back ("during" alone is not a temporal context).
+            pseudo: tuple[int, int, str] = (_phrase_start, phrase_end, slot)
+            if not any(_overlap(pseudo, endpoint) for endpoint in endpoints):
+                phrase_contexts.setdefault(slot, []).append(pseudo)
+    for slot, allowed in QUALIFIER_RANGES.items():
+        contexts: list[tuple[int, int, str]] = list(phrase_contexts.get(slot, ()))
+        if not QUALIFIER_TRIGGERS[slot]:
+            # type-gazetteer attachment (DAKP's field map): any in-sentence mention whose
+            # category clears the slot's range gate is a candidate context
+            contexts = [
+                span
+                for span in mention_spans
+                if PredicateRangeGate.category_ok_strict(allowed, span[2])
+                and span[2] not in JUNKY_CATEGORIES
+                and not any(_overlap(span, endpoint) for endpoint in endpoints)
+                and not _is_punctuation_only(_surface(tokens, span))
+            ]
+        # biolink qualifiers are single-valued per statement and DAKP buckets one value per
+        # slot, so a sentence emits at most one qualifier relation per slot (nearest context
+        # wins) instead of drowning the predicate signal in per-mention attachments
+        emitted: list[tuple[int, int, int, int, tuple[int, int, str], tuple[int, int, str]]] = []
+        for context_span in contexts:
+            candidates = [endpoint for endpoint in endpoints if not _overlap(endpoint, context_span)]
+            if not candidates:
+                continue
+            host = min(candidates, key=lambda endpoint: (_gap(endpoint, context_span), endpoint not in tails))
+            key = (slot, host[0], host[1], context_span[0], context_span[1])
+            if key in seen:
+                continue
+            emitted.append((_gap(host, context_span), context_span[0], host[0], host[1], host, context_span))
+        for _gap_value, _start, _host_start, _host_end, host, context_span in sorted(emitted, key=lambda entry: entry[:4])[:1]:
+            seen.add((slot, host[0], host[1], context_span[0], context_span[1]))
+            relations.append(
+                Relation(
+                    name=slot,
+                    fields=[
+                        RelationField(name="head", value=_surface(tokens, host)),
+                        RelationField(name="tail", value=_surface(tokens, context_span)),
+                    ],
+                    description=ScriptUtils.predicate_description(slot),
+                    negated=False,
+                    evidence="asserted",
+                )
+            )
+    return relations
+
+
 def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str]]) -> list[Relation]:
     """pair each trigger with its nearest bracketing mentions under sentence-break, window,
     surface, and biolink domain/range guards; span[2] is the mention's biolink category (or its
-    raw label -- non-biolink categories impose no range constraint, see PredicateRangeGate)"""
+    raw label -- non-biolink categories impose no range constraint, see PredicateRangeGate).
+    A negation cue left-scoping the trigger re-encodes the statement as not_<predicate> with
+    negated=True (RelationFamily's gliner2-safe negative encoding); qualifier context
+    attachments ride along as extra relations over the fired statements."""
     relations: list[Relation] = []
     seen: set[tuple[str, int, int, int, int]] = set()
+    lowered: list[str] = [token.lower() for token in tokens]
+    endpoints: list[tuple[int, int, str]] = []
+    tails: set[tuple[int, int, str]] = set()
     for trigger_start, trigger_end, predicate in find_triggers(tokens):
         head = _nearest_before(mention_spans, trigger_start)
         tail = _nearest_after(mention_spans, trigger_end)
@@ -280,9 +419,9 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
             continue
         if not PredicateRangeGate.accept(predicate, head[2], tail[2]):
             continue
-        if any(tokens[index] in SENTENCE_BREAKS for index in range(head[1] + 1, trigger_start)):
+        if _has_sentence_break(tokens, head[1] + 1, trigger_start):
             continue
-        if any(tokens[index] in SENTENCE_BREAKS for index in range(trigger_end + 1, tail[0])):
+        if _has_sentence_break(tokens, trigger_end + 1, tail[0]):
             continue
         if trigger_start - head[0] > MAX_TRIGGER_DISTANCE or tail[0] - (trigger_end + 1) > MAX_TRIGGER_DISTANCE:
             continue
@@ -294,14 +433,118 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
         if key in seen:
             continue
         seen.add(key)
+        negated = _cue_covers(lowered, tokens, trigger_start, trigger_end)
         relations.append(
             Relation(
-                name=predicate,
+                name=f"{NEGATION_NAME_PREFIX}{predicate}" if negated else predicate,
                 fields=[RelationField(name="head", value=head_surface), RelationField(name="tail", value=tail_surface)],
+                negated=negated,
                 description=ScriptUtils.predicate_description(predicate),
+                evidence="asserted",
             )
         )
+        endpoints.extend((head, tail))
+        tails.add(tail)
+    relations.extend(_qualifiers(tokens, mention_spans, endpoints, frozenset(tails)))
     return relations
 
 
 validate_trigger_table(PREDICATE_TRIGGERS)
+
+# --------------------------------------------------------------------------- qualifiers --
+# DAKP's declared subset (tables/*.yaml, all nullable): six context qualifiers. Validation is
+# against the installed tablassert.biolink.Qualifiers enum (the same enum DAKP's tests pin),
+# with species_context_qualifier deliberately excluded -- tablassert marks it
+# DISABLED_EDGE_FIELDS (never emittable; v12 disabled its derivation).
+DISABLED_QUALIFIERS: frozenset[str] = frozenset({"species_context_qualifier"})
+
+# Phrase-introduced qualifier contexts, mirroring DAKP's patient-template cue semantics:
+# the phrase introduces the context mention, which must follow within the usual window and
+# clear the slot's range gate. An empty phrase tuple means the slot attaches by DAKP's own
+# type gazetteer (a typed mention in the sentence, see QUALIFIER_TYPE_GROUPS) -- anatomy,
+# sex, and population contexts carry no reliable introductory phrase, exactly as in DAKP,
+# where the field map is type-driven with no cue regex.
+QUALIFIER_TRIGGERS: Mapping[str, tuple[tuple[str, ...], ...]] = {
+    "disease_context_qualifier": (
+        ("in", "patients", "with"),
+        ("among", "patients", "with"),
+        ("in", "those", "with"),
+        ("in", "people", "with"),
+        ("in", "subjects", "with"),
+        ("in", "individuals", "with"),
+        ("in", "patients", "who", "have"),
+        ("in", "patients", "having"),
+        ("in", "patients", "diagnosed", "with"),
+        ("in", "patients", "suffering", "from"),
+    ),
+    "anatomical_context_qualifier": (),
+    "sex_qualifier": (),
+    "population_context_qualifier": (),
+    "frequency_qualifier": (
+        ("twice", "daily"),
+        ("once", "daily"),
+        ("three", "times", "daily"),
+        ("once", "a", "week"),
+    ),
+    "temporal_context_qualifier": (
+        ("during",),
+        ("after", "surgery"),
+        ("following", "surgery"),
+    ),
+}
+
+# Slot -> the ancestor group a context mention's category must hit (DAKP's field map,
+# range-gated the same way PredicateRangeGate gates predicates). None = any mention.
+QUALIFIER_RANGES: Mapping[str, str | None] = {
+    "disease_context_qualifier": "DIS",
+    "anatomical_context_qualifier": "ANAT",
+    "sex_qualifier": "SEX",
+    "population_context_qualifier": "POP",
+    "frequency_qualifier": None,
+    "temporal_context_qualifier": None,
+}
+
+# Word-bounded negation cues, DAKP PREVENTION_CUE style (closed list, longest phrase wins).
+# A cue left-scopes a fired predicate trigger in the same sentence: the emitted encoding
+# reuses RelationFamily's gliner2-safe not_<predicate> name with negated=True (biolink's
+# negated slot is boolean: "if set to true, then the association is negated i.e. is not true").
+NEGATION_CUES: tuple[tuple[str, ...], ...] = (
+    ("no", "evidence", "that"),
+    ("not", "shown", "to"),
+    ("not", "been", "shown", "to"),
+    ("has", "not", "been", "shown", "to"),
+    ("have", "not", "been", "shown", "to"),
+    ("did", "not"),
+    ("does", "not"),
+    ("do", "not"),
+    ("failed", "to"),
+    ("failure", "to"),
+    ("lack", "of"),
+    ("absence", "of"),
+    ("without",),
+    ("not",),
+    ("never",),
+)
+
+
+def validate_qualifier_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> None:
+    """fail loudly on non-biolink qualifier slots, the tablassert-disabled species slot,
+    malformed phrases, or one phrase claimed by two slots"""
+    valid_slots: frozenset[str] = frozenset(slot.value for slot in Qualifiers)
+    owners: dict[tuple[str, ...], str] = {}
+    for slot, phrases in table.items():
+        if slot in DISABLED_QUALIFIERS:
+            raise ValueError(f"qualifier slot {slot!r} is tablassert-disabled (never emittable)")
+        if slot not in valid_slots:
+            raise ValueError(f"qualifier slot {slot!r} is not a tablassert.biolink.Qualifiers member")
+        for phrase in phrases:
+            if not phrase:
+                raise ValueError(f"qualifier slot {slot!r} has an empty phrase")
+            for token in phrase:
+                if not token:
+                    raise ValueError(f"qualifier slot {slot!r} phrase {phrase!r} contains an empty token")
+                if token != token.lower():
+                    raise ValueError(f"qualifier slot {slot!r} phrase {phrase!r} contains uppercase token {token!r}")
+            owner = owners.setdefault(phrase, slot)
+            if owner != slot:
+                raise ValueError(f"phrase {phrase!r} is claimed by both {owner!r} and {slot!r}")

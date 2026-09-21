@@ -57,3 +57,12 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: local
+    path: qualifiers/qualifier_corpus.tsv
+    columns_out:
+      - text
