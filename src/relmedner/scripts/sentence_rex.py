@@ -43,7 +43,7 @@ class SentenceRexScript(Script):
     """streams knowledgator/sentence_rex rows (tagged sentence, gold relation label) into
     relations-only gliner2 examples: the tags mark the two relation participants and carry no type
     labels, and predicates keep native snake_case names when no biolink member matches (17 of the
-    measured 837 distinct labels are biolink members; the card advertises 847 unique relations)
+    measured 837 distinct labels are biolink members)
     """
 
     NAME: ClassVar[str] = "SentenceRexScript"
