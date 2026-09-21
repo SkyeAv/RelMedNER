@@ -303,6 +303,7 @@ def test_entity_family_resolves_groups_and_runs_the_gazetteer(monkeypatch: pytes
                 RelationField(name="head", value="kynurenine pathway KP metabolites"),
                 RelationField(name="tail", value="accelerated atherosclerosis"),
             ],
+            description=ScriptUtils.predicate_description("associated_with"),
         )
     ]
 

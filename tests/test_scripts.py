@@ -256,23 +256,26 @@ def test_normalize_and_pascal_label_collapse_corpus_label_variants() -> None:
 
 
 def test_every_pile_ner_fallback_label_maps_to_a_biolink_category() -> None:
-    """the extended map serves both corpora; every value must stay a real biolink class"""
-    for raw_label, category in ScriptUtils.FALLBACK_LABEL_MAP.items():
+    """dataset-local vocabulary values stay real biolink classes"""
+    from relmedner.scripts import PileNerBiomedScript
+
+    for raw_label, category in PileNerBiomedScript.LABEL_MAP.items():
         assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
 
 
 def test_the_fallback_lookup_normalizes_pile_ner_labels() -> None:
-    """pile-ner labels are lowercase; the map lookup normalizes so both corpora share one map"""
+    """pile-ner labels use a dataset-local map merged over the shared map"""
     Resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions([])
     assert Resolved == []
-    assert "medical condition" in ScriptUtils.FALLBACK_LABEL_MAP
-    assert ScriptUtils.FALLBACK_LABEL_MAP["medical condition"] == "Disease"
+    from relmedner.scripts import PileNerBiomedScript
+
+    assert PileNerBiomedScript.LABEL_MAP["medical condition"] == "Disease"
 
 
 def test_the_pile_ner_script_decodes_real_row_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
     """end-to-end: python-repr columns, IOB decode, resolution, grouping, and relation extraction"""
 
-    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         assert mentions == [("Trypanosoma cruzi", "organism"), ("Chagas disease", "disease"), ("DTUs", "abbreviation")]
         return [
             ResolvedMention(
@@ -311,7 +314,7 @@ def test_the_pile_ner_script_pascalcases_raw_labels_but_keeps_fallback_categorie
     """raw labels surface biolink-cased (decision: keep the tail, case it like biolink);
     fallback-resolved labels already name a biolink class and must stay untouched"""
 
-    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         return [
             ResolvedMention(mention="ibuprofen", category="Drug", origin="fallback"),
             ResolvedMention(mention="some widget", category="job title", origin="raw"),
@@ -342,7 +345,7 @@ def test_the_pile_ner_script_emits_nothing_for_empty_or_mismatched_rows() -> Non
 def test_the_pile_ner_script_extracts_relations_over_resolved_categories(monkeypatch: pytest.MonkeyPatch) -> None:
     """gates live inside extract_relations over span categories; a compatible pair emits an edge"""
 
-    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         return [
             ResolvedMention(mention="dexamethasone", category="SmallMolecule", curie="CHEBI:41180", preferred_name="dexamethasone", origin="fullmap"),
             ResolvedMention(mention="COPD", category="Disease", curie="MONDO:0005002", preferred_name="COPD", origin="fullmap"),
@@ -359,7 +362,7 @@ def test_the_pile_ner_script_extracts_relations_over_resolved_categories(monkeyp
 def test_the_pile_ner_script_relation_gate_rejects_incompatible_categories(monkeypatch: pytest.MonkeyPatch) -> None:
     """biolink domain/range: expressed_in needs a gene-ish head; a chemical head must not emit"""
 
-    def fake_resolve(mentions: list[tuple[str, str]]) -> list[ResolvedMention]:
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         return [
             ResolvedMention(mention="benzene", category="ChemicalEntity", curie="CHEBI:167164", preferred_name="benzene", origin="fullmap"),
             ResolvedMention(mention="epithelial cells", category="Cell", curie="CL:0000066", preferred_name="epithelial cell", origin="fullmap"),

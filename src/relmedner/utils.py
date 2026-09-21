@@ -328,79 +328,28 @@ class ScriptUtils:
 
     BIOLINK_PREFIX: ClassVar[str] = BIOLINK_PREFIX
     FULLMAP_TAXON: ClassVar[str] = "9606"
-    # raw gliner labels -> biolink classes, consulted only after fullmap misses. Keys are lowercase
-    # and looked up on raw_label.lower(); values must be members of tablassert Categories (validated
-    # by test_every_fallback_label_maps_to_a_biolink_category); dataset-specific vocabularies ride on
-    # top via resolve_mentions(label_map=...) -- gliner-biomed, pile-ner, and the shared base all
-    # feed this one map
+    # raw gliner-biomed labels -> biolink classes, consulted only after fullmap misses. Keys are
+    # lowercase and looked up on raw_label.lower(); values must be members of tablassert Categories
+    # (validated by test_every_fallback_label_maps_to_a_biolink_category); dataset-specific
+    # vocabularies ride on top via resolve_mentions(label_map=...) and live with their dataset
     FALLBACK_LABEL_MAP: ClassVar[dict[str, str]] = {
+        "drug": "Drug",
         "drug product": "Drug",
         "drug form": "Drug",
         "drug formulation": "Drug",
         "dosage form": "Drug",
-        "gene family": "GeneFamily",
-        # Pile-NER-biomed-IOB head labels (normalized: lowercase + underscore -> space)
-        "medical condition": "Disease",
-        "condition": "Disease",
-        "disorder": "Disease",
-        "health condition": "Disease",
-        "chemical": "ChemicalEntity",
-        "compound": "ChemicalEntity",
-        "substance": "ChemicalEntity",
-        "chemical compound": "ChemicalEntity",
-        "chemical substance": "ChemicalEntity",
-        "drug": "Drug",
-        "medication": "Drug",
         "gene": "Gene",
-        "gene/protein": "Gene",
         "protein": "Protein",
-        "enzyme": "Protein",
-        "cell type": "Cell",
-        "cell": "Cell",
-        "cell line": "CellLine",
-        "anatomical structure": "GrossAnatomicalStructure",
-        "anatomical entity": "AnatomicalEntity",
-        "body part": "GrossAnatomicalStructure",
-        "organ": "GrossAnatomicalStructure",
-        "anatomy": "GrossAnatomicalStructure",
-        "tissue": "AnatomicalEntity",
-        "organism": "OrganismTaxon",
-        "species": "OrganismTaxon",
-        "animal": "OrganismTaxon",
-        "bacteria": "Bacterium",
-        "virus": "Virus",
-        "process": "BiologicalProcess",
+        "condition": "Disease",
+        "disease": "Disease",
         "symptom": "PhenotypicFeature",
-        "sign or symptom": "PhenotypicFeature",
-        "treatment": "Treatment",
-        "medical treatment": "Treatment",
-        "therapy": "Treatment",
-        "medical procedure": "Procedure",
-        "procedure": "Procedure",
-        "medical test": "DiagnosticAid",
-        "test": "DiagnosticAid",
-        "medical device": "Device",
-        "device": "Device",
-        "instrument": "Device",
-        "medical equipment": "Device",
-        "measurement": "ClinicalMeasurement",
-        "medical measurement": "ClinicalMeasurement",
-        "quantity": "ClinicalMeasurement",
-        "food": "Food",
-        "nutrient": "Food",
-        "publication": "Publication",
-        "study": "Study",
-        "location": "GeographicLocation",
-        "country": "GeographicLocation",
-        "city": "GeographicLocation",
-        "organization": "Agent",
-        "person": "Human",
-        "patient": "Human",
-        "group": "PopulationOfIndividualOrganisms",
-        "population": "PopulationOfIndividualOrganisms",
-        "cohort": "Cohort",
-        "mutation": "SequenceVariant",
-        "genetic variation": "SequenceVariant",
+        "adverse event": "PhenotypicFeature",
+        "cell type": "Cell",
+        "virus": "OrganismTaxon",
+        "pathogen": "OrganismTaxon",
+        "biological process": "BiologicalProcess",
+        "biological pathway": "BiologicalProcess",
+        "gene family": "GeneFamily",
     }
 
     _fullmap_db: ClassVar[Path | None] = None
