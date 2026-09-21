@@ -57,3 +57,14 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: script
+      name: KnowledgatorBiomedScript
+      outputs:
+        - entities
+    source: hf
+    dataset: knowledgator/biomed_NER
+    split: train
+    columns_out:
+      - text
+      - entities

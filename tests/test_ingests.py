@@ -63,6 +63,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    "knowledgator/biomed_NER": (
+        "hf",
+        (
+            ("script", "KnowledgatorBiomedScript", ("entities",)),
+            "knowledgator/biomed_NER",
+            None,
+            "train",
+            None,
+            ("text", "entities"),
+        ),
+    ),
 }
 
 
