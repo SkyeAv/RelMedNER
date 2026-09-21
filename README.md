@@ -25,6 +25,7 @@ Two ingest types share one declarative pipeline:
 | --- | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `knowledgator/gliner-multilingual-synthetic` | `script` → `GlinerMultilingualScript` | `tokenized_text`, `ner` | entities | 96,606 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
@@ -47,6 +48,19 @@ rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
 biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
 gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
 each carrying its biolink slot description as `relation_descriptions`).
+
+Dataset-format notes (`GlinerMultilingualScript`): the streaming loader delivers this
+corpus's `ner` spans as stringified indices with quote-wrapped labels
+(`[["18", "21", "\"organization\""]]`) while `tokenized_text` arrives as a real list, so the
+script coerces defensively and skips malformed spans. The label tail is long and
+multilingual: 21,640 distinct labels with the top-60 covering only 43.6% of spans, and the
+labels themselves are multilingual (`person`/`Person`/`personne`/`Persona`/`Pessoa`/`Osoba`),
+so the cross-lingual head labels map onto biolink classes (Human, GeographicLocation, Agent,
+Disease, Drug, Food, Plant, OrganismTaxon) and everything else rides PascalCase for
+zero-shot breadth. Fullmap is bypassed by design: its keys are byte-sorted bags of Porter2
+English stems over a biomedical vocabulary, so general-domain non-English surfaces never
+match it and label directly off `LABEL_MAP` plus PascalCase. Only `entities` is declared:
+the gazetteer's 129 triggers are English biomedical phrases, so relations are not declared.
 
 ## Output
 
