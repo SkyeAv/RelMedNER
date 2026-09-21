@@ -315,6 +315,14 @@ def test_extract_relations_skips_punctuation_only_tail_adjacent_to_trigger() -> 
     assert extract_relations(Tokens, Spans) == []
 
 
+def test_extract_relations_skips_self_loops_between_repeated_surfaces() -> None:
+    """one surface occurring on both sides of a trigger ('wrecks ... such as ... wrecks') is a
+    self-loop carrying no signal; surface-keyed pile-ner-type spans make these common"""
+    Tokens: list[str] = ["wrecks", "such", "as", "Wrecks"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Shipwreck"), (3, 3, "Shipwreck")]
+    assert extract_relations(Tokens, Spans) == []
+
+
 def test_extract_relations_deduplicates_identical_predicate_head_tail_triples() -> None:
     """two identical triggers binding the same spans describe one fact, so only the first survives"""
     Tokens: list[str] = ["smoking", "causes", "causes", "cancer"]
