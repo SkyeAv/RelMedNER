@@ -33,6 +33,16 @@ datasets:
     columns_out:
       - text
   - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: anthonyyazdaniml/gliner-biomed-balanced-curated-corpus
+    split: train
+    columns_out:
+      - text
+  - task:
       type: script
       name: GlinerBiomedPostScript
       outputs:
