@@ -30,6 +30,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    "anthonyyazdaniml/gliner-biomed-balanced-curated-corpus": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            "anthonyyazdaniml/gliner-biomed-balanced-curated-corpus",
+            None,
+            "train",
+            None,
+            ("text",),
+        ),
+    ),
     "anthonyyazdaniml/gliner-biomed-post-training": (
         "hf",
         (

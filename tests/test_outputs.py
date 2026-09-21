@@ -46,14 +46,14 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Four declared datasets (pre-training script, pile-ner IOB script, curated-corpus fullmap mining,
-    post-training multi-task script), up to five sampled rows each."""
+    Five declared datasets (pre-training script, pile-ner IOB script, curated-corpus fullmap mining,
+    balanced curated-corpus fullmap mining, post-training multi-task script), up to five rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    # four declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
-    assert 1 <= len(Records) <= 4 * 5
+    # five declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
+    assert 1 <= len(Records) <= 5 * 5
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:

@@ -12,7 +12,9 @@ Two ingest types share one declarative pipeline:
   The post-training corpus additionally carries native gold relations and sampled
   negatives, and splits into per-row task families (below).
 - **fullmap tasks** — unlabeled text (e.g.
-  `anthonyyazdaniml/gliner-biomed-curated-corpus`); entities are *mined* by enumerating
+  `anthonyyazdaniml/gliner-biomed-curated-corpus` and the downsampled, class-balanced
+  `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus`, a strict 158,890-row subset of
+  the curated corpus with an identical `text`-only schema); entities are *mined* by enumerating
   n-grams, resolving them in one batched round trip against the local fullmap redb, and
   keeping only spans that exactly match a normalized preferred name. Mined spans also feed
   the gazetteer for `evidence="distant"` relations.
@@ -24,6 +26,7 @@ Two ingest types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
+| `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 
 All script tasks share one resolution chain — fullmap first, a shared lowercased
