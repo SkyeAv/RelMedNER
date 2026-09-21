@@ -65,10 +65,12 @@ def test_populated_reports_only_the_fields_that_carry_tasks() -> None:
         (("relations",), False),
         (("entities", "relations"), True),
         (("classifications",), False),
+        (("entities", "classifications", "structures", "relations"), True),
     ],
 )
-def test_matches_declared_outputs_enforces_the_declared_contract(outputs: tuple[str, ...], expected: bool) -> None:
-    """permitted-shapes contract: everything produced must be declared, subsets ship"""
+def test_matches_declared_outputs_keeps_any_nonempty_subset_of_the_declared_shapes(outputs: tuple[str, ...], expected: bool) -> None:
+    """permitted-shapes contract: one script emits different shapes per row family, so a row ships when
+    it produced something and everything it produced was declared"""
     Example: TrainingExample = TrainingExample(text="Alice", entities=[Entity(label="person", mentions=["Alice"])])
 
     assert matches_declared_outputs((outputs, Example)) is expected

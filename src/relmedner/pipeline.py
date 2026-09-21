@@ -41,10 +41,14 @@ def resolve_rows(rows: list[StreamedRow]) -> Iterator[DispatchedExample]:
 
 def matches_declared_outputs(dispatched: DispatchedExample) -> bool:
     """permitted-shapes contract: a row ships if it produced something and everything it
-    produced was declared. Exact equality would silently drop single-shape rows from
-    multi-shape datasets (87% of mined rows carry no gazetteer relation)."""
+    produced was declared. One script emits different shapes per row family (a multi-task
+    corpus trains entities, classifications, structures, and relations side by side), and
+    exact equality would silently drop single-shape rows from multi-shape datasets (87% of
+    mined rows carry no gazetteer relation; the post-training corpus keeps its entity-only
+    NER rows too)."""
     outputs, example = dispatched
-    populated = example.populated()
+    populated: frozenset[str] = example.populated()
+    return bool(populated) and populated <= frozenset(outputs)
     return bool(populated) and populated <= frozenset(outputs)
 
 

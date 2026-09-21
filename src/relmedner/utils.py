@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any, ClassVar, Self
 
 from tablassert import rs
-from tablassert.biolink import Categories
+from tablassert.biolink import Categories, Predicates
 from tablassert.fullmap import fullmap_db_path, lookup_rows
 
 from relmedner.constants import FULLMAP_DIR
+from relmedner.models import Entity
 
 
 def package_version() -> str:
@@ -44,25 +45,27 @@ class ScriptUtils:
     BIOLINK_PREFIX: ClassVar[str] = BIOLINK_PREFIX
     FULLMAP_TAXON: ClassVar[str] = "9606"
     # raw gliner-biomed labels -> biolink classes, consulted only after fullmap misses;
-    # values must be members of tablassert Categories (checked at resolution time)
+    # keys are lowercase and looked up on raw_label.lower(); values must be members of
+    # tablassert Categories (validated by test_every_fallback_label_maps_to_a_biolink_category);
+    # dataset-specific vocabularies ride on top via resolve_mentions(label_map=...)
     FALLBACK_LABEL_MAP: ClassVar[dict[str, str]] = {
-        "Drug": "Drug",
-        "Drug product": "Drug",
-        "Drug form": "Drug",
-        "Drug formulation": "Drug",
-        "Dosage form": "Drug",
-        "Gene": "Gene",
-        "Protein": "Protein",
-        "Condition": "Disease",
-        "Disease": "Disease",
-        "Symptom": "PhenotypicFeature",
-        "Adverse event": "PhenotypicFeature",
-        "Cell type": "Cell",
-        "Virus": "OrganismTaxon",
-        "Pathogen": "OrganismTaxon",
-        "Biological process": "BiologicalProcess",
-        "Biological pathway": "BiologicalProcess",
-        "Gene family": "GeneFamily",
+        "drug": "Drug",
+        "drug product": "Drug",
+        "drug form": "Drug",
+        "drug formulation": "Drug",
+        "dosage form": "Drug",
+        "gene": "Gene",
+        "protein": "Protein",
+        "condition": "Disease",
+        "disease": "Disease",
+        "symptom": "PhenotypicFeature",
+        "adverse event": "PhenotypicFeature",
+        "cell type": "Cell",
+        "virus": "OrganismTaxon",
+        "pathogen": "OrganismTaxon",
+        "biological process": "BiologicalProcess",
+        "biological pathway": "BiologicalProcess",
+        "gene family": "GeneFamily",
     }
 
     _fullmap_db: ClassVar[Path | None] = None
@@ -106,8 +109,26 @@ class ScriptUtils:
         return frozenset(strip_biolink_prefix(category.value) for category in Categories)
 
     @classmethod
+    @cache
+    def biolink_predicates(cls) -> frozenset[str]:
+        return frozenset(predicate.value for predicate in Predicates)
+
+    @classmethod
     def is_biolink_category(cls, label: str) -> bool:
         return label in cls.biolink_categories()
+
+    @staticmethod
+    def normalize_predicate(raw: str) -> str:
+        """biolink-shaped snake_case: the one normalizer for mapped and native predicates alike"""
+        return raw.strip().lower().replace(" ", "_").replace("-", "_")
+
+    @classmethod
+    def resolve_predicate(cls, raw: str) -> tuple[str, bool]:
+        """biolink member when one matches, biolink-shaped native snake_case otherwise (zero-shot breadth:
+        only ~7% of the post-training corpus's predicates are biolink members, and discarding the rest
+        would gut the relation family)"""
+        normalized: str = cls.normalize_predicate(raw)
+        return normalized, normalized in cls.biolink_predicates()
 
     @classmethod
     def fullmap_db(cls) -> Path:
@@ -125,12 +146,14 @@ class ScriptUtils:
             return False
 
     @classmethod
-    def resolve_mentions(cls, spans: list[tuple[str, str]]) -> list[ResolvedMention]:
-        """fullmap first, static fallback second, raw label last (kept for zero-shot training)"""
+    def resolve_mentions(cls, spans: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        """fullmap first, static fallback second, raw label last (kept for zero-shot training);
+        label_map is the caller's dataset-specific vocabulary merged over the shared FALLBACK_LABEL_MAP"""
+        fallback_map: dict[str, str] = {**cls.FALLBACK_LABEL_MAP, **label_map} if label_map else cls.FALLBACK_LABEL_MAP
         distinct_mentions: list[str] = list(dict.fromkeys(mention for mention, _ in spans))
         normalized: dict[str, str] = dict(zip(distinct_mentions, rs.normalize_terms(distinct_mentions), strict=True))
         best: dict[str, dict[str, object]] = cls._fullmap_best(normalized)
-        return [cls._resolve(mention, raw_label, normalized.get(mention), best) for mention, raw_label in spans]
+        return [cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map) for mention, raw_label in spans]
 
     @classmethod
     def _fullmap_best(cls, normalized: dict[str, str]) -> dict[str, dict[str, object]]:
@@ -158,6 +181,7 @@ class ScriptUtils:
         raw_label: str,
         normalized: str | None,
         best: dict[str, dict[str, object]],
+        fallback_map: dict[str, str],
     ) -> ResolvedMention:
         row: dict[str, object] | None = best.get(normalized) if normalized else None
         if row is not None:
@@ -170,10 +194,32 @@ class ScriptUtils:
                     preferred_name=str(row["PREFERRED_NAME"]),
                     origin="fullmap",
                 )
-        fallback: str | None = cls.FALLBACK_LABEL_MAP.get(raw_label)
+        fallback: str | None = fallback_map.get(raw_label.lower())
         if fallback is not None and cls.is_biolink_category(fallback):
             return ResolvedMention(mention=mention, category=fallback, origin="fallback")
         return ResolvedMention(mention=mention, category=raw_label, origin="raw")
+
+    @staticmethod
+    def group_entities(resolved: list[ResolvedMention]) -> list[Entity]:
+        """group resolved mentions by category, attaching the first fullmap evidence found per label
+        (shared by every NER-shaped dataset; the curated-corpus worktree needs exactly this)"""
+        mentions_by_label: dict[str, list[str]] = {}
+        evidence_by_label: dict[str, tuple[str | None, str | None]] = {}
+        for item in resolved:
+            mentions = mentions_by_label.setdefault(item.category, [])
+            if item.mention not in mentions:
+                mentions.append(item.mention)
+            if item.curie is not None and item.category not in evidence_by_label:
+                evidence_by_label[item.category] = (item.curie, item.preferred_name)
+        return [
+            Entity(
+                label=label,
+                mentions=mentions,
+                description=ScriptUtils.biolink_category_description(label, *evidence_by_label.get(label, (None, None))),
+            )
+            for label, mentions in mentions_by_label.items()
+            if mentions
+        ]
 
     @classmethod
     @cache

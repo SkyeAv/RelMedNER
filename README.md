@@ -3,10 +3,13 @@
 Apache Beam pipeline that builds gliner2 training data from biomedical text corpora.
 Two ingest types share one declarative pipeline:
 
-- **script tasks** — datasets that already carry gold spans (e.g.
-  `anthonyyazdaniml/gliner-biomed-pre-training`); spans are relabeled to biolink classes
+- **script tasks** — datasets that already carry gold spans
+  (`anthonyyazdaniml/gliner-biomed-pre-training`, and the multi-task
+  `anthonyyazdaniml/gliner-biomed-post-training`); spans are relabeled to biolink classes
   via tablassert `Categories` and local fullmap resolution, and relations are
   distant-supervised through a biolink-predicate gazetteer matched between mention surfaces.
+  The post-training corpus additionally carries native gold relations and sampled
+  negatives, and splits into per-row task families (below).
 - **fullmap tasks** — unlabeled text (e.g.
   `anthonyyazdaniml/gliner-biomed-curated-corpus`); entities are *mined* by enumerating
   n-grams, resolving them in one batched round trip against the local fullmap redb, and
@@ -19,6 +22,7 @@ Two ingest types share one declarative pipeline:
 | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations |
+| `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations |
 
 ## Install
 
@@ -35,13 +39,40 @@ Full run:
     uv run relmedner build-dataset -o ./relmedner.avro
 
 Output is Avro records of `TrainingExample` (`text`, `entities`, `relations`, ...).
-Relation provenance rides in the Avro records: `negated` (always `false` — this pipeline
-never asserts negations) and `evidence` (`asserted` for gold-span scripts, `distant` for
-fullmap-mined spans). The gliner2 JSONL projection (`to_output()`) emits mention fields
-only, because gliner2 validates every relation value as a mention in the text.
+Relation provenance rides in the Avro records: `negated` (`true` only for sampled
+negatives) and `evidence` (`asserted` for gold-span scripts, `distant` for fullmap-mined
+spans, `sampled_negative` for grid-sampled non-observations from the post-training
+corpus). The gliner2 JSONL projection (`to_output()`) emits mention fields only, because
+gliner2 validates every relation value as a mention in the text — sampled negatives
+therefore train under `not_<predicate>` relation names.
 
 The declared-outputs filter is a **permitted-shapes contract**: a row ships if it produced
 something and everything it produced was declared — so entity-only mined rows flow.
+
+## How post-training row families work
+
+`src/relmedner/families.py` splits the multi-task corpus into disjoint families on the NER
+label set alone (`RowFamily` ABC, self-registering, consulted in priority order):
+
+| family | share | output shape |
+| --- | --- | --- |
+| native relations (`head <> predicate <> tail` span labels) | 2.4% | `relations` |
+| classification option lists (`label`/`category`/`class`/`tag`) | 9.0% | `classifications` |
+| `match` span extraction | 16.0% | `structures` |
+| open-vocabulary NER (anything else) | 68.1% | `entities` + gazetteer `relations` |
+| empty `ner` | 4.4% | dropped |
+
+Zero-shot breadth rules on this corpus:
+
+- predicates map onto `tablassert.biolink.Predicates` when one matches (`associated with`
+  → `associated_with`); everything else keeps a biolink-shaped `snake_case` native form;
+- sampled negatives from the dataset's `negatives` column train under `not_<predicate>`
+  names after guards: malformed, self-loop, duplicate, positive-colliding, and
+  not-in-text triples drop, capped at 2x the row's positive count;
+- relation surfaces that tokenization tore away from the text (`CC-chemokines` vs tokens
+  `CC`, `-`, `chemokines`) are filtered at extraction — gliner2 would drop them anyway;
+- `GlinerBiomedPostScript.LABEL_MAP` extends the shared `FALLBACK_LABEL_MAP` with 25
+  validated biolink classes; values are validated loudly at import.
 
 ## How fullmap mining works
 

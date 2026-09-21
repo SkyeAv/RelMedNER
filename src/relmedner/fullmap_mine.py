@@ -44,10 +44,9 @@ from typing import Any, ClassVar, Self
 
 import polars as pl
 from tablassert import rs
-from tablassert.fullmap import filter_and_rank, fullmap_db_path, lookup_rows
+from tablassert.fullmap import filter_and_rank, lookup_rows
 
 from relmedner.constants import (
-    FULLMAP_DIR,
     FUNCTION_WORDS,
     GENELIKE_CATEGORIES,
     JUNKY_CATEGORIES,
@@ -56,7 +55,7 @@ from relmedner.constants import (
 )
 from relmedner.gazetteer import extract_relations
 from relmedner.models import Entity, FullmapTask, Relation, TrainingExample
-from relmedner.utils import ScriptUtils
+from relmedner.utils import ResolvedMention, ScriptUtils
 
 
 def _splitter_path() -> Path:
@@ -114,7 +113,6 @@ class FullmapMiner:
     """batched n-gram -> fullmap resolution producing gliner2 TrainingExamples"""
 
     _splitter: ClassVar[Any] = None
-    _db: ClassVar[Path | None] = None
 
     def __init__(self: Self, task: FullmapTask) -> None:
         self.task: FullmapTask = task
@@ -131,16 +129,12 @@ class FullmapMiner:
 
     @classmethod
     def db(cls) -> Path:
-        if cls._db is None:
-            cls._db = Path(fullmap_db_path(FULLMAP_DIR))
-        return cls._db
+        """one shared mount-path resolution with the script path (cached in ScriptUtils)"""
+        return ScriptUtils.fullmap_db()
 
     @classmethod
     def available(cls) -> bool:
-        try:
-            return cls.db().is_file()
-        except OSError:
-            return False
+        return ScriptUtils.fullmap_available()
 
     # ------------------------------------------------------------ candidate generation --
 
@@ -320,22 +314,14 @@ class FullmapMiner:
 
     @classmethod
     def _entities(cls, spans: list[MinedSpan]) -> list[Entity]:
-        grouped: dict[str, list[str]] = {}
-        evidence: dict[str, tuple[str, str]] = {}
-        for span in spans:
-            mentions = grouped.setdefault(span.category, [])
-            if span.surface not in mentions:
-                mentions.append(span.surface)
-            evidence.setdefault(span.category, (span.curie, span.preferred_name))
-        return [
-            Entity(
-                label=label,
-                mentions=mentions,
-                description=ScriptUtils.biolink_category_description(label, *evidence.get(label, (None, None))),
-            )
-            for label, mentions in grouped.items()
-            if mentions
-        ]
+        # grouping, per-label first-evidence, and description building live in the shared
+        # implementation (the same one the script path uses); mined spans always carry curie evidence
+        return ScriptUtils.group_entities(
+            [
+                ResolvedMention(mention=span.surface, category=span.category, curie=span.curie, preferred_name=span.preferred_name, origin="fullmap")
+                for span in spans
+            ]
+        )
 
     @classmethod
     def _relations(cls, tokens: list[str], spans: list[MinedSpan]) -> list[Relation]:
