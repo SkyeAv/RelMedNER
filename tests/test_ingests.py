@@ -1,33 +1,57 @@
 from __future__ import annotations
 
+import pytest
+
 from relmedner.ingests import YamlIngestsParser
 
-
-def test_generate_tuples_shape() -> None:
-    IngestsParser: YamlIngestsParser = YamlIngestsParser()
-    generated: tuple[tuple[str, tuple[object, ...]], ...] = IngestsParser.generate_tuples()
-
-    assert generated == (
+# per-dataset locks: each dataset's entry is asserted independently so adding a third dataset is an
+# additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
+# parallel dataset worktrees
+EXPECTED: dict[str, tuple[object, ...]] = {
+    "anthonyyazdaniml/gliner-biomed-pre-training": (
+        "hf",
         (
-            "hf",
-            (
-                ("script", "GlinerBiomedScript", ("entities", "relations")),
-                "anthonyyazdaniml/gliner-biomed-pre-training",
-                None,
-                "train",
-                None,
-                ("tokenized_text", "ner"),
-            ),
+            ("script", "GlinerBiomedScript", ("entities", "relations")),
+            "anthonyyazdaniml/gliner-biomed-pre-training",
+            None,
+            "train",
+            None,
+            ("tokenized_text", "ner"),
         ),
+    ),
+    "anthonyyazdaniml/gliner-biomed-curated-corpus": (
+        "hf",
         (
-            "hf",
-            (
-                ("fullmap", 6, "9606", True, ("entities", "relations")),
-                "anthonyyazdaniml/gliner-biomed-curated-corpus",
-                None,
-                "train",
-                None,
-                ("text",),
-            ),
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            "anthonyyazdaniml/gliner-biomed-curated-corpus",
+            None,
+            "train",
+            None,
+            ("text",),
         ),
-    )
+    ),
+    "anthonyyazdaniml/gliner-biomed-post-training": (
+        "hf",
+        (
+            ("script", "GlinerBiomedPostScript", ("entities", "classifications", "structures", "relations")),
+            "anthonyyazdaniml/gliner-biomed-post-training",
+            None,
+            "train",
+            None,
+            ("tokenized_text", "ner", "negatives"),
+        ),
+    ),
+}
+
+
+def tuples_by_dataset() -> dict[str, tuple[object, ...]]:
+    return {entry[1][1]: entry for entry in YamlIngestsParser().generate_tuples()}
+
+
+@pytest.mark.parametrize("dataset", sorted(EXPECTED))
+def test_the_declared_tuple_shape_is_locked_per_dataset(dataset: str) -> None:
+    assert tuples_by_dataset()[dataset] == EXPECTED[dataset]
+
+
+def test_every_declared_dataset_is_accounted_for() -> None:
+    assert set(tuples_by_dataset()) == set(EXPECTED)

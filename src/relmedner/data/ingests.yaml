@@ -21,3 +21,18 @@ datasets:
     split: train
     columns_out:
       - text
+  - task:
+      type: script
+      name: GlinerBiomedPostScript
+      outputs:
+        - entities
+        - classifications
+        - structures
+        - relations
+    source: hf
+    dataset: anthonyyazdaniml/gliner-biomed-post-training
+    split: train
+    columns_out:
+      - tokenized_text
+      - ner
+      - negatives

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
+from urllib.error import URLError
 
 import httpx
 import pytest
@@ -11,9 +13,10 @@ from requests.exceptions import Timeout as RequestsTimeout
 
 from relmedner.models import RunConfig, TrainingExample
 from relmedner.pipeline import BeamPipeline
+from relmedner.types import Script
 from relmedner.utils import ScriptUtils
 
-TRANSPORT_ERRORS = (OfflineModeIsEnabled, httpx.NetworkError, httpx.TimeoutException, RequestsConnectionError, RequestsTimeout)
+TRANSPORT_ERRORS = (OfflineModeIsEnabled, httpx.NetworkError, httpx.TimeoutException, RequestsConnectionError, RequestsTimeout, URLError)
 
 
 def run_smoke_pipeline(output: Path) -> None:
@@ -41,28 +44,30 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 
 
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
-def test_build_dataset_test_run_writes_five_rows_per_declared_dataset(tmp_path: Path) -> None:
+def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Two declared datasets (script + fullmap mining), up to TEST_ROW_LIMIT sampled rows each."""
+    Three declared datasets (pre-training script, curated-corpus fullmap mining, post-training
+    multi-task script), up to TEST_ROW_LIMIT sampled rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    assert 1 <= len(Records) <= 2 * 5
+    assert 1 <= len(Records) <= 3 * 5  # five sampled rows per declared dataset
 
+    Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
-        # permitted-shapes contract: everything produced was declared, and something was
-        assert Example.populated()
-        assert Example.populated() <= frozenset({"entities", "relations"})
+        Populated: frozenset[str] = Example.populated()
+        assert Populated and Populated <= Declared  # subset contract, not exact equality
         # relation head/tail surfaces must occur in the record text, proving extraction never invents mentions
         for relation in Example.relations:
             Fields: dict[str, str] = {field.name: field.value for field in relation.fields}
+            assert set(Fields) == {"head", "tail"}  # gliner2 cannot carry a third field
             for side in ("head", "tail"):
                 assert Fields[side].lower() in Example.text.lower()
             assert Fields["head"].lower() != Fields["tail"].lower()  # no mined self-loops
-            assert relation.evidence in {"asserted", "distant"}
+            assert relation.evidence in {"asserted", "distant", "sampled_negative"}
         for entity in Example.entities:
             assert entity.label and not entity.label.startswith("biolink:")
             assert entity.mentions
@@ -70,3 +75,64 @@ def test_build_dataset_test_run_writes_five_rows_per_declared_dataset(tmp_path: 
                 assert mention.lower() in Example.text.lower()
             if not ScriptUtils.is_biolink_category(entity.label):
                 assert entity.description is None
+
+
+def test_a_post_training_relation_row_survives_the_real_gliner_sanitizer(tmp_path: Path) -> None:
+    """offline smoke for the post-training path: the sampled-negative encoding must stay gliner2-safe
+    (verified live against the corpus in test_families; this locks the script surface itself)"""
+    if importlib.util.find_spec("gliner2") is None:
+        pytest.skip("gliner2 is not installed")
+
+    Tokens: list[str] = [
+        "Identify",
+        "relations",
+        "between",
+        "entities",
+        "based",
+        "on",
+        "provided",
+        "source",
+        "entity",
+        "and",
+        "relation",
+        ":",
+        "kynurenine",
+        "pathway",
+        "KP",
+        "metabolites",
+        "are",
+        "associated",
+        "with",
+        "accelerated",
+        "atherosclerosis",
+        "in",
+        "chronic",
+        "kidney",
+        "disease",
+        "CKD",
+        "patients",
+        ".",
+    ]
+    _, Example = Script.dispatch(
+        "GlinerBiomedPostScript",
+        (
+            ("relations",),
+            (
+                Tokens,
+                [[12, 15, "accelerated atherosclerosis <> associated with"], [22, 26, "accelerated atherosclerosis <> occurs in"]],
+                ["chronic kidney disease CKD patients <> associated with <> kynurenine pathway KP metabolites"],
+            ),
+        ),
+    )
+    Output: dict[str, object] = Example.to_output()
+
+    assert Example.populated() == frozenset({"relations"})
+    assert Output["output"] == {
+        "relations": [
+            {"associated_with": {"head": "accelerated atherosclerosis", "tail": "kynurenine pathway KP metabolites"}},
+            {"occurs_in": {"head": "accelerated atherosclerosis", "tail": "chronic kidney disease CKD patients"}},
+            {"not_associated_with": {"head": "chronic kidney disease CKD patients", "tail": "kynurenine pathway KP metabolites"}},
+        ]
+    }
+    assert [relation.evidence for relation in Example.relations] == ["asserted", "asserted", "sampled_negative"]
+    assert [relation.negated for relation in Example.relations] == [False, False, True]
