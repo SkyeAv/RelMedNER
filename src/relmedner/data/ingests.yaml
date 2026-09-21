@@ -11,3 +11,13 @@ datasets:
     columns_out:
       - tokenized_text
       - ner
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: anthonyyazdaniml/gliner-biomed-curated-corpus
+    split: train
+    columns_out:
+      - text

@@ -1,10 +1,24 @@
 # relmedner
 
-Apache Beam pipeline that builds gliner2 training data from the
-`anthonyyazdaniml/gliner-biomed-pre-training` dataset. Entities are labeled with biolink
-classes via tablassert `Categories` and local fullmap resolution; relations are
-distant-supervised through a biolink-predicate gazetteer that matches trigger
-phrases between mention surfaces.
+Apache Beam pipeline that builds gliner2 training data from biomedical text corpora.
+Two ingest types share one declarative pipeline:
+
+- **script tasks** — datasets that already carry gold spans (e.g.
+  `anthonyyazdaniml/gliner-biomed-pre-training`); spans are relabeled to biolink classes
+  via tablassert `Categories` and local fullmap resolution, and relations are
+  distant-supervised through a biolink-predicate gazetteer matched between mention surfaces.
+- **fullmap tasks** — unlabeled text (e.g.
+  `anthonyyazdaniml/gliner-biomed-curated-corpus`); entities are *mined* by enumerating
+  n-grams, resolving them in one batched round trip against the local fullmap redb, and
+  keeping only spans that exactly match a normalized preferred name. Mined spans also feed
+  the gazetteer for `evidence="distant"` relations.
+
+## Ingests
+
+| dataset | task | inputs | outputs |
+| --- | --- | --- | --- |
+| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations |
+| `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations |
 
 ## Install
 
@@ -12,7 +26,7 @@ phrases between mention surfaces.
 
 ## Build the dataset
 
-Smoke run over 5 sampled rows:
+Smoke run over 5 sampled rows per dataset:
 
     uv run relmedner build-dataset -t -o ./relmedner-test.avro
 
@@ -20,11 +34,50 @@ Full run:
 
     uv run relmedner build-dataset -o ./relmedner.avro
 
-Output is Avro records with an `input` text and an `output` object. Entities
-are grouped by biolink label with class-definition descriptions. Relations
-carry SILVER labels inferred from trigger phrases; their head and tail fields
-are mention surfaces. Rows without extracted relations are dropped by the
-declared-outputs filter.
+Output is Avro records of `TrainingExample` (`text`, `entities`, `relations`, ...).
+Relation provenance rides in the Avro records: `negated` (always `false` — this pipeline
+never asserts negations) and `evidence` (`asserted` for gold-span scripts, `distant` for
+fullmap-mined spans). The gliner2 JSONL projection (`to_output()`) emits mention fields
+only, because gliner2 validates every relation value as a mention in the text.
+
+The declared-outputs filter is a **permitted-shapes contract**: a row ships if it produced
+something and everything it produced was declared — so entity-only mined rows flow.
+
+## How fullmap mining works
+
+Per batch of documents (Beam `BatchElements`, one redb round trip per batch):
+
+1. tokenize with gliner2's own `WhitespaceTokenSplitter` (imported by file path so torch
+   never loads), strip per-token edge punctuation — which also makes sentence-crossing
+   n-grams impossible because `.` tokenizes alone and cleans to empty;
+2. enumerate contiguous n-grams up to `max_ngram`, dropping all-numeric and
+   all-function-word grams; add hyphen/slash folds, Greek/unicode folds, and one-way
+   in-document acronym bridges (`body mass index (BMI)` resolves the expansion, keeps the
+   `BMI` span);
+3. one `rs.normalize_terms` + `lookup_rows` + `filter_and_rank` per batch — fullmap keys
+   are **byte-sorted bags of Porter2 stems**, so word order is already irrelevant and
+   permutation-style augmentation is a proven no-op;
+4. accept a row only when `normalize(PREFERRED_NAME) == term` (EXACT). The published PR
+   tiers are *not* a quality dial: PR=50 just means a preferred name already in
+   sorted-stem order; PR=250/500 are stopword collisions;
+5. gates (constants in `relmedner/constants.py`, each fixed by measurement — see
+   `PLAN.md`): exclude model-organism CURIE prefixes (`FB`, `ZFIN`, `MGI`, ... — human
+   genes only), junk-category gate (UMLS qualifier/indexing concepts), unigram minimum
+   length (digit-bearing exempt), gene/protein casing rule (rejects `in`→`NCBIGene:3630
+   INS` collisions), strict unigram name agreement (case-insensitive equality or simple
+   plural — kills Porter2 derivational collisions like `oxidative`→`oxide`), and
+   rejection of spans that begin or end with a function word;
+6. greedy longest-match non-overlap selection, then group by biolink category with
+   class-definition + `[fullmap: CURIE | name]` descriptions.
+
+Measured expectations on the curated corpus: **~20 mentions/doc** (~8.5M projected over
+418,381 docs), unigram precision ≈ 78%, multi-token precision ≈ 90%. Yield by gram
+length per 200 docs: n=1 2,962 · n=2 918 · n=3 137 · n=4 29 · n≥5 4. Distinct candidate
+surfaces grow ~54k per 100 docs with no cross-document saturation, so per-batch dedup is
+the only and sufficient lever (~11.5 µs/key lookup).
+
+A future teacher-distillation pass (gliner-biomed-large agreeing with mined spans) is
+deliberately deferred; `fullmap_mine.resolve_batch` is the interception point.
 
 ## Testing
 
@@ -32,5 +85,14 @@ declared-outputs filter.
     uv run ruff check src tests
 
 Entity resolution reads a local fullmap database from the hardcoded
-`FULLMAP_DIR` path in `src/relmedner/constants.py`; fullmap-dependent tests
-skip when that mount is absent.
+`FULLMAP_DIR` path in `src/relmedner/constants.py`; fullmap-dependent tests skip when that
+mount is absent, and miner unit tests inject fake `lookup_rows` rows so they never need it.
+
+## Cluster
+
+`make deploy` targets the LAN Flink cluster declared in
+`src/relmedner/data/cluster.yaml`; workers bind-mount the fullmap bundle read-only at
+`/opt/fullmap`. The compute node is only reachable through the gateway SSH hop — from
+off-VPN, add a `ProxyJump` through the gateway in `~/.ssh/config`, or run without the
+cluster entirely: with no pipeline options the DirectRunner keeps output on the local
+filesystem.

@@ -20,7 +20,10 @@ class HuggingFaceDataStream(DataStream):
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None,
         columns_out: tuple[str, ...],
     ) -> None:
-        _, self.name, self.outputs = task
+        # whole frozen task tuple (discriminated by its leading type value); the pipeline
+        # rebuilds the task model so script dispatch and fullmap mining share one stream shape
+        self.task: tuple[Any, ...] = tuple(task)
+        self.name: str = dataset
         self.dataset: str = dataset
         self.subset: str | None = subset
         self.split: str | None = split
@@ -35,4 +38,4 @@ class HuggingFaceDataStream(DataStream):
 
         for row in datastream:
             if self.apply_match(row):
-                yield (self.name, (self.outputs, tuple(row.get(column) for column in self.columns_out)))
+                yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))

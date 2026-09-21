@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from itertools import count
 from typing import Any, ClassVar, Self
 
+import pytest
+
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
@@ -51,6 +53,19 @@ def test_build_stream_constructs_from_declared_ingests() -> None:
     assert Stream.dataset == "anthonyyazdaniml/gliner-biomed-pre-training"
     assert Stream.split == "train"
     assert Stream.columns_out == ("tokenized_text", "ner")
+
+
+def test_rebuild_task_round_trips_every_declared_task_type() -> None:
+    from relmedner.models import FullmapTask, ScriptTask
+    from relmedner.streams import rebuild_task
+
+    for Payload in YamlIngestsParser().generate_tuples():
+        Task = rebuild_task(Payload[1][0])
+        assert isinstance(Task, ScriptTask | FullmapTask)
+        assert Task.to_tuple() == Payload[1][0]
+
+    with pytest.raises(ValueError):
+        rebuild_task(("teleport",))
 
 
 def test_registry_keys_on_the_source_discriminator() -> None:

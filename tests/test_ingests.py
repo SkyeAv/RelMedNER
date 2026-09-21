@@ -19,4 +19,15 @@ def test_generate_tuples_shape() -> None:
                 ("tokenized_text", "ner"),
             ),
         ),
+        (
+            "hf",
+            (
+                ("fullmap", 6, "9606", True, ("entities", "relations")),
+                "anthonyyazdaniml/gliner-biomed-curated-corpus",
+                None,
+                "train",
+                None,
+                ("text",),
+            ),
+        ),
     )
