@@ -23,7 +23,7 @@ from relmedner.models import (
     StructureField,
     TrainingExample,
 )
-from relmedner.scripts import GlinerBiomedScript
+from relmedner.scripts import GlinerBiomedScript, SentenceRexScript, parse_tagged_sentence
 from relmedner.utils import ResolvedMention, ScriptUtils
 
 GLINER_DATA_MODULE: str = "gliner2_training_data"
@@ -224,6 +224,98 @@ def test_gazetteer_shaped_script_relations_validate_through_real_gliner(monkeypa
     Parsed: Any = GlinerData.InputExample.from_dict(Example.to_output())
 
     assert Parsed.validate() == []
+
+
+SENTENCE_REX_ROWS: list[tuple[str, str, str, str]] = [
+    (
+        "<e1>Pope Pius XII</e1> re - opened the cause on 7 December 1954 , "
+        "and Pope John Paul II proclaimed him <e2> Venerable </e2> on 6 July 1985 .",
+        "canonization status",
+        "canonization_status",
+        "Pope Pius XII re - opened the cause on 7 December 1954 , and Pope John Paul II proclaimed him  Venerable  on 6 July 1985 .",
+    ),
+    (
+        'It is sometimes called the " nutmeg family " , after its most famous member , '
+        "<e1> Myristica fragrans </e1> , the source of the spices <e2> nutmeg </e2> and mace .",
+        "this taxon is source of",
+        "this_taxon_is_source_of",
+        'It is sometimes called the " nutmeg family " , after its most famous member ,  Myristica fragrans  , '
+        "the source of the spices  nutmeg  and mace .",
+    ),
+]
+SENTENCE_REX_ROW_IDS: list[str] = ["pope_canonization_status", "nutmeg_taxon_source"]
+
+
+def expected_sentence_rex_relation(predicate: str, head: str, tail: str) -> Relation:
+    """SentenceRexScript emits exactly one asserted relation per well-formed row; native
+    snake_case predicates (both measured labels here) resolve to description None"""
+    return Relation(
+        name=predicate,
+        fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
+        description=ScriptUtils.predicate_description(predicate),
+        evidence="asserted",
+        negated=False,
+    )
+
+
+@pytest.mark.parametrize("row", SENTENCE_REX_ROWS, ids=SENTENCE_REX_ROW_IDS)
+def test_the_sentence_rex_rows_validate_through_real_gliner(row: tuple[str, str, str, str]) -> None:
+    """rows 0 and 1 verbatim from the knowledgator/sentence_rex card: SentenceRexScript strips ONLY
+    the four tag literals (KD-4), so the doubled spaces around ' Venerable ' and ' Myristica
+    fragrans ' survive (gliner2 whitespace-tokenizes them inert) while head/tail surfaces stay
+    verbatim -- the 43,044/43,044 measured well-formed rows only pass gliner2 because
+    InputExample.validate() requires every relation field value to occur in the emitted text"""
+    Sentence, Label, Predicate, TagStripped = row
+    Example: TrainingExample = SentenceRexScript().run((Sentence, Label))
+
+    assert Example.text == TagStripped
+    assert Example.populated() == frozenset({"relations"})
+    assert Example.relations == [expected_sentence_rex_relation(Predicate, *parse_tagged_sentence(Sentence))]
+
+    GlinerData: ModuleType = load_gliner_data()
+    Output: dict[str, Any] = Example.to_output()
+    assert Output["input"] == Example.text
+    assert Output["output"]["relations"] == [{Predicate: {field.name: field.value for field in Example.relations[0].fields}}]
+    assert GlinerData.InputExample.from_dict(Output).validate() == []
+
+
+def test_the_sentence_rex_guard_rejects_a_relation_tail_absent_from_the_text() -> None:
+    """negative parity for REQ-SCRIPT-3: gliner2 hard-rejects a relation whose tail does not occur
+    in the text, which is exactly why the script must not transform anything but the four tag
+    literals -- any normalization that let a surface drift from the tagged row would turn every
+    emitted example invalid (the 43,044-row train split validates only because surfaces stay verbatim)"""
+    GlinerData: ModuleType = load_gliner_data()
+    Sentence, Label, Predicate, _ = SENTENCE_REX_ROWS[0]
+    Good: TrainingExample = SentenceRexScript().run((Sentence, Label))
+    assert GlinerData.InputExample.from_dict(Good.to_output()).validate() == []
+
+    Corrupted: TrainingExample = TrainingExample(
+        text=Good.text,
+        relations=[
+            Relation(
+                name=Predicate,
+                fields=[RelationField(name="head", value="Pope Pius XII"), RelationField(name="tail", value="John XXIII")],
+                description=ScriptUtils.predicate_description(Predicate),
+                evidence="asserted",
+                negated=False,
+            )
+        ],
+    )
+    assert GlinerData.InputExample.from_dict(Corrupted.to_output()).validate() != []
+
+
+def test_the_sentence_rex_relations_carry_asserted_evidence_and_exact_head_tail_fields() -> None:
+    """provenance contract: every emitted relation is evidence='asserted' (gold-tagged spans, never
+    distant or negated) with fields exactly {head, tail}; the gliner2 projection drops evidence/negated
+    (they ride the avro records instead), so assert them on the model and the field names on both"""
+    for Sentence, Label, _Predicate, _ in SENTENCE_REX_ROWS:
+        Example: TrainingExample = SentenceRexScript().run((Sentence, Label))
+        Relation: Any = Example.relations[0]
+
+        assert Relation.evidence == "asserted" and Relation.negated is False
+        assert [field.name for field in Relation.fields] == ["head", "tail"]
+        Output: dict[str, Any] = Example.to_output()
+        assert list(next(iter(Output["output"]["relations"][0].values()))) == ["head", "tail"]
 
 
 @pytest.mark.parametrize("example", EXAMPLES, ids=EXAMPLE_IDS)
