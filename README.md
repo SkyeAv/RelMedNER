@@ -25,6 +25,7 @@ Two ingest types share one declarative pipeline:
 | --- | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `knowledgator/biomed_NER` | `script` -> `KnowledgatorBiomedScript` | `text`, `entities` | entities, relations | 4,840 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
@@ -47,6 +48,15 @@ rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
 biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
 gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
 each carrying its biolink slot description as `relation_descriptions`).
+
+Dataset-format notes (`KnowledgatorBiomedScript`, dataset `knowledgator/biomed_NER`): rows are raw untokenized text plus
+character-offset entity structs (`{start, end, class}`, end exclusive); char spans bridge to token
+spans through `ScriptUtils.char_spans_to_token_spans` with drop-then-snap (measured: 0.04-0.24%
+out-of-bounds dropped, ~0.4% whitespace slop normalized, 3.43% mid-token snaps); emitted `text` is
+the re-joined token stream so every mention surface stays findable (26.7% of raw-text surfaces
+would fail gliner2's validator); the 28-entry `LABEL_MAP` covers the 32-label observed vocabulary
+(24 canonical classes plus plural/legacy variants; LANGUAGE, REGULATION OR LAW, MONEY stay
+unmapped -> raw PascalCase tails).
 
 ## Output
 

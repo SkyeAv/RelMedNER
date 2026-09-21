@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any, ClassVar, Self
 
 import pytest
@@ -665,6 +666,309 @@ def test_every_knowledgator_label_map_entry_is_measured_vocabulary() -> None:
     assert len(KnowledgatorBiomedScript.LABEL_MAP) == 28
     for raw_label in ("language", "regulation or law", "money", "unlabelled", "intellectual"):
         assert raw_label not in KnowledgatorBiomedScript.LABEL_MAP
+
+
+# ---------------------------------------------------------------------------
+# US-004 verbatim row-0 offline smoke: the real dataset row embedded VERBATIM (no file IO, no
+# network) locks the whole chain -- dispatch -> tokenize -> bridge -> resolve -> group -- against
+# format drift of the real dataset
+# ---------------------------------------------------------------------------
+
+ROW0_TEXT: str = (
+    "Weed seed inactivation in soil mesocosms via biosolarization with mature compost and tomato processing waste amendments Biosolariz"
+    "ation is a fumigation alternative that combines passive solar heating with amendment-driven soil microbial activity to temporarily"
+    " create antagonistic soil conditions, such as elevated temperature and acidity, that can inactivate weed seeds and other pest prop"
+    "agules. The aim of this study was to use a mesocosm -based field trial to assess soil heating, pH, volatile fatty acid accumulatio"
+    "n and weed seed inactivation during biosolarization. Biosolarization for 8 days using 2% mature green waste compost and 2 or 5% to"
+    "mato processing residues in the soil resulted in accumulation of volatile fatty acids in the soil, particularly acetic acid, and> "
+    "95% inactivation of Brassica nigra and Solanum nigrum seeds. Inactivation kinetics data showed that near complete weed seed inacti"
+    "vation in soil was achieved within the first 5 days of biosolarization. This was significantly greater than the inactivation achie"
+    "ved in control soils that were solar heated without amendment or were amended but not solar heated. The composition and concentrat"
+    "ion of organic matter amendments in soil significantly affected volatile fatty acid accumulation at various soil depths during bio"
+    "solarization. Combining solar heating with organic matter amendment resulted in accelerated weed seed inactivation compared with e"
+    "ither approach alone. © 2016 Society of Chemical Industry. "
+)
+
+ROW0_ENTITIES_JSON: str = """[
+ {
+  "start": 0,
+  "end": 4,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 5,
+  "end": 9,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 26,
+  "end": 30,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 31,
+  "end": 40,
+  "class": "LOCATION"
+ },
+ {
+  "start": 45,
+  "end": 60,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 66,
+  "end": 80,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 85,
+  "end": 91,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 103,
+  "end": 119,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 120,
+  "end": 135,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 141,
+  "end": 151,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 222,
+  "end": 226,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 227,
+  "end": 245,
+  "class": "FUNCTION"
+ },
+ {
+  "start": 281,
+  "end": 285,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 360,
+  "end": 364,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 365,
+  "end": 370,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 433,
+  "end": 441,
+  "class": "LOCATION"
+ },
+ {
+  "start": 449,
+  "end": 454,
+  "class": "LOCATION"
+ },
+ {
+  "start": 471,
+  "end": 475,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 487,
+  "end": 488,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 489,
+  "end": 508,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 526,
+  "end": 530,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 531,
+  "end": 535,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 556,
+  "end": 572,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 573,
+  "end": 588,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 622,
+  "end": 635,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 648,
+  "end": 654,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 666,
+  "end": 674,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 682,
+  "end": 686,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 715,
+  "end": 735,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 743,
+  "end": 748,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 762,
+  "end": 774,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 800,
+  "end": 814,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 819,
+  "end": 833,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 834,
+  "end": 840,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 863,
+  "end": 867,
+  "class": "INTELLECTUAL PROPERTY"
+ },
+ {
+  "start": 894,
+  "end": 898,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 899,
+  "end": 903,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 920,
+  "end": 924,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 965,
+  "end": 981,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1055,
+  "end": 1060,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1177,
+  "end": 1202,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1206,
+  "end": 1210,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1234,
+  "end": 1253,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1278,
+  "end": 1282,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1297,
+  "end": 1313,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1343,
+  "end": 1357,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1358,
+  "end": 1367,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1392,
+  "end": 1396,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 1397,
+  "end": 1401,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 1459,
+  "end": 1488,
+  "class": "ORGANIZATION"
+ }
+]
+"""
+
+ROW0_ENTITIES: list[Any] = json.loads(ROW0_ENTITIES_JSON)
+
+
+def test_the_knowledgator_script_survives_verbatim_row0_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """US-004 smoke: the verbatim real row locks the whole chain (dispatch -> tokenize -> bridge ->
+    resolve -> group) against format drift of the real dataset; the fixtures are embedded constants
+    and resolve_mentions is faked, so the test runs with no file IO, no fullmap mount, no network"""
+
+    def fake_resolve(spans: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is KnowledgatorBiomedScript.LABEL_MAP
+        assert len(spans) == 50 == len(ROW0_ENTITIES)  # every char span of row 0 survives the bridge
+        return [
+            ResolvedMention(mention=mention, category="OrganismTaxon", origin="fallback")
+            if mention == "Weed"
+            else ResolvedMention(mention=mention, category=raw_label, origin="raw")
+            for mention, raw_label in spans
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (ROW0_TEXT, ROW0_ENTITIES)))
+
+    Tokens: list[str] = [token for token, _start, _end in FullmapMiner.splitter()(ROW0_TEXT, lower=False)]
+    assert Example.text == ScriptUtils.join_tokens(Tokens)
+    by_label = {entity.label: entity for entity in Example.entities}
+    assert "Weed" in by_label["OrganismTaxon"].mentions  # ORGANISM -> OrganismTaxon via the label map
+    assert {"entities"} <= Example.populated() <= {"entities", "relations"}
 
 
 def expected_relation(name: str, head: str, tail: str) -> Relation:
