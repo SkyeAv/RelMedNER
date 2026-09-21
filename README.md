@@ -30,7 +30,8 @@ Two ingest types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 
-All script tasks share one resolution chain — fullmap first, a shared lowercased
+All script tasks except the multilingual ingest (which labels directly, see its
+notes below) share one resolution chain — fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
 `resolve_mentions(label_map=...)`), raw labels last — and two shared quality gates:
 
