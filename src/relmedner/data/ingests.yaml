@@ -23,6 +23,16 @@ datasets:
       - tokens
       - ner_tags
   - task:
+      type: script
+      name: PileNerTypeScript
+      outputs:
+        - entities
+    source: hf
+    dataset: Universal-NER/Pile-NER-type
+    split: train
+    columns_out:
+      - conversations
+  - task:
       type: fullmap
       outputs:
         - entities
