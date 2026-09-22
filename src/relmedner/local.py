@@ -10,7 +10,7 @@ from fastavro import reader
 from relmedner.constants import DATA
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, ZeroYieldError
+from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
 
 
 class LocalAvroDataStream(DataStream):
@@ -38,26 +38,28 @@ class LocalAvroDataStream(DataStream):
     def rows(self: Self) -> Iterator[StreamedRow]:
         # the whole record ships as a single value so the receiving script owns the shape;
         # avro's reader is already lazy, so a 1M-record container never lands in memory at once
-        with Path(self.path).expanduser().open("rb") as handle:
-            # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
-            if self.filters is None:
-                for record in reader(handle):
-                    yield (self.name, (self.task, (record,)))
-                return
 
-            rows_in = 0
-            rows_out = 0
+        # US-009: one stats record per pass, reset here (not in stream()) so a direct rows()
+        # call is accounted identically; the unfiltered path counts too (rows_in = records read),
+        # while the rows it yields stay byte-identical
+        self.stats = StreamStats()
+        with Path(self.path).expanduser().open("rb") as handle:
             for record in reader(handle):
-                rows_in += 1
+                self.stats.rows_in += 1
                 # the text rule applies over the record's own values (same rule as the hf projection)
-                if first_drop_reason(tuple(record.values()), self.filters) is not None:
-                    continue
-                rows_out += 1
+                if self.filters is not None:
+                    reason: str | None = first_drop_reason(tuple(record.values()), self.filters)
+                    if reason is not None:
+                        self.stats.drop(reason)
+                        continue
+                self.stats.rows_out += 1
                 yield (self.name, (self.task, (record,)))
-            # fail-loud zero-yield guard: a filter that drops every row of a non-empty source is
-            # the silent-empty-training-set bug; an empty file (rows_in == 0) is not an error
-            if rows_in > 0 and rows_out == 0:
-                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {rows_in} rows from {self.name}")
+            # fail-loud zero-yield guard (US-008, unchanged): a filter that drops every row of a
+            # non-empty source is the silent-empty-training-set bug; an empty file (rows_in == 0)
+            # is not an error
+            if self.filters is not None and self.stats.rows_in > 0 and self.stats.rows_out == 0:
+                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {self.stats.rows_in} rows from {self.name}")
+
 
 class LocalDelimitedDataStream(DataStream):
     """streams rows from a header-delimited local file (TSV/CSV picked by suffix, tab default);
@@ -114,26 +116,26 @@ class LocalDelimitedDataStream(DataStream):
         if not exists:
             raise FileNotFoundError(f"local source file not found: {self.path}")
         delimiter: str = self.DELIMITERS.get(self.path.suffix, "\t")
+        # US-009: one stats record per pass, reset here (not in stream()) so a direct rows()
+        # call is accounted identically; the unfiltered path counts too, while the rows it
+        # yields stay byte-identical
+        self.stats = StreamStats()
         with self.path.open(newline="", encoding="utf-8") as handle:
-            # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
-            if self.filters is None:
-                for row in csv.DictReader(handle, delimiter=delimiter):
-                    if self.apply_match(row):
-                        yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))
-                return
-
-            rows_in = 0
-            rows_out = 0
             for row in csv.DictReader(handle, delimiter=delimiter):
                 if not self.apply_match(row):
+                    self.stats.drop("match_on")
                     continue
-                rows_in += 1
+                self.stats.rows_in += 1
                 values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
-                if first_drop_reason(values, self.filters) is not None:
-                    continue
-                rows_out += 1
+                if self.filters is not None:
+                    reason: str | None = first_drop_reason(values, self.filters)
+                    if reason is not None:
+                        self.stats.drop(reason)
+                        continue
+                self.stats.rows_out += 1
                 yield (self.name, (self.task, values))
-            # fail-loud zero-yield guard: a filter that drops every row of a non-empty source is the
-            # silent-empty-training-set bug; a genuinely empty file (rows_in == 0) is not an error
-            if rows_in > 0 and rows_out == 0:
-                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {rows_in} rows from {self.name}")
+            # fail-loud zero-yield guard (US-008, unchanged): a filter that drops every row of a
+            # non-empty source is the silent-empty-training-set bug; a genuinely empty file
+            # (rows_in == 0) is not an error
+            if self.filters is not None and self.stats.rows_in > 0 and self.stats.rows_out == 0:
+                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {self.stats.rows_in} rows from {self.name}")
