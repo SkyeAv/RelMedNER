@@ -150,6 +150,24 @@ MIN_UNIGRAM_LENGTH: int = 3
 MIN_BATCH_ROWS: int = 200
 MAX_BATCH_ROWS: int = 2000
 
+# ------------------------------------------------------- training-row token cap knobs ----
+# Platform-wide cap on one training row's joined text, applied ALWAYS-ON by
+# row_filters.first_drop_reason (independent of any declared RowFilters rules): the cap
+# is a platform constant concern, not per-dataset config, so no ingests.yaml setting may waive it.
+
+# Largest allowed text, in TOKENS. Chars-to-tokens conversion uses the OpenAI rule of thumb
+# of ~4 characters per token for English
+# (https://help.openai.com/en/articles/4936856-understanding-and-counting-tokens).
+MAX_TEXT_TOKENS: int = 8192
+
+# Chars assumed per token for the conversion above. Medical text runs longer words than
+# general English, so its real chars/token sits above 4 and len(text) // CHARS_PER_TOKEN
+# OVERestimates the true token count; the resulting early fire (a few rows a real tokenizer
+# would keep) is the accepted medical-text error margin -- the cap is a cost guard, not
+# tokenization. Compared in CHARS with strict > (never floor-divide first), so a 1-char
+# overshoot still drops: floor division would round 32769 chars back to 8192 "tokens".
+CHARS_PER_TOKEN: int = 4
+
 # ---------------------------------------------------------------- near-dedup knobs ----
 # MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
 # P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,

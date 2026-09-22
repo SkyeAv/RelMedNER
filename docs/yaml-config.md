@@ -206,8 +206,9 @@ Drop reasons evaluate in this fixed order; the first match drops the row:
 1. `drop_empty` - every projected value is None, `""`, or an empty list/tuple/dict
 2. `min_text_len` - the joined text is shorter than this
 3. `max_text_len` - the joined text is longer than this
-4. `include_regex` - the joined text does NOT match this pattern
-5. `exclude_regex` - the joined text DOES match this pattern
+4. `max_tokens` - the joined text is longer than the always-on platform token cap (see below)
+5. `include_regex` - the joined text does NOT match this pattern
+6. `exclude_regex` - the joined text DOES match this pattern
 
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
@@ -216,6 +217,18 @@ Drop reasons evaluate in this fixed order; the first match drops the row:
 | `max_text_len` | no | absent | int >= 0 | drop rows whose joined text is longer than this; must be >= `min_text_len` when both are set |
 | `include_regex` | no | absent | string | drop rows whose joined text does not match (unanchored `re.search` semantics) |
 | `exclude_regex` | no | absent | string | drop rows whose joined text matches |
+
+The always-on `max_tokens` cap: a platform constant, NOT a field you declare. Every source,
+even one with no `filters` block at all, drops rows whose joined text is longer than the cap.
+Estimated tokens = `len(joined_text) // 4` (the ~4 chars-per-token rule of thumb for English
+prose, https://help.openai.com/en/articles/4936856-understanding-and-counting-tokens); the row
+drops iff `len(joined_text) > MAX_TEXT_TOKENS * CHARS_PER_TOKEN = 8192 * 4 = 32768` chars.
+Medical text runs denser than average prose, so the estimate carries roughly a one-token-in-four
+error margin in either direction. Semantics are drop, never truncate: an over-cap row is dropped
+whole so no partial context ever reaches a task. The cap needs no YAML declaration and cannot be
+waived per dataset; it sits after the declared length rules (a row that already fires
+`max_text_len` keeps that attribution) and before the regexes (an over-cap row never attributes
+to a regex).
 
 The text rule: the text every length/regex filter measures is `" ".join` over the projected
 payload values in order. A value contributes as itself when it is a str, as its elements joined
@@ -228,8 +241,9 @@ Tripwires:
 - Unknown keys inside `filters` fail validation (`extra="forbid"` applies there too), as does
   `min_text_len` > `max_text_len`.
 - An invalid regex fails at stream construction with `re.error`, before any row streams.
-- Fail-loud zero-yield guard: when a `filters` block drops 100% of the rows of a non-empty
-  source, the run raises `ZeroYieldError` instead of silently shipping an empty training set.
+- Fail-loud zero-yield guard: when a declared filter OR the always-on `max_tokens` cap
+  drops 100% of the rows of a non-empty source, the run raises `ZeroYieldError` instead of
+  silently shipping an empty training set.
   A genuinely empty source (0 rows in) is not an error. A dataset with no `filters` block keeps
   the historical unfiltered behavior exactly.
 

@@ -239,6 +239,20 @@ def test_match_on_filters_rows_like_the_hf_stream(tmp_path: Path) -> None:
     assert [row[1][1][0] for row in Stream.rows()] == ["keep"]
 
 
+def test_delimited_filters_none_source_still_drops_over_cap_rows(tmp_path: Path) -> None:
+    """the ALWAYS-ON token cap reaches the unfiltered delimited path too: an over-cap row
+    attributes to max_tokens while short rows yield unchanged -- before effective_filters the
+    evaluator only ran on sources with declared filters"""
+    Path_ = Path(write_tsv(tmp_path / "cap.tsv", ("text",), (("aspirin trial",), ("word " * 7000,))))
+    Stream = LocalDelimitedDataStream(DELIMITED_TASK, WEIGHT, Path_, ("text",))
+
+    Yielded: list[Any] = list(Stream.rows())
+
+    assert [row[1][1][0] for row in Yielded] == ["aspirin trial"]
+    assert Stream.filters is None
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
+
+
 def test_the_registry_keys_the_delimited_source_separately_from_avro() -> None:
     """both local kinds are declared ingests, so they must not share one SOURCE_REGISTRY key: the
     avro stream ships whole records and takes no columns_out, the delimited one projects them"""
