@@ -17,7 +17,12 @@ Two ingest types share one declarative pipeline:
   the curated corpus with an identical `text`-only schema); entities are *mined* by enumerating
   n-grams, resolving them in one batched round trip against the local fullmap redb, and
   keeping only spans that exactly match a normalized preferred name. Mined spans also feed
-  the gazetteer for `evidence="distant"` relations.
+  the gazetteer for `evidence="distant"` relations. The gazetteer additionally emits
+  statement-qualifier relations (below).
+- **local sources** — header-delimited TSV/CSV committed as package data
+  (`src/relmedner/data/qualifiers/qualifier_corpus.tsv`, read by `LocalDataStream`),
+  declared like any other task with `source: local` instead of a hub dataset; paths resolve
+  against the CWD first, then package data.
 
 ## Ingests
 
@@ -27,6 +32,7 @@ Two ingest types share one declarative pipeline:
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
+| `qualifier corpus` (`local` package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 
 All script tasks share one resolution chain — fullmap first, a shared lowercased
@@ -39,7 +45,24 @@ All script tasks share one resolution chain — fullmap first, a shared lowercas
   hits rejected on the pile-ner corpus, nearly all true false positives.
 - `PredicateRangeGate` rejects gazetteer relations whose head/tail biolink categories
   contradict the predicate's domain/range (raw labels impose no constraint). ~21% of
-  candidate relations rejected, all sampled rejects genuinely wrong.
+  candidate relations rejected, all sampled rejects genuinely wrong. Qualifier contexts are
+  stricter: typed slots demand resolvable biolink ancestors and reject
+  `JUNKY_CATEGORIES` (UMLS qualifier/indexing concepts).
+
+## Statement qualifiers and negation
+
+Gazetteer relations also carry the six DAKP-declared nullable qualifier slots
+(`disease_context_qualifier`, `anatomical_context_qualifier`, `sex_qualifier`,
+`population_context_qualifier`, `frequency_qualifier`, `temporal_context_qualifier`;
+`species_context_qualifier` is deliberately absent per tablassert
+`DISABLED_EDGE_FIELDS`). Attachment mirrors DAKP's `attach_qualifiers_with_scores`:
+qualifiers fire only where a predicate relation fired (they qualify statements, not
+entity pairs), the host is the nearest statement endpoint with the tail preferred, a
+typed context never restates an endpoint, one value per slot per sentence, and
+value-style slots (`frequency`/`temporal`) fall back to the multi-token phrase surface
+("twice daily") when no mention follows the trigger. Word-bounded negation cues ("not",
+"failed to", "without", ...) sharing a sentence with a fired predicate re-encode the
+statement as `not_<predicate>` with `negated=true`.
 
 Dataset-format notes (`PileNerBiomedScript`): `tokens`/`ner_tags` are python-repr strings
 (`ast.literal_eval`, malformed rows skip); orphan `I-` tags promote to single-token spans
