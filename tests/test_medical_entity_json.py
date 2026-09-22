@@ -228,9 +228,9 @@ def test_unparseable_json_ships_the_passage_text_only_and_the_sibling_row_still_
 
 
 def test_entities_not_a_list_ships_text_only_and_the_sibling_row_still_ships() -> None:
-    """schema drift can turn Entities into a bare string; without the isinstance(list) guard the
-    iteration would walk the string's characters and emit one entity per char, so the guard turns
-    drift into a text-only row the filter drops"""
+    """schema drift can turn Entities into a bare string; the isinstance(list) guard turns drift
+    into a text-only row the filter drops (without it, iterating a string yields one non-dict
+    entry per character, every one of which drops, and the row silently ships no entities)"""
     Broken: TrainingExample = SCRIPT.run(row(synth_row('"Name"')))
     Sibling: TrainingExample = SCRIPT.run(row(synth_row(ENT_NOT_LIST_SIBLING)))
 
@@ -286,6 +286,59 @@ def test_a_non_string_text_value_never_raises() -> None:
 
         assert Example.text == ""
         assert Example.entities == []
+
+
+def test_non_string_or_whitespace_only_entries_drop_and_siblings_ship() -> None:
+    """an entry whose label or surface is not a string (a numeric Age from a drifted builder),
+    or whose surface is whitespace-only, carries no locatable mention: each drops individually
+    while the well-formed sibling in the same row still ships (0 such entries in the measured
+    split, still defended per the per-entry skip-don't-coerce contract)"""
+    Example: TrainingExample = SCRIPT.run(row(synth_row('[{"Age": 36}, {"Name": "   "}, {"Profession": "Physicist"}]')))
+
+    assert [entity.label for entity in Example.entities] == ["Profession"]
+    assert Example.entities[0].mentions == ["physicist"]
+
+
+def test_a_tail_with_no_json_body_ships_the_passage_text_only() -> None:
+    """a row whose [INST] turn is followed by no brace at all (the dangling-fence shape the
+    dead instruction column shows this corpus family produces) has no payload to decode: the
+    passage ships text-only and the declared-outputs filter drops it"""
+    Broken: TrainingExample = SCRIPT.run(row("[INST]Marie Curie, a 36-year-old physicist, studied radioactivity.[/INST]```json\n"))
+
+    assert Broken.entities == []
+    assert "Marie Curie" in Broken.text
+
+
+def test_a_top_level_non_dict_json_object_ships_the_passage_text_only() -> None:
+    """raw_decode happily yields a list or scalar; only a dict can carry the Entities key, so a
+    drifted top-level list is untrustworthy and the row ships text-only instead of crashing"""
+    Broken: TrainingExample = SCRIPT.run(row("[INST]Marie Curie, a 36-year-old physicist, studied radioactivity.[/INST]```json\n[1, 2, 3]\n"))
+
+    assert Broken.entities == []
+    assert "Marie Curie" in Broken.text
+
+
+def test_duplicate_mention_label_pairs_emit_one_mention() -> None:
+    """a drifted builder repeating one entry must not double-count the mention in training data:
+    the (mention, category) dedup collapses repeats to the first occurrence"""
+    Example: TrainingExample = SCRIPT.run(row(synth_row('[{"Name": "Marie Curie"}, {"Name": "Marie Curie"}, {"Age": "36"}]')))
+
+    by_label: dict[str, list[str]] = {entity.label: entity.mentions for entity in Example.entities}
+    assert by_label["Name"] == ["Marie Curie"]
+    assert by_label["Age"] == ["36"]
+
+
+def test_a_fold_length_changing_surface_drops_instead_of_slicing_a_misaligned_span() -> None:
+    """casefold can change string length (Turkish dotted I gains a combining dot), so a folded-
+    space index can slice a span that is still a substring of the emitted text but is NOT the
+    surface ("clinic" slices to "linic"); both containment locks would pass silently, so the
+    emitted mention must casefold-equal the surface or the entry drops"""
+    Passage: str = "Marie Curie of İstanbul studied the clinic."
+    Example: TrainingExample = SCRIPT.run(row(synth_row('[{"Name": "Marie Curie"}, {"Condition": "clinic"}]', passage=Passage)))
+
+    # "Marie Curie" sits before the dotted İ, so its index is unaffected and ships; "clinic"
+    # sits after it, where the folded-space index is off by the fold's extra char
+    assert [entity.label for entity in Example.entities] == ["Name"]
 
 
 def test_nonzero_yield_over_a_handful_of_realistic_rows() -> None:

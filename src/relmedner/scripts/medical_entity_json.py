@@ -91,6 +91,12 @@ class MedicalEntityJsonScript(Script):
             if start < 0:
                 continue
             mention: str = text[start : start + len(surface)]
+            # casefold can change a string's length ("I" gains a combining dot, "ss" folds to
+            # one char), so a folded-space index can slice a misaligned span that is still a
+            # substring of text; the emitted mention must casefold-equal the surface or the
+            # entry drops (measured 0 impact on this English corpus)
+            if mention.casefold() != surface.casefold():
+                continue
             category: str = ScriptUtils.pascal_label(label)
             if (mention, category) in seen:
                 continue
