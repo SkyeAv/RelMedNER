@@ -88,7 +88,7 @@ def test_the_passage_ships_verbatim_including_highlight_markers() -> None:
     """@highlight lines carry document structure the downstream trainer consumes; rewriting or
     stripping them would desync every char offset in the span table"""
     marked: str = "Afghanistan holds elections.\n@highlight\nTaliban militants attacked a convoy."
-    Marked = offsets("Afghanistan holds elections.", marked)
+    Marked: tuple[int, int] = offsets("Afghanistan holds elections.", marked)
     MarkedTable: dict[str, Any] = {"text": ["Afghanistan holds elections."], "start": [Marked[0]], "end": [Marked[1]]}
     Example: TrainingExample = SCRIPT.run(row(passage=marked, entity_spans=MarkedTable))
 
@@ -100,7 +100,7 @@ def test_repeated_surfaces_dedupe_preserving_first_occurrence_order() -> None:
     """gold annotators repeat surfaces across a passage; duplicates would double-count the cloze
     label set and skew multi_label, so only the first occurrence survives"""
     First: tuple[int, int] = offsets("Taliban militants")
-    Second = (PASSAGE.index("Afghan official"), PASSAGE.index("Afghan official") + len("Afghan official"))
+    Second: tuple[int, int] = (PASSAGE.index("Afghan official"), PASSAGE.index("Afghan official") + len("Afghan official"))
     Table: dict[str, Any] = {
         "text": ["Taliban militants", "Taliban militants", "Afghan official"],
         "start": [First[0], First[0], Second[0]],
@@ -197,6 +197,37 @@ def test_answers_outside_the_surviving_label_set_are_filtered() -> None:
     Example: TrainingExample = SCRIPT.run(row(answers=["taliban militants", "Nuristan"]))
 
     assert Example.classifications == []
+
+
+def test_a_non_list_answers_value_yields_no_classification() -> None:
+    """hub-side schema drift can deliver answers as a bare string; without the isinstance(list)
+    guard the true-label comprehension would iterate its characters and corrupt the cloze task,
+    so the guard must turn drift into no classification instead of crashing the stream worker"""
+    Example: TrainingExample = SCRIPT.run(row(answers="Taliban militants"))
+
+    assert Example.classifications == []
+    assert [entity.label for entity in Example.entities] == ["NamedThing"]
+
+
+def test_a_non_string_answer_element_is_filtered_from_true_label() -> None:
+    """a drifted non-string element inside the answers list must be filtered by the
+    isinstance(str) guard; a dropped guard would flow it past the true_label: list[str]
+    contract into Classification.true_label"""
+    Example: TrainingExample = SCRIPT.run(row(answers=[42]))
+
+    assert Example.classifications == []
+    assert [entity.label for entity in Example.entities] == ["NamedThing"]
+
+
+def test_a_non_string_query_ships_the_classification_with_prompt_none() -> None:
+    """a drifted non-string query must not crash the row: the classification still ships (gold
+    answers and labels are intact) and the isinstance(str) guard degrades prompt to None instead
+    of silently passing a non-str instruction downstream"""
+    Example: TrainingExample = SCRIPT.run(row(query=42))
+
+    assert len(Example.classifications) == 1
+    assert Example.classifications[0].prompt is None
+    assert Example.classifications[0].true_label == ["Taliban militants"]
 
 
 def test_a_multi_answer_row_marks_the_classification_multi_label() -> None:

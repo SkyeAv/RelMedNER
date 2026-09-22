@@ -11,6 +11,7 @@ from huggingface_hub.errors import OfflineModeIsEnabled
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 
+from relmedner.constants import TEST_ROW_LIMIT
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample
 from relmedner.pipeline import BeamPipeline
@@ -47,14 +48,15 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Every declared dataset (see ingests.yaml) samples up to five rows; empty/malformed rows may shrink
-    the count, so the cap derives from the declared count instead of a hardcoded ingest total."""
+    Every declared dataset (see ingests.yaml) samples up to TEST_ROW_LIMIT rows; empty/malformed rows may shrink
+    the count, so the cap derives from the declared count instead of a hardcoded ingest total
+    (TEST_ROW_LIMIT is the same constant RunConfig.from_flags hands to streams islice)."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    # each declared ingest samples up to five rows; empty/malformed rows may shrink the count
-    assert 1 <= len(Records) <= 5 * len(YamlIngestsParser().generate_tuples())
+    # each declared ingest samples up to TEST_ROW_LIMIT rows; empty/malformed rows may shrink the count
+    assert 1 <= len(Records) <= TEST_ROW_LIMIT * len(YamlIngestsParser().generate_tuples())
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:

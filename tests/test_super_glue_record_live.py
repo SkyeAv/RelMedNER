@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from relmedner.models import TrainingExample
+from relmedner.streams import DataStream
 from relmedner.types import Script
 
 requires_live_hf: pytest.MarkDecorator = pytest.mark.skipif(
@@ -35,7 +36,7 @@ def test_a_live_streamed_record_row_dispatches_end_to_end() -> None:
     source: object
     payload: tuple[Any, ...]
     source, payload = by_dataset["aps/super_glue"]
-    stream = build_stream(source, payload)
+    stream: DataStream = build_stream(source, payload)
     assert isinstance(stream, HuggingFaceDataStream)
 
     Name: str
