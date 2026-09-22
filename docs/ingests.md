@@ -3,7 +3,7 @@
 [ingest table](../README.md#ingests)
 
 All script tasks except the multilingual ingest (which labels directly, see its
-notes below) share one resolution chain -- fullmap first, a shared lowercased
+notes under [Statement qualifiers and negation](qualifiers.md)) share one resolution chain -- fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
 `resolve_mentions(label_map=...)`), raw labels last -- and two shared quality gates:
 
