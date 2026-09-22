@@ -84,3 +84,13 @@ datasets:
     weight: *weight
     path: qualifiers/qualifier_corpus.tsv
     columns_out: [text]
+  - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
+    <<: *hf-train
+    dataset: nvidia/Nemotron-PII
+    columns_out: [text, spans]
+  - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
+    source: hf
+    weight: *weight
+    split: test
+    dataset: nvidia/Nemotron-PII
+    columns_out: [text, spans]
