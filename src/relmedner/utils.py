@@ -564,7 +564,9 @@ class ScriptUtils:
 
         import yaml
 
-        schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text()
+        # explicit encoding: biolink_model.yaml carries non-ascii, and a non-utf-8 locale would
+        # mis-decode it into control chars that the yaml reader rejects
+        schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text(encoding="utf-8")
         slots: dict[str, dict[str, Any]] = yaml.safe_load(schema)["slots"]
 
         def definition(name: str, seen: frozenset[str] = frozenset()) -> str | None:
