@@ -290,6 +290,11 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
         tail_surface = _surface(tokens, tail)
         if _is_punctuation_only(head_surface) or _is_punctuation_only(tail_surface):
             continue
+        # self-loops carry no signal and gliner2 cannot represent them distinctly; they arise when one
+        # surface occurs on both sides of a trigger ("wrecks ... such as ... wrecks"), which the
+        # surface-keyed pile-ner-type spans make common. Mirrors RelationFamily._negatives' head==tail drop
+        if head_surface.lower() == tail_surface.lower():
+            continue
         key = (predicate, head[0], head[1], tail[0], tail[1])
         if key in seen:
             continue
