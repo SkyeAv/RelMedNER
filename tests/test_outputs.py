@@ -11,6 +11,7 @@ from huggingface_hub.errors import OfflineModeIsEnabled
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 
+from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample
 from relmedner.pipeline import BeamPipeline
 from relmedner.types import Script
@@ -46,14 +47,17 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Five declared datasets (pre-training script, pile-ner IOB script, curated-corpus fullmap mining,
-    balanced curated-corpus fullmap mining, post-training multi-task script), up to five rows each."""
+    Every declared dataset (currently seven: pre-training script, pile-ner IOB script, curated-corpus
+    fullmap mining, balanced curated-corpus fullmap mining, post-training multi-task script, CTKP
+    interventions local-avro script, PubMedAbstractsNER hub-json script), up to five rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    # five declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
-    assert 1 <= len(Records) <= 5 * 5
+    # one bound per declared ingest, derived from ingests.yaml so new entries cannot go stale;
+    # environment-unavailable ingests (e.g. a missing local avro) may shrink the count
+    DeclaredCount: int = len(YamlIngestsParser().generate_tuples())
+    assert 1 <= len(Records) <= DeclaredCount * 5
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:
