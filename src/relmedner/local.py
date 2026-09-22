@@ -25,8 +25,7 @@ class LocalAvroDataStream(DataStream):
     def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str) -> None:
         # parameter order must match DatasetBase.to_tuple's field order, because build_stream
         # unpacks the declared payload positionally: task, weight, then the local-specific path
-        self.task: tuple[Any, ...] = tuple(task)
-        self.weight: float = weight
+        super().__init__(task, weight)
         # the pipeline stamps every row with weights[source], so this key is LocalAvroDataset.row_key
         # verbatim: the declared path, not its basename (two distinct files may share a name and
         # must still be able to declare different weights)
@@ -66,8 +65,7 @@ class LocalDelimitedDataStream(DataStream):
     ) -> None:
         # positional contract: the payload LocalDelimitedDataset.to_tuple produces (model field
         # order minus source); registry.build_stream splats it into this __init__
-        self.task: tuple[Any, ...] = tuple(task)
-        self.weight: float = weight
+        super().__init__(task, weight)
         # the DECLARED path, not the resolved one and not its stem: the pipeline stamps every row
         # with weights[source], so this key is LocalDelimitedDataset.row_key verbatim, and two
         # distinct files sharing a basename must still be able to declare different weights

@@ -21,12 +21,9 @@ class HuggingFaceDataStream(DataStream):
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None,
         columns_out: tuple[str, ...],
     ) -> None:
-        # whole frozen task tuple (discriminated by its leading type value); the pipeline
-        # rebuilds the task model so script dispatch and fullmap mining share one stream shape.
-        # Parameter order must match DatasetBase.to_tuple's field order (build_stream unpacks
-        # the declared payload positionally): task, weight, then the hf-specific columns.
-        self.task: tuple[Any, ...] = tuple(task)
-        self.weight: float = weight
+        # parameter order must match DatasetBase.to_tuple's field order (build_stream unpacks
+        # the declared payload positionally): task, weight, then the hf-specific columns
+        super().__init__(task, weight)
         self.name: str = dataset
         self.dataset: str = dataset
         self.subset: str | None = subset

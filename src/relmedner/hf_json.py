@@ -39,8 +39,7 @@ class HuggingFaceJsonDataStream(DataStream):
     ) -> None:
         # positional contract: the payload DatasetBase.to_tuple() produces for HuggingFaceJsonDataset
         # (model field order minus source); registry.build_stream splats it into this __init__
-        self.task: tuple[Any, ...] = tuple(task)
-        self.weight: float = weight
+        super().__init__(task, weight)
         self.name: str = dataset
         self.dataset: str = dataset
         self.file: str = file
