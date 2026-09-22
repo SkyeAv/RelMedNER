@@ -418,6 +418,24 @@ path; `PYTHONUTF8=1` is required for the remote pytest (UTF-8 locale gaps):
     ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && PYTHONUTF8=1 ~/.local/bin/uv run pytest -q'
     ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && ~/.local/bin/uv run ruff check ./src ./tests && ~/.local/bin/uv run ruff format --check ./src ./tests'
 
+### Agent skills
+
+`.pi/skills/add-dataset/` is a repo-local skill for the pi coding agent: describe a corpus ("add
+<nvidia/Nemotron-PII> to the training data", or `/skill:add-dataset`), and it runs the whole ingest
+procedure -- remote probes and gates on wenceslaus, the `ingests.yaml`/`Script`/tuple-lock wiring,
+README row plus measured format notes, one PR to `main`. It never streams data, builds, or runs the
+full suite on the laptop; declaration-only adds run inline and adds needing new code hand off to the
+`ralph` skill with a pre-filled constraint block. The remote loop it drives is exactly the
+wenceslaus chain documented above, packaged as committed scripts
+(`.pi/skills/add-dataset/scripts/remote-gate.sh`) with receipt lines.
+
+One-time setup: `.pi/skills/` is a trust-requiring project resource, so pi asks whether to trust the
+folder on first load. Answering "Trust parent folder" once covers this checkout and every
+`RelMedNER-worktrees/*` worktree (pi resolves the nearest saved entry; the choice is written to
+`~/.pi/agent/trust.json`). Headless runs (`pi -p`, and aoe/fleet workers) show no prompt and silently
+ignore project resources unless that saved entry exists, `defaultProjectTrust` is set to `always` in
+the global settings, or the invocation passes `--approve`.
+
 Entity resolution reads a local fullmap database from the hardcoded
 `FULLMAP_DIR` path in `src/relmedner/constants.py`; fullmap-dependent tests skip when that
 mount is absent, and miner unit tests inject fake `lookup_rows` rows so they never need it.
