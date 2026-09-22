@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import pickle
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from relmedner.gazetteer import (
     report_zero_emission_triggers,
 )
 from relmedner.models import GazetteerPredicate, GazetteerSpec, YamlIngests
+from relmedner.pipeline import ResolveMinedBatches
 
 
 @pytest.fixture(autouse=True)
@@ -134,3 +136,31 @@ def test_qualifier_and_negation_sections_fail_loudly_until_pr_22_lands(declared:
     Spec = GazetteerSpec.model_validate(declared)
     with pytest.raises(NotImplementedError, match=r"#22"):
         configure_gazetteer(Spec)
+
+
+WORKER_TOKENS: list[str] = ["Aspirin", "cures", "migraine"]
+WORKER_SPANS: list[tuple[int, int, str]] = [(0, 0, "ChemicalEntity"), (2, 2, "Disease")]
+
+
+def test_the_mining_dofn_reapplies_the_spec_on_a_simulated_fresh_worker() -> None:
+    """BLOCKER regression: Beam pickles the DoFn instance (spec rides as data) but Flink
+    sdkworkers re-import relmedner.gazetteer fresh, seeing only builtins. Simulate the worker
+    by reverting the module table to the builtins AFTER driver-side construction + pickling,
+    then unpickle + setup and assert the YAML-declared predicate fires in extract_relations"""
+    Spec = GazetteerSpec.model_validate({"predicates": [{"name": "treats", "triggers": [["cures"]]}]})
+    Fn = ResolveMinedBatches(Spec, {})
+    configure_gazetteer(None)  # fresh sdkworker import state: builtin table only
+    WorkerFn = pickle.loads(pickle.dumps(Fn))
+    WorkerFn.setup()
+    assert [relation.name for relation in extract_relations(WORKER_TOKENS, WORKER_SPANS)] == ["treats"]
+
+
+def test_the_mining_dofn_with_none_spec_keeps_the_builtins_on_the_worker() -> None:
+    """a spec-less run must not leak the driver's configure across the wire either: setup()
+    with gazetteer=None rebuilds the builtin table exactly, so a yaml-only phrase stays dead"""
+    Spec = GazetteerSpec.model_validate({"predicates": [{"name": "treats", "triggers": [["cures"]]}]})
+    configure_gazetteer(Spec)  # a different driver run configured this process
+    WorkerFn = pickle.loads(pickle.dumps(ResolveMinedBatches(None, {})))
+    WorkerFn.setup()
+    assert gazetteer.PREDICATE_TRIGGERS == dict(BUILTIN_PREDICATE_TRIGGERS)
+    assert extract_relations(WORKER_TOKENS, WORKER_SPANS) == []

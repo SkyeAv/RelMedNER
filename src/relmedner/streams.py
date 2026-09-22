@@ -29,9 +29,10 @@ class ZeroYieldError(RuntimeError):
 class StreamStats:
     """per-pass data-quality counters for one DataStream (US-009)
 
-    WHY a dataclass and not a StrictBase model: this file is stdlib-only (models.py owns the
-    pydantic imports; streams.py must stay importable without them) and the counters are mutated
-    row by row mid-iteration, a plain mutable-record job rather than validation. dropped_by keys
+    WHY a dataclass and not a StrictBase model: the counters are mutated row by row
+    mid-iteration, a plain mutable-record job rather than validation (the models imported
+    here arrive already-validated; StrictBase stays the schema boundary at parse time).
+    dropped_by keys
     are evaluator reason strings consumed verbatim from row_filters.first_drop_reason plus
     "match_on" attributed by the streams themselves; insertion order is the order reasons first
     fired, which keeps the report line stable for a fixed input.

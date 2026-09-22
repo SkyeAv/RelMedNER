@@ -220,10 +220,12 @@ _GAZETTEER_LOG = logging.getLogger("relmedner.gazetteer")
 
 def configure_gazetteer(spec: GazetteerSpec | None) -> None:
     """rebuild the module trigger tables from BUILTIN_PREDICATE_TRIGGERS plus the YAML-declared
-    predicates; called exactly once per parse from YamlIngestsParser.parse_ingests so the tables
-    always reflect the last parsed ingests.yaml. Pure rebuild and idempotent: spec=None (the
-    default when ingests.yaml declares no gazetteer section) leaves the tables equal to the
-    builtins. The merge is ADDITIVE -- YAML phrases join the predicate they name and new
+    predicates. Call sites: YamlIngestsParser.parse_ingests (driver, once per parse, so the
+    tables always reflect the last parsed ingests.yaml) and ResolveMinedBatches.setup (every
+    Beam worker, because driver-side module state does not survive serialization -- the spec
+    ships through the pipeline as pickled DoFn data). Pure rebuild and idempotent: spec=None
+    (the default when ingests.yaml declares no gazetteer section) leaves the tables equal to
+    the builtins, so the driver/worker double configuration is harmless. The merge is ADDITIVE -- YAML phrases join the predicate they name and new
     predicate keys are added -- and every phrase claimed by two owners (builtin-vs-YAML or
     YAML-vs-YAML) raises a ValidationError naming both owners. WHY module tables instead of an
     injected parameter: find_triggers reads the module global, so a rebuild keeps every existing
