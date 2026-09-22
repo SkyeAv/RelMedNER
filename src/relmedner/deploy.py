@@ -276,7 +276,7 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
     # job server natively and needs no relay
     for worker in workers:
         if worker.host != jobmanager_host:
-            run_cmd([*ssh_to(ssh_user, worker.host), "tmux", "kill-session", "-t", DYN_WATCH_SESSION], dry_run)
+            run_cmd([*ssh_to(ssh_user, worker.host), f"tmux kill-session -t {DYN_WATCH_SESSION} 2>/dev/null; true"], dry_run)
             run_cmd(
                 [
                     *ssh_to(ssh_user, worker.host),
