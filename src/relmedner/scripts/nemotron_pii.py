@@ -90,12 +90,9 @@ class NemotronPiiScript(Script):
         if not mentions:
             return TrainingExample(text=text)
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(mentions, label_map=self.LABEL_MAP)
-        # mentions and resolutions pair positionally; raw-tail labels surface PascalCased while
-        # fullmap/fallback hits already name a biolink class and stay untouched (Pile-NER pattern)
-        labeled: list[ResolvedMention] = [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=ScriptUtils.pascal_label(label), origin=item.origin)
-            for item, (_, label) in zip(resolved, mentions, strict=True)
-        ]
+        # raw labels surface PascalCased (biolink-style casing) while mapped/fallback entries already
+        # name a biolink class and stay untouched
+        labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
         return TrainingExample(text=text, entities=ScriptUtils.group_entities(labeled))
 
 
