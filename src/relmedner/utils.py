@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
@@ -502,6 +503,27 @@ class ScriptUtils:
         """case a raw IOB label the way biolink classes are named (medical condition -> MedicalCondition)"""
         return "".join(part[:1].upper() + part[1:] for part in LABEL_SPLIT.split(label.lower()) if part)
 
+    @classmethod
+    def lookup_label(cls, label_map: Mapping[str, str], raw_label: str) -> str | None:
+        """the shared two-shot label-map probe: the lowercased raw label first, then its
+        IOB-normalized form, so one map may key either 'disease' or 'b-disease'/'anatomical_structure'
+        style variants and callers need not spell out both probes (or forget the second)"""
+        return label_map.get(raw_label.lower()) or label_map.get(cls.normalize_iob_label(raw_label))
+
+    @classmethod
+    def pascal_raw_labels(cls, resolved: list[ResolvedMention]) -> list[ResolvedMention]:
+        """PascalCase the category of every raw-origin mention, leaving fullmap/fallback hits alone.
+
+        A raw label is dataset vocabulary no ontology confirmed, so it trains under a biolink-shaped
+        name rather than an arbitrary string, while a mapped entry already names a biolink class.
+        No parallel label sequence is needed: _resolve copies the raw label into
+        ResolvedMention.category on the raw path, so for those items the category IS the label.
+        """
+        return [
+            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=cls.pascal_label(item.category), origin=item.origin)
+            for item in resolved
+        ]
+
     @staticmethod
     def mention_spans(tokens: list[str], ner: list[Any]) -> list[tuple[int, int, str]]:
         """filter valid GLiNER spans ([start, end, label], end inclusive) down to in-bounds triples"""
@@ -668,7 +690,7 @@ class ScriptUtils:
                     preferred_name=str(row["PREFERRED_NAME"]),
                     origin="fullmap",
                 )
-        fallback: str | None = fallback_map.get(raw_label.lower()) or fallback_map.get(cls.normalize_iob_label(raw_label))
+        fallback: str | None = cls.lookup_label(fallback_map, raw_label)
         if fallback is not None and cls.is_biolink_category(fallback):
             return ResolvedMention(mention=mention, category=fallback, origin="fallback")
         return ResolvedMention(mention=mention, category=raw_label, origin="raw")

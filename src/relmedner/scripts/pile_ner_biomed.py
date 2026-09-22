@@ -87,14 +87,13 @@ class PileNerBiomedScript(Script):
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
         mentions: list[tuple[str, str]] = [(ScriptUtils.join_tokens(tokens[start : end + 1]), label) for start, end, label in spans]
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(mentions, label_map=self.LABEL_MAP)
-        # spans and mentions filter identically, so zip pairs each span with its resolution positionally;
-        # fullmap hits the shared gate rejects fall through to fallback/raw, so no mention is dropped --
+        # fullmap hits the shared gate rejects fall through to fallback/raw, so no mention is dropped;
         # raw labels surface PascalCased (biolink-style casing) while fallback entries already name a
         # biolink class and stay untouched
-        labeled: list[ResolvedMention] = [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=ScriptUtils.pascal_label(label), origin=item.origin)
-            for item, (_, label) in zip(resolved, mentions, strict=True)
-        ]
+        labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
+        # spans and mentions filter identically, so zip pairs each span with its resolution
+        # positionally, and strict=True turns a dropped mention into an error instead of a silent
+        # misalignment of every later span
         resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, labeled, strict=True)]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),

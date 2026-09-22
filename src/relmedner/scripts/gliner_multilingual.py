@@ -116,13 +116,13 @@ class GlinerMultilingualScript(Script):
         spans: list[tuple[int, int, str]] = [span for span in (coerced_span(entry, len(tokens)) for entry in ner) if span is not None]
         if not spans:
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
-        # direct labeling chain: LABEL_MAP hit (lowercased lookup, mirroring the fallback-map
-        # convention) first, PascalCased raw label second; mapped entries keep the "fallback"
-        # origin, unmapped ones "raw" -- mirroring the resolution chain's provenance vocabulary
-        # without ever consulting the fullmap
+        # direct labeling chain: LABEL_MAP hit (the shared lookup_label probe, mirroring the
+        # fallback-map convention) first, PascalCased raw label second; mapped entries keep the
+        # "fallback" origin, unmapped ones "raw" -- mirroring the resolution chain's provenance
+        # vocabulary without ever consulting the fullmap
         resolved: list[ResolvedMention] = []
         for start, end, raw_label in spans:
-            mapped: str | None = self.LABEL_MAP.get(raw_label.lower()) or self.LABEL_MAP.get(ScriptUtils.normalize_iob_label(raw_label))
+            mapped: str | None = ScriptUtils.lookup_label(self.LABEL_MAP, raw_label)
             resolved.append(
                 ResolvedMention(
                     mention=ScriptUtils.join_tokens(tokens[start : end + 1]),

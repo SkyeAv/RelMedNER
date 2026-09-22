@@ -259,6 +259,41 @@ def test_normalize_and_pascal_label_collapse_corpus_label_variants() -> None:
     assert ScriptUtils.pascal_label("") == ""
 
 
+def test_lookup_label_probes_the_lowercased_then_the_normalized_key() -> None:
+    """one map may key either form: the raw lowercase first, then the IOB-normalized variant, so
+    'Anatomical_Structure' reaches an 'anatomical structure' entry without every caller spelling
+    out both probes (the resolution chain's fallback map and the script LABEL_MAPs share the rule)"""
+    Lowered: dict[str, str] = {"disease": "Disease"}
+    Normalized: dict[str, str] = {"anatomical structure": "AnatomicalEntity"}
+
+    assert ScriptUtils.lookup_label(Lowered, "DISEASE") == "Disease"
+    assert ScriptUtils.lookup_label(Normalized, "Anatomical_Structure") == "AnatomicalEntity"
+    assert ScriptUtils.lookup_label(Normalized, "anatomical structure") == "AnatomicalEntity"
+    # a miss stays a miss rather than raising; the `or` chain also means a map must never carry an
+    # empty target, which validate_label_map already rejects because "" is not a biolink class
+    assert ScriptUtils.lookup_label(Lowered, "missing") is None
+
+
+def test_pascal_raw_labels_folds_only_the_raw_origin() -> None:
+    """the shared raw-tail rule every script rides: fullmap and fallback categories already name a
+    biolink class and survive verbatim, while a raw label is dataset vocabulary and trains under a
+    biolink-shaped name. No parallel label sequence is needed because _resolve copies the raw label
+    into category on the raw path"""
+    Resolved: list[ResolvedMention] = [
+        ResolvedMention(mention="aspirin", category="Drug", curie="CHEBI:15365", preferred_name="aspirin", origin="fullmap"),
+        ResolvedMention(mention="headache", category="Disease", origin="fallback"),
+        ResolvedMention(mention="wrist", category="anatomical_structure", origin="raw"),
+    ]
+
+    Labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(Resolved)
+
+    assert [item.category for item in Labeled] == ["Drug", "Disease", "AnatomicalStructure"]
+    # provenance and fullmap evidence ride through the fold, and the caller's list is not mutated
+    assert [item.origin for item in Labeled] == ["fullmap", "fallback", "raw"]
+    assert (Labeled[0].curie, Labeled[0].preferred_name) == ("CHEBI:15365", "aspirin")
+    assert Resolved[2].category == "anatomical_structure"
+
+
 def test_every_pile_ner_fallback_label_maps_to_a_biolink_category() -> None:
     """dataset-local vocabulary values stay real biolink classes"""
     from relmedner.scripts import PileNerBiomedScript

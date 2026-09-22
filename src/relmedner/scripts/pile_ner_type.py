@@ -107,13 +107,10 @@ class PileNerTypeScript(Script):
         if not mentions:
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(mentions, label_map=self.LABEL_MAP)
-        # fullmap hits the shared gate rejects fall through to fallback/raw, so no mention is dropped --
+        # fullmap hits the shared gate rejects fall through to fallback/raw, so no mention is dropped;
         # raw labels surface PascalCased (biolink-style casing) while fallback entries already name a
         # biolink class and stay untouched
-        labeled: list[ResolvedMention] = [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=ScriptUtils.pascal_label(item.category))
-            for item in resolved
-        ]
+        labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
         # one mention can occur many times, so each occurrence carries its mention's resolved
         # category by index (mentions and their resolutions are positionally aligned)
         resolved_spans: list[tuple[int, int, str]] = [(start, end, labeled[index].category) for start, end, index in spans]

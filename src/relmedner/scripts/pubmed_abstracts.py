@@ -280,13 +280,11 @@ class PubmedAbstractsScript(Script):
         spans: list[tuple[int, int, str]] = [(start, end, self.heading(label)) for start, end, label in ScriptUtils.mention_spans(tokens, ner)]
         mentions: list[tuple[str, str]] = [(ScriptUtils.join_tokens(tokens[start : end + 1]), heading) for start, end, heading in spans]
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(mentions, label_map=self.LABEL_MAP)
-        # mentions derives from spans, so zip pairs each span with its resolution positionally;
         # raw-tail headings surface PascalCased (biolink-style casing) while label_map/fallback
         # entries already name a biolink class and stay untouched
-        labeled: list[ResolvedMention] = [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=ScriptUtils.pascal_label(heading), origin=item.origin)
-            for item, (_, heading) in zip(resolved, mentions, strict=True)
-        ]
+        labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
+        # mentions derives from spans, so zip pairs each span with its resolution positionally, and
+        # strict=True turns a dropped mention into an error instead of a silent misalignment
         resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, labeled, strict=True)]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),
