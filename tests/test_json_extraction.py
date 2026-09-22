@@ -619,3 +619,60 @@ def test_dispatch_routes_through_the_registry_and_keeps_declared_outputs() -> No
     assert isinstance(Example, TrainingExample)
     assert Example.structures[0].fields
     assert Example.entities
+
+
+def test_a_genetic_typed_intervention_qualifies_as_a_chemical_entity() -> None:
+    """the Genetic arm deliberately rides the chemical qualifier (audit follow-up): a gene-therapy
+    arm name is a gene symbol and the 2-triple census slice is too small to separate, so the map
+    keeps it; this fixture pins that decision so a future "tighten the set" edit fails loudly"""
+    Doc: dict[str, Any] = {
+        "conditions": ["Sickle Cell Disease"],
+        "interventions": [
+            {"name": "SCD gene therapy", "type": "Genetic"},
+            {"name": "Hydroxyurea", "type": "Drug"},
+            {"name": "Incentive spirometry", "type": "Device"},
+        ],
+    }
+    Text: str = "Sickle Cell Disease patients received SCD gene therapy, Hydroxyurea, and Incentive spirometry."
+    Example: TrainingExample = run_row(Text, enc(Doc))
+
+    assert entities_by_label(Example) == {
+        "Disease": ["Sickle Cell Disease"],
+        "ChemicalEntity": ["SCD gene therapy", "Hydroxyurea"],
+    }
+
+
+def test_the_relation_family_fails_safe_on_every_malformed_professor_bob_shape() -> None:
+    """the defensive branches in _relations carry the no-crash contract (audit follow-up): a
+    dict-valued document, non-dict list items, non-str predicates, and non-str endpoints all
+    drop the relation and ship the structures-only example instead of raising"""
+    Shapes: list[Any] = [
+        {"subject": "x", "predicate": "member of", "object": "y"},  # dict, not the measured root list
+        [{"subject": "x", "predicate": 7, "object": "y"}],  # non-str predicate
+        [{"subject": 3, "predicate": "member of", "object": "y"}],  # non-str head
+        [{"subject": "x", "predicate": "member of", "object": ["y"]}],  # non-str tail
+    ]
+    for document in Shapes:
+        Example: TrainingExample = run_row("x and y appear here.", enc(document), source=PROFESSOR_BOB_SOURCE)
+
+        assert Example.relations == []
+        assert Example.structures and Example.structures[0].fields
+
+    # the mixed list drops the malformed item and keeps its well-formed sibling: skip-don't-coerce
+    Mixed: list[Any] = [{"subject": "x", "predicate": "member of", "object": "y"}, "not-a-dict"]
+    MixedExample: TrainingExample = run_row("x and y appear here.", enc(Mixed), source=PROFESSOR_BOB_SOURCE)
+
+    assert len(MixedExample.relations) == 1
+    assert MixedExample.relations[0].name == "member_of"
+
+
+def test_a_recursion_depth_json_document_ships_the_empty_example() -> None:
+    """json.loads can succeed on documents deeper than the recursive flattening can walk (a
+    2,000-level list parses, then _flatten_child blows the stack), so the flattening carries its
+    own RecursionError guard: the row falls out as the empty example (which the declared-outputs
+    filter drops), never crashing the stream"""
+    Deep: str = "[" * 2000 + "]" * 2000
+    Example: TrainingExample = run_row("deeply nested document", Deep)
+
+    assert Example.text == ""
+    assert not Example.populated()

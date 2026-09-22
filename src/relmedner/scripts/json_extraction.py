@@ -26,8 +26,10 @@ COMPANY_PLACEHOLDER_PREFIX: str = "Company Name"
 
 # owkin interventions[].name maps to ChemicalEntity ONLY when the same object's
 # interventions[].type (9 measured values: Drug, Biological, Device, Procedure, Dietary
-# Supplement, Other, Behavioral, Genetic) lowercased lands in this set; devices, procedures,
-# behavioral and other interventions stay unmapped rather than mislabeled
+# Supplement, Other, Behavioral, Genetic, Radiation) lowercased lands in this set; devices,
+# procedures, behavioral, radiation and other interventions stay unmapped rather than mislabeled.
+# Genetic rides along deliberately: a gene-therapy arm name is a gene symbol, and the 2-triple
+# census slice is too small to separate from the chemical arms
 CHEMICAL_INTERVENTION_TYPES: frozenset[str] = frozenset({"drug", "biological", "dietary supplement", "genetic"})
 
 # roborovski person names qualify only when the containing object carries a sibling type leaf
@@ -309,7 +311,13 @@ class JsonExtractionScript(Script):
             return TrainingExample(text="")
         if not isinstance(decoded, (dict, list)):
             return TrainingExample(text="")
-        flattened = flatten_json(decoded)
+        try:
+            flattened = flatten_json(decoded)
+        except RecursionError:
+            # json.loads can succeed on documents deeper than this module's recursive flattening
+            # can walk (measured: a 2,000-level list parses, then _flatten_child blows the stack);
+            # the row falls out as the text-only example, never crashing the stream
+            return TrainingExample(text="")
         structure = Structure(name=source, fields=[StructureField(name=path, value=value) for path, value in flattened])
         qualifiers = self._qualifying_values(source, decoded)
         resolved = self._entities(source, text_value, flattened, qualifiers)
