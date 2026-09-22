@@ -94,3 +94,22 @@ datasets:
     split: test
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: test
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
