@@ -31,6 +31,8 @@ types share one declarative pipeline:
 
 ## Ingests
 
+Field-by-field schema, discriminator rules, and copy-paste templates for `ingests.yaml`: [docs/yaml-config.md](docs/yaml-config.md).
+
 | dataset | task | inputs | outputs | rows in |
 | --- | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` -> `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
