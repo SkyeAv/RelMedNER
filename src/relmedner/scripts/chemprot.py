@@ -22,7 +22,7 @@ class ChemprotScript(Script):
     discontinuous spans, so the KnowledgatorBiomed char-offset bridge is reused verbatim and every
     annotation defect that does appear (malformed entries, 0 measured) drops the span only. The
     entity label census is exactly three classes: CHEMICAL 31,831, GENE-Y 20,157, GENE-N 10,159;
-    GENE-N ships as GeneFamily, not Gene, because -N marks nonspecific mentions ("kinase",
+    GENE-N falls back to GeneFamily, not Gene, because -N marks nonspecific mentions ("kinase",
     "tumor necrosis factor") that name gene families/classes, and mislabeling them Gene would
     train "kinase" as a specific gene. Relations: arg1 is CHEMICAL in 100% of 15,739 relations
     and arg2 never is, so direction is always chemical -> gene; 0 self-loops, 0 dangling args.
