@@ -1,13 +1,56 @@
 from __future__ import annotations
 
+import json
+import os
+import subprocess
+import sys
+
 import apache_beam as beam
+import pytest
 from apache_beam.metrics.metric import MetricsFilter
 from apache_beam.runners.runner import PipelineResult
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that, equal_to
 
-from relmedner.dedup import DEDUP_METRICS_NAMESPACE, KeepPriorityWinnerByKey, exact_key, normalize_text, priority
+from relmedner.constants import DEDUP_BANDS, DEDUP_NUM_PERM, MIN_NEAR_TOKENS
+from relmedner.dedup import (
+    DEDUP_METRICS_NAMESPACE,
+    KeepPriorityWinnerByKey,
+    band_keys,
+    base_hash,
+    exact_key,
+    normalize_text,
+    priority,
+    shingles,
+    signature,
+)
 from relmedner.models import Entity, TrainingExample
+
+# ~100-word toy abstract and a same-length unrelated abstract with zero shared 5-gram shingles.
+# Sized so the one-word-swap pair has measured Jaccard 0.979: at seed 42 with 8 bands x 16 rows
+# it shares 5 of 8 band keys (S-curve predicts >= 0.999 for s = 0.979), giving the REQ-NEAR-3
+# assertions a large deterministic margin instead of a coin flip.
+NEAR_BASE_WORDS: tuple[str, ...] = (
+    "patients with chronic obstructive pulmonary disease show reduced forced expiratory volume alongside "
+    "progressive dyspnea chronic cough and frequent lower respiratory tract infections that worsen during "
+    "winter months when viral coverage increases among older adults with a long history of tobacco exposure "
+    "and occupational dust inhalation in urban industrial settings according to pulmonary function testing "
+    "performed at baseline and repeated annually by the treating clinical team despite inhaled bronchodilator "
+    "therapy pulmonary rehabilitation and smoking cessation counseling offered through the regional chest "
+    "clinic where arterial blood gases deteriorate gradually and exacerbation rates double within three years"
+).split()
+UNRELATED_WORDS: tuple[str, ...] = (
+    "researchers deployed a transformer encoder pretrained on bibliographic corpora to extract mechanistic "
+    "relations between kinase inhibitors and their downstream signaling targets from full text oncology "
+    "reports annotating each mention with normalized ontology identifiers confidence scores and sentence "
+    "level evidence spans before evaluating the pipeline against a manually curated benchmark of annotated "
+    "pathway diagrams where inter annotator agreement exceeded the threshold set during pilot calibration "
+    "and ablation studies confirmed that domain adaptive pretraining improved macro averaged extraction "
+    "quality across tumor immunology abstracts without any additional labeled training examples whatsoever"
+).split()
+NEAR_BASE_TEXT: str = " ".join(NEAR_BASE_WORDS)
+NEAR_VARIANT_TEXT: str = " ".join(NEAR_BASE_WORDS[:-1] + ["immunotherapy"])  # exactly one shingle changes
+UNRELATED_TEXT: str = " ".join(UNRELATED_WORDS)
 
 
 def a_distinguishable_example(text: str, weight: float = 1.0) -> TrainingExample:
@@ -91,3 +134,71 @@ def test_exact_stage_on_direct_runner_drops_only_duplicates() -> None:
     counters = dedup_counters(result)
     assert counters == {"exact_in": 4, "exact_dropped": 1, "exact_kept": 3}
     assert counters["exact_in"] == counters["exact_dropped"] + counters["exact_kept"]
+
+
+def test_shingles_are_lowercased_word_ngrams() -> None:
+    """REQ-NEAR-1: shingles are lowercased word 5-grams of text.split() in document order, and a
+    text with fewer than n tokens yields the empty tuple -- which is exactly what makes
+    sub-MIN_NEAR_TOKENS texts structurally unable to emit band keys later (they bypass
+    near-dedup because a tiny shingle set makes the MinHash Jaccard estimate noise)"""
+    assert shingles("The BRCA1 Gene MUTATES", n=2) == ("the brca1", "brca1 gene", "gene mutates")
+    assert shingles("TNF Alpha Signaling") == ()  # 3 tokens < default n=5
+    assert shingles("one two three four five") == ("one two three four five",)
+    assert shingles("one two three four") == ()
+    assert shingles("") == ()
+    tokens = MIN_NEAR_TOKENS  # a text at the gate has exactly 6 word 5-grams, never 0
+    assert len(shingles(" ".join(f"w{index}" for index in range(tokens)))) == tokens - 5 + 1
+
+
+def test_signature_deterministic_and_identical_text_equal() -> None:
+    """REQ-NEAR-2: signature() is byte-identical across calls AND processes: shingle hashes come
+    from blake2b and permutations from random.Random(DEDUP_SEED) drawn once at module load,
+    never from builtin hash() (CPython salts it per process). The subprocess check with two
+    different PYTHONHASHSEED values guards the cross-worker invariant that two Beam workers
+    computing the same text must land in the same LSH buckets or near-dedup silently breaks"""
+    first = signature(NEAR_BASE_TEXT)
+    assert first == signature(NEAR_BASE_TEXT)
+    assert len(first) == DEDUP_NUM_PERM == 128
+    assert all(0 <= value < 2**61 - 1 for value in first)
+    assert base_hash("tnf alpha signaling") == base_hash("tnf alpha signaling")
+
+    probe_code = "import json, sys\nfrom relmedner.dedup import signature\nprint(json.dumps(signature(sys.argv[1])))\n"
+    remote = [
+        json.loads(
+            subprocess.run(
+                [sys.executable, "-c", probe_code, NEAR_BASE_TEXT],
+                env={**os.environ, "PYTHONHASHSEED": seed},
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=300,
+            ).stdout
+        )
+        for seed in ("0", "12345")
+    ]
+    assert remote[0] == remote[1] == list(first)
+
+
+def test_near_identical_texts_share_a_band_and_dissimilar_do_not() -> None:
+    """REQ-NEAR-3: at seed 42, a one-word-swap pair with shingle Jaccard 0.979 collides in at
+    least one LSH band (measured: 5 of 8), while an unrelated abstract with zero shared
+    shingles shares no band key. This is the precision contract of near-dedup: only "super
+    super similar" texts may merge, because every dropped record is supervised signal. Also
+    pins band_keys() shape: one key per band, indices 0..DEDUP_BANDS-1, distinct digests,
+    loud ValueError on a malformed signature"""
+    base_shingles, variant_shingles, unrelated_shingles = (set(shingles(text)) for text in (NEAR_BASE_TEXT, NEAR_VARIANT_TEXT, UNRELATED_TEXT))
+    near_jaccard = len(base_shingles & variant_shingles) / len(base_shingles | variant_shingles)
+    assert near_jaccard >= 0.9
+    assert not (base_shingles & unrelated_shingles)
+
+    base_keys = band_keys(signature(NEAR_BASE_TEXT))
+    assert [band for band, _ in base_keys] == list(range(DEDUP_BANDS))
+    assert len({digest for _, digest in base_keys}) == DEDUP_BANDS
+    variant_keys = band_keys(signature(NEAR_VARIANT_TEXT))
+    unrelated_keys = band_keys(signature(UNRELATED_TEXT))
+    assert set(base_keys) & set(variant_keys), "near-identical texts must collide in >= 1 band at seed 42"
+    assert not (set(base_keys) & set(unrelated_keys)), "base and dissimilar texts must share no band key"
+    assert not (set(variant_keys) & set(unrelated_keys)), "variant and dissimilar texts must share no band key"
+
+    with pytest.raises(ValueError, match="rows"):
+        band_keys(signature(NEAR_BASE_TEXT)[:10])

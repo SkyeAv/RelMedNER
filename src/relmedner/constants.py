@@ -140,3 +140,34 @@ MIN_UNIGRAM_LENGTH: int = 3
 # surfaces per 100 docs and ~11.5us/key lookup make batches of rows (not terms) the unit.
 MIN_BATCH_ROWS: int = 200
 MAX_BATCH_ROWS: int = 2000
+
+# ---------------------------------------------------------------- near-dedup knobs ----
+# MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
+# P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,
+# b bands. At 8 bands x 16 rows the 50% point sits at (1/b)**(1/r) = 8**(-1/16) ~= 0.878:
+# s = 0.95 collides with probability ~0.99, s = 0.98 with ~0.9999, s = 0.50 with ~0.0001.
+# Deliberately conservative/high-precision: every dropped record is supervised signal, so
+# near-dedup may only merge "super super similar" texts (same abstract re-ingested, trivial
+# rewording), never half-overlapping ones.
+
+# Fixed seed for the affine-permutation draw (a_j, b_j): signatures must be byte-identical
+# across processes, runners, and workers. CPython's builtin hash() is salted per process and
+# is forbidden anywhere in the dedup module; blake2b + random.Random(42) are stable.
+DEDUP_SEED: int = 42
+
+# text-dedup's recommended starting permutation count (datasketch default is 128 too);
+# signature cost is O(num_perm) per record (~1 KB/record at 8-byte rows), negligible at the
+# ingest registry's ~1.45M rows.
+DEDUP_NUM_PERM: int = 128
+
+# Band split of the 128-row signature; see the S-curve above: 8 bands x 16 rows puts the
+# similarity bar for a band collision at s ~= 0.878 (50% point), i.e. high precision.
+DEDUP_BANDS: int = 8
+
+# Must stay DEDUP_NUM_PERM // DEDUP_BANDS; raising r shifts the whole S-curve right (fewer
+# false merges, more misses). Each band key hashes these 16 rows together.
+DEDUP_ROWS_PER_BAND: int = 16
+
+# Texts shorter than this many tokens bypass near-dedup entirely: below ~10 tokens a word
+# 5-gram shingle set has <6 members, so its MinHash Jaccard estimate is noise, not signal.
+MIN_NEAR_TOKENS: int = 10
