@@ -177,7 +177,19 @@ Dataset: Annotated = Annotated[
 
 
 class YamlIngests(StrictBase):
+    """compose-spec x- extension namespace: a top-level "x-defaults" map hosts reusable YAML anchor
+    definitions document-wide; CSafeLoader resolves the anchors before pydantic sees anything, so the
+    parsed value is stored but never read by loader code (extra="forbid" stays intact otherwise)"""
+
     datasets: list[Dataset] = Field(...)
+    x_defaults: dict[str, Any] | None = Field(None, alias="x-defaults")
+
+    class Meta(StrictBase.Meta):
+        # dataclasses-avroschema cannot map dict[str, Any] (no typing.Any arm exists, schema
+        # generation raises "unknown type"), but x_defaults is a validation-only YAML
+        # convenience and YamlIngests is never avro-serialized, so opt it out of the
+        # generated schema instead of narrowing the annotation
+        exclude = ["x_defaults"]
 
     def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
         return tuple(dataset.to_tuple() for dataset in self.datasets)
