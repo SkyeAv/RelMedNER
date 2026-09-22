@@ -92,7 +92,7 @@ def test_compose_command_falls_back_to_the_nix_profile_standalone(monkeypatch: p
     monkeypatch.setattr(deploy, "run", fake_run)
     Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=16, memory="40g", fullmap="/f", outputs="/o")
 
-    command: list[str] = deploy.compose_command("sgoetz", Worker)
+    command: list[str] = deploy.compose_command("sgoetz", Worker, "relmedner")
 
     # the probe must travel as one argv element — ssh would otherwise re-parse the remote line and
     # silently run the bare `command` builtin
@@ -114,4 +114,4 @@ def test_compose_command_fails_loud_on_an_empty_standalone_probe(monkeypatch: py
     Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=16, memory="40g", fullmap="/f", outputs="/o")
 
     with pytest.raises(SystemExit, match="no docker compose plugin"):
-        deploy.compose_command("sgoetz", Worker)
+        deploy.compose_command("sgoetz", Worker, "relmedner")

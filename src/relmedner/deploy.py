@@ -22,7 +22,8 @@ from relmedner.constants import (
 )
 from relmedner.models import WorkerNode
 
-COMPOSE: list[str] = ["docker", "compose", "-p", PROJECT]
+COMPOSE: list[str] = ["docker", "compose"]
+JOBMANAGER_PROJECT: str = f"{PROJECT}-head"
 TUNNEL_SESSION: str = "relmedner-tunnel"
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 
@@ -70,17 +71,19 @@ def compose_vars(worker: WorkerNode, flink_image: str, worker_image: str, data_p
     }
 
 
-def compose_command(user: str, worker: WorkerNode) -> list[str]:
+def compose_command(user: str, worker: WorkerNode, project: str) -> list[str]:
     """`docker compose` plugin when the host has one, else a standalone docker-compose binary
     (hypatia gets v2 through the nix profile — no sudo for a system plugin install).
 
     the probe travels as ONE argv element: ssh joins its arguments into a remote shell line, so a
     locally-quoted `sh -c "script"` would lose its quoting and silently run the bare `command`
-    builtin (exit 0, no output) instead of the probe; the remote login shell evaluates the line
+    builtin (exit 0, no output) instead of the probe; the remote login shell evaluates the line.
+    the taskmanager and jobmanager stacks use DIFFERENT projects: both files target the same docker
+    host on the head node, and one project's --remove-orphans would reap the other's containers
     """
     prefix: list[str] = ssh_to(user, worker.host)
     if run([*prefix, "docker", "compose", "version"], capture_output=True, check=False).returncode == 0:
-        return [*prefix, *COMPOSE]
+        return [*prefix, *COMPOSE, "-p", project]
     probe_script: str = (
         'command -v docker-compose || { test -x "$HOME/.nix-profile/bin/docker-compose" && echo "$HOME/.nix-profile/bin/docker-compose"; }'
     )
@@ -88,7 +91,7 @@ def compose_command(user: str, worker: WorkerNode) -> list[str]:
     compose_binary: str = probe.stdout.decode().strip()
     if probe.returncode != 0 or not compose_binary:
         raise SystemExit(f"no docker compose plugin and no docker-compose binary on {worker.host}")
-    return [*prefix, compose_binary, "-p", PROJECT]
+    return [*prefix, compose_binary, "-p", project]
 
 
 def image_id(prefix: list[str], image: str) -> str:
@@ -164,14 +167,23 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
         # locale is not guaranteed utf-8
         return Template(TASKMANAGER_COMPOSE.read_text(encoding="utf-8")).substitute(compose_vars(worker, flink_image, worker_image, data_port(index)))
 
+    def kill_tunnel_session(host: str, target: str) -> None:
+        # one argv element: `tmux kill-session` exits nonzero on an unknown session and ssh would
+        # re-parse separate words anyway; `; true` swallows the not-found error
+        run_cmd([*ssh_to(ssh_user, host), f"tmux kill-session -t {tunnel_session_name(target)} 2>/dev/null; true"], dry_run)
+
     if teardown:
         for host, targets in Plan.items():
             for target in targets:
-                run_cmd([*ssh_to(ssh_user, host), "tmux", "kill-session", "-t", tunnel_session_name(target)], dry_run)
+                kill_tunnel_session(host, target)
         jm_index: int = workers.index(jobmanager_worker)
         for index, worker in enumerate(workers):
-            run_cmd([*compose_command(ssh_user, worker), "-f", "-", "down"], dry_run, stdin=render_tm(worker, index))
-        run_cmd([*compose_command(ssh_user, jobmanager_worker), "-f", "-", "down"], dry_run, stdin=render_tm(jobmanager_worker, jm_index))
+            run_cmd([*compose_command(ssh_user, worker, PROJECT), "-f", "-", "down"], dry_run, stdin=render_tm(worker, index))
+        run_cmd(
+            [*compose_command(ssh_user, jobmanager_worker, JOBMANAGER_PROJECT), "-f", "-", "down"],
+            dry_run,
+            stdin=render_tm(jobmanager_worker, jm_index),
+        )
         return
 
     # fail fast on a missing fullmap bundle BEFORE any image build or compose run — a node
@@ -201,7 +213,7 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
 
     for index, worker in enumerate(workers):
         run_cmd(
-            [*compose_command(ssh_user, worker), "-f", "-", "up", "-d", "--force-recreate", "--remove-orphans"],
+            [*compose_command(ssh_user, worker, PROJECT), "-f", "-", "up", "-d", "--force-recreate", "--remove-orphans"],
             dry_run,
             stdin=render_tm(worker, index),
         )
@@ -210,7 +222,7 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
         compose_vars(jobmanager_worker, flink_image, worker_image, data_port(workers.index(jobmanager_worker)))
     )
     run_cmd(
-        [*compose_command(ssh_user, jobmanager_worker), "-f", "-", "up", "-d", "--force-recreate", "--remove-orphans"],
+        [*compose_command(ssh_user, jobmanager_worker, JOBMANAGER_PROJECT), "-f", "-", "up", "-d", "--force-recreate", "--remove-orphans"],
         dry_run,
         stdin=JobmanagerRendered,
     )
@@ -219,7 +231,7 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
     # deploy shell; flink's fixed-delay restart strategy absorbs brief tunnel drops
     for host, targets in Plan.items():
         for target, forwards in targets.items():
-            run_cmd([*ssh_to(ssh_user, host), "tmux", "kill-session", "-t", tunnel_session_name(target)], dry_run)
+            kill_tunnel_session(host, target)
             if not dry_run:
                 inner: str = " ".join(tunnel_spec(forwards, target, ssh_user))
                 Popen(
