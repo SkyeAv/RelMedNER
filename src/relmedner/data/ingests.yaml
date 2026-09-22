@@ -8,6 +8,7 @@ datasets:
     source: hf
     dataset: anthonyyazdaniml/gliner-biomed-pre-training
     split: train
+    weight: 1.0
     columns_out:
       - tokenized_text
       - ner
@@ -19,6 +20,7 @@ datasets:
     source: hf
     dataset: disi-unibo-nlp/Pile-NER-biomed-IOB
     split: train
+    weight: 1.0
     columns_out:
       - tokens
       - ner_tags
@@ -30,6 +32,7 @@ datasets:
     source: hf
     dataset: anthonyyazdaniml/gliner-biomed-curated-corpus
     split: train
+    weight: 1.0
     columns_out:
       - text
   - task:
@@ -40,6 +43,7 @@ datasets:
     source: hf
     dataset: anthonyyazdaniml/gliner-biomed-balanced-curated-corpus
     split: train
+    weight: 1.0
     columns_out:
       - text
   - task:
@@ -48,6 +52,7 @@ datasets:
       outputs:
         - entities
     source: local
+    weight: 1.0
     path: ~/Desktop/interventions.avro
   - task:
       type: script
@@ -60,6 +65,7 @@ datasets:
     source: hf
     dataset: anthonyyazdaniml/gliner-biomed-post-training
     split: train
+    weight: 1.0
     columns_out:
       - tokenized_text
       - ner

@@ -59,6 +59,8 @@ def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_p
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
+        # per-source mixing weight stamped from the ingest declaration (all datasets declare 1.0 today)
+        assert Example.weight == 1.0
         Populated: frozenset[str] = Example.populated()
         # subset contract, not exact equality; every script at minimum emits NER entities
         assert "entities" in Populated

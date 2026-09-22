@@ -20,10 +20,16 @@ class LocalAvroDataStream(DataStream):
 
     SOURCE: ClassVar[str] = "local"
 
-    def __init__(self: Self, task: tuple[Any, ...], path: str) -> None:
+    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str) -> None:
+        # parameter order must match DatasetBase.to_tuple's field order, because build_stream
+        # unpacks the declared payload positionally: task, weight, then the local-specific path
         self.task: tuple[Any, ...] = tuple(task)
+        self.weight: float = weight
+        # the pipeline stamps every row with weights[source], so this key is LocalDataset.row_key
+        # verbatim: the declared path, not its basename (two distinct files may share a name and
+        # must still be able to declare different weights)
+        self.name: str = path
         self.path: str = path
-        self.name: str = Path(path).name
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         # the whole record ships as a single value so the receiving script owns the shape;

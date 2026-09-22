@@ -11,7 +11,7 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
 from relmedner.fullmap_mine import FullmapMiner
 from relmedner.ingests import YamlIngestsParser
-from relmedner.models import RunConfig, TrainingExample
+from relmedner.models import RunConfig, TrainingExample, YamlIngests
 from relmedner.registry import build_stream
 from relmedner.streams import DataStream, StreamedRow, rebuild_task
 from relmedner.types import DispatchedExample, Script
@@ -23,20 +23,27 @@ def stream_rows(stream: DataStream, config: RunConfig) -> Iterator[StreamedRow]:
     return stream.stream(config)
 
 
-def dispatch_row(row: StreamedRow) -> DispatchedExample:
+def weighted(example: TrainingExample, weight: float) -> TrainingExample:
+    """stamp the source-declared mixing weight onto a frozen example (avro provenance)"""
+    return example.model_copy(update={"weight": weight})
+
+
+def dispatch_row(row: StreamedRow, weights: dict[str, float]) -> DispatchedExample:
     """script tasks dispatch through the registry; the leading task value discriminates"""
-    _source, (task, values) = row
+    source, (task, values) = row
     task_model = rebuild_task(task)
     outputs = tuple(task_model.outputs)
-    return Script.dispatch(task_model.name, (outputs, values))
+    outputs, example = Script.dispatch(task_model.name, (outputs, values))
+    return (outputs, weighted(example, weights[source]))
 
 
-def resolve_rows(rows: list[StreamedRow]) -> Iterator[DispatchedExample]:
+def resolve_rows(rows: list[StreamedRow], weights: dict[str, float]) -> Iterator[DispatchedExample]:
     """one shared redb round trip per batch of fullmap rows (batched upstream by BatchElements)"""
     tasks = [rebuild_task(task) for _source, (task, _values) in rows]
+    sources = [source for source, _payload in rows]
     pairs = [(values[0], task) for (_source, (_task, values)), task in zip(rows, tasks, strict=True)]
-    for task, example in zip(tasks, FullmapMiner.resolve_batch(pairs), strict=True):
-        yield (tuple(task.outputs), example)
+    for source, task, example in zip(sources, tasks, FullmapMiner.resolve_batch(pairs), strict=True):
+        yield (tuple(task.outputs), weighted(example, weights[source]))
 
 
 def matches_declared_outputs(dispatched: DispatchedExample) -> bool:
@@ -58,7 +65,10 @@ class BeamPipeline:
         self.options: PipelineOptions | None = options
 
     def run(self: Self, config: RunConfig) -> None:
-        IngestsParser: YamlIngestsParser = YamlIngestsParser()
+        Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
+        # per-source mixing weight stamped onto every record each source emits (avro provenance;
+        # stock gliner2 has no per-example weight, so duplication happens at JSONL export)
+        Weights: dict[str, float] = Ingests.weights_by_source()
         # Flink user code runs in the sdkworker, so external runs write to its durable output mount.
         # DirectRunner keeps honoring the caller's ordinary local path for development and unit tests.
         Output: Path = Path(config.output) if self.options is None else Path(OUTPUTS_MOUNT) / config.artifact_name()
@@ -66,7 +76,7 @@ class BeamPipeline:
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (
                 new_pipeline
-                | "load declarative ingests" >> beam.Create(IngestsParser.generate_tuples())
+                | "load declarative ingests" >> beam.Create(Ingests.generate_tuples())
                 | "initialize datastream classes" >> beam.MapTuple(build_stream)
                 | "stream declared data" >> beam.FlatMap(stream_rows, config=config)
             )
@@ -75,13 +85,13 @@ class BeamPipeline:
             script_rows, fullmap_rows = rows | "split by task type" >> beam.Partition(lambda row, count: 1 if row[1][0][0] == FULLMAP_TYPE else 0, 2)
             dispatched = (
                 script_rows
-                | "dispatch rows to declared scripts" >> beam.Map(dispatch_row)
+                | "dispatch rows to declared scripts" >> beam.Map(dispatch_row, weights=Weights)
                 | "keep examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
             mined = (
                 fullmap_rows
                 | "buffer fullmap rows into batches" >> beam.BatchElements(min_batch_size=MIN_BATCH_ROWS, max_batch_size=MAX_BATCH_ROWS)
-                | "resolve mined batches" >> beam.FlatMap(resolve_rows)
+                | "resolve mined batches" >> beam.FlatMap(resolve_rows, weights=Weights)
                 | "keep mined examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
             (

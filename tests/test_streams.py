@@ -8,7 +8,8 @@ import pytest
 
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
-from relmedner.models import RunConfig
+from relmedner.local import LocalAvroDataStream
+from relmedner.models import RunConfig, YamlIngests
 from relmedner.registry import SOURCE_REGISTRY, build_stream
 from relmedner.streams import DataStream, StreamedRow
 
@@ -45,14 +46,56 @@ def test_stream_limit_is_not_shared_between_calls() -> None:
     assert len(list(Stream.stream(RunConfig(sample_limit=5)))) == 5
 
 
-def test_build_stream_constructs_from_declared_ingests() -> None:
-    Source, Payload = YamlIngestsParser().generate_tuples()[0]
-    Stream: DataStream = build_stream(Source, Payload)
+def test_build_stream_constructs_every_declared_ingest() -> None:
+    """every declared tuple must unpack into its stream ctor positionally, and the key the stream
+    stamps its rows with must equal DatasetBase.row_key, because the pipeline looks the source's
+    mixing weight up by that string (drift is a KeyError partway through a run, not a wrong number).
+
+    Building ALL of them is what catches a source whose ctor was never updated for a new DatasetBase
+    field: the local stream took (task, path) while the declared payload already carried
+    (task, weight, path), so the CTKP ingest raised TypeError at build_stream while every hf-only
+    test stayed green. Construction is offline-safe, since no source touches the network or the disk
+    until rows() is called.
+    """
+    Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
+    Weights: dict[str, float] = Ingests.weights_by_source()
+
+    Built: list[DataStream] = [build_stream(*dataset.to_tuple()) for dataset in Ingests.datasets]
+
+    assert len(Built) == len(Ingests.datasets)
+    # both source kinds stay covered, so this invariant cannot silently degrade to hf-only again
+    assert {type(stream) for stream in Built} == {HuggingFaceDataStream, LocalAvroDataStream}
+    for dataset, stream in zip(Ingests.datasets, Built, strict=True):
+        assert stream.name == dataset.row_key, f"{type(dataset).__name__} row key drift"
+        assert stream.weight == dataset.weight
+        assert Weights[stream.name] == dataset.weight
+
+    First = Built[0]
+    assert isinstance(First, HuggingFaceDataStream)
+    assert First.dataset == "anthonyyazdaniml/gliner-biomed-pre-training"
+    assert First.split == "train"
+    assert First.columns_out == ("tokenized_text", "ner")
+    assert First.weight == 1.0
+
+
+def test_build_stream_carries_the_declared_weight() -> None:
+    """the weight rides the frozen payload tuple (DatasetBase field order) positionally into
+    the stream ctor, so a nondefault declaration must land on the stream untouched"""
+    Stream: DataStream = build_stream(
+        "hf",
+        (
+            ("script", "GlinerBiomedScript", ("entities",)),
+            0.25,
+            "some/dataset",
+            None,
+            "train",
+            None,
+            ("text",),
+        ),
+    )
 
     assert isinstance(Stream, HuggingFaceDataStream)
-    assert Stream.dataset == "anthonyyazdaniml/gliner-biomed-pre-training"
-    assert Stream.split == "train"
-    assert Stream.columns_out == ("tokenized_text", "ner")
+    assert Stream.weight == 0.25
 
 
 def test_rebuild_task_round_trips_every_declared_task_type() -> None:
@@ -76,6 +119,7 @@ def test_registry_keys_on_the_source_discriminator() -> None:
 def test_apply_match_keeps_only_declared_values() -> None:
     Stream: HuggingFaceDataStream = HuggingFaceDataStream(
         task=("script", "GlinerBiomedScript", ("entities",)),
+        weight=1.0,
         dataset="anthonyyazdaniml/gliner-biomed-pre-training",
         subset=None,
         split="train",

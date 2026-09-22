@@ -25,6 +25,14 @@ def rebuild_task(task: tuple[Any, ...]) -> Any:
 class DataStream(ABC):
     SOURCE: ClassVar[str]
 
+    name: str
+    """the source key every yielded row is stamped with. It must equal the declared dataset's
+    DatasetBase.row_key exactly: the pipeline looks the source's mixing weight up by this string,
+    so any drift is a KeyError partway through a run rather than a wrong number"""
+
+    weight: float
+    """the declared per-source mixing weight, carried positionally in the frozen payload tuple"""
+
     @abstractmethod
     def rows(self: Self) -> Iterator[StreamedRow]:
         """yields every row this source declares, unbounded"""

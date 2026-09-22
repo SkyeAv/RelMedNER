@@ -77,6 +77,16 @@ Task: Annotated = Annotated[
 
 class DatasetBase(StrictBase):
     task: Task = Field(...)
+    weight: float = Field(1.0, gt=0.0)
+    """per-source mixing weight stamped onto every TrainingExample the source emits. Stock
+    gliner2 has no per-example weight channel (InputExample/from_dict/ExtractorDataset all
+    drop it), so consumption is weighted duplication at avro->JSONL export, not in-training"""
+
+    @property
+    def row_key(self: Self) -> str:
+        """the name streamed rows are stamped with (DataStream.rows yields it per row); the
+        pipeline maps it to the declared weight before the source key is dropped"""
+        raise NotImplementedError
 
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
         return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields if name != "source"))
@@ -95,6 +105,10 @@ class HuggingFaceDataset(DatasetBase):
     match_on: list[MatchOn] | None = Field(None)
     columns_out: list[str] = Field(...)
 
+    @property
+    def row_key(self: Self) -> str:
+        return self.dataset
+
 
 class LocalDataset(DatasetBase):
     """an avro container built out-of-band and read from disk by LocalAvroDataStream
@@ -106,6 +120,10 @@ class LocalDataset(DatasetBase):
 
     source: Literal["local"] = Field(...)
     path: str = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        return self.path
 
 
 Dataset: Annotated = Annotated[
@@ -119,6 +137,16 @@ class YamlIngests(StrictBase):
 
     def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
         return tuple(dataset.to_tuple() for dataset in self.datasets)
+
+    def weights_by_source(self: Self) -> dict[str, float]:
+        """row key -> declared mixing weight; rows key on the source's repo id (not the "hf"
+        discriminator), so two entries sharing a repo id must agree on the weight or the stamp
+        would be ambiguous"""
+        weights: dict[str, float] = {}
+        for dataset in self.datasets:
+            if weights.setdefault(dataset.row_key, dataset.weight) != dataset.weight:
+                raise ValueError(f"dataset {dataset.row_key!r} is declared twice with conflicting weights")
+        return weights
 
 
 class Entity(StrictBase):
@@ -188,6 +216,10 @@ def describe(descriptions: list[Description] | None) -> dict[str, str]:
 
 class TrainingExample(StrictBase):
     text: str = Field(...)
+    weight: float = Field(1.0, gt=0.0)
+    """source-declared mixing weight; rides the avro record as provenance and stays out of the
+    gliner2 to_output() projection -- stock gliner2 silently drops extra keys, so the actual
+    training-time consumption is weighted duplication at the avro->JSONL export step"""
     entities: list[Entity] = Field(default_factory=list)
     classifications: list[Classification] = Field(default_factory=list)
     structures: list[Structure] = Field(default_factory=list)
