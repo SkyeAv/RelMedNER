@@ -64,3 +64,19 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: script
+      name: SuperGlueRecordScript
+      outputs:
+        - entities
+        - classifications
+    source: hf
+    dataset: aps/super_glue
+    subset: record
+    split: train
+    columns_out:
+      - passage
+      - query
+      - entities
+      - entity_spans
+      - answers

@@ -72,6 +72,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "~/Desktop/interventions.avro",
         ),
     ),
+    "aps/super_glue": (
+        "hf",
+        (
+            ("script", "SuperGlueRecordScript", ("entities", "classifications")),
+            "aps/super_glue",
+            "record",
+            "train",
+            None,
+            ("passage", "query", "entities", "entity_spans", "answers"),
+        ),
+    ),
 }
 
 
