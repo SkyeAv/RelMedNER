@@ -170,7 +170,9 @@ if [ -f "$pids" ]; then xargs -r kill 2>/dev/null < "$pids"; fi
 # POLL, don't stream: a long-lived `docker logs -f | grep | grep` pipeline dies silently when any
 # member exits (observed mid-job), while a fresh pipeline per tick is self-healing by construction
 while true; do
-  for p in $(docker logs --since 2m relmedner-sdkworker-1 2>/dev/null \\
+  # 2>&1, never 2>/dev/null: hypatia's docker CLI emits log lines on STDERR — discarding it
+  # blinded the watcher from day one (empty seen file, zero forwards, workers dialing dead ports)
+  for p in $(docker logs --since 2m relmedner-sdkworker-1 2>&1 \\
       | grep -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+'); do
     grep -qx "$p" "$seen" 2>/dev/null && continue
     echo "$p" >> "$seen"
