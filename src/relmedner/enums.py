@@ -13,3 +13,9 @@ class OutputShapes(StrEnum):
     CLASSIFICATIONS = "classifications"
     STRUCTURES = "structures"
     RELATIONS = "relations"
+
+
+class DedupMode(StrEnum):
+    OFF = "off"
+    EXACT = "exact"
+    NEAR = "near"

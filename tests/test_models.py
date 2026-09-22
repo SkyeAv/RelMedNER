@@ -5,7 +5,7 @@ from typing import Any
 import pytest
 from pydantic import TypeAdapter, ValidationError
 
-from relmedner.enums import OutputShapes, ProcessingTypes
+from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
 from relmedner.models import (
     ChoiceField,
     Classification,
@@ -16,6 +16,7 @@ from relmedner.models import (
     HuggingFaceJsonDataset,
     Relation,
     RelationField,
+    RunConfig,
     ScriptTask,
     StrictBase,
     Structure,
@@ -346,3 +347,29 @@ def test_huggingface_json_dataset_rejects_an_empty_file_name() -> None:
             match_on=None,
             columns_out=["tokenized_text"],
         )
+
+
+# ---------------------------------------------------------------- dedup mode (US-004) --
+
+
+def test_run_config_defaults_to_near_dedup() -> None:
+    """REQ-INT-1: dedup is ON by default -- repeats must not reach training data unless it is
+    explicitly disabled. use_enum_values stores the StrEnum's str value, which still compares
+    equal to the member, so the default reads back as DedupMode.NEAR"""
+    assert RunConfig().dedup_mode == DedupMode.NEAR
+
+
+def test_run_config_from_flags_threads_dedup_mode() -> None:
+    """REQ-INT-1: the CLI flag lands on the config; the model default follows when no flag
+    is given, and the pre-existing positional order (test_run, output) is unchanged"""
+    assert RunConfig.from_flags(True).dedup_mode == DedupMode.NEAR
+    assert RunConfig.from_flags(True, dedup_mode=DedupMode.OFF).dedup_mode == DedupMode.OFF
+    Config: RunConfig = RunConfig.from_flags(False, "custom.avro", DedupMode.EXACT)
+    assert Config.dedup_mode == DedupMode.EXACT
+    assert Config.sample_limit is None and Config.output == "custom.avro"
+
+
+def test_run_config_rejects_unknown_dedup_mode_loudly() -> None:
+    """REQ-INT-1: an unknown mode fails fast at model validation, never silently mid-run"""
+    with pytest.raises(ValidationError):
+        RunConfig(dedup_mode="bogus")

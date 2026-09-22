@@ -146,3 +146,41 @@ MIN_UNIGRAM_LENGTH: int = 3
 # surfaces per 100 docs and ~11.5us/key lookup make batches of rows (not terms) the unit.
 MIN_BATCH_ROWS: int = 200
 MAX_BATCH_ROWS: int = 2000
+
+# ---------------------------------------------------------------- near-dedup knobs ----
+# MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
+# P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,
+# b bands. At 8 bands x 16 rows the 50% point sits at (1/b)**(1/r) = 8**(-1/16) ~= 0.878:
+# s = 0.95 collides with probability ~0.99, s = 0.98 with ~0.9999, s = 0.50 with ~0.0001.
+# Deliberately conservative/high-precision: every dropped record is supervised signal, so
+# near-dedup may only merge "super super similar" texts (same abstract re-ingested, trivial
+# rewording), never half-overlapping ones.
+
+# Fixed seed for the affine-permutation draw (a_j, b_j): signatures must be byte-identical
+# across processes, runners, and workers. CPython's builtin hash() is salted per process and
+# is forbidden anywhere in the dedup module; blake2b + random.Random(42) are stable.
+DEDUP_SEED: int = 42
+
+# text-dedup's recommended starting permutation count (datasketch default is 128 too). One
+# signature costs O(num_perm * shingles), NOT O(num_perm): every permutation takes a minimum
+# over every shingle hash. Measured in pure python on this repo's stack -- 0.60 ms for a
+# 20-token record (16 shingles), 7.45 ms at the 233-token pubmed median (229 shingles), 49 ms
+# at its 1,558-token max (1,554 shingles) -- so a full pass over the ~1.45M-row registry costs
+# on the order of 180 core-minutes at median length, spread across Beam workers. Vectorizing
+# the inner loop the way datasketch does (numpy/numba) is the lever if that ever dominates a
+# run; a rewrite must reproduce these signature bytes exactly, since the affine arithmetic
+# runs mod a 61-bit prime and a uint64 wraparound would silently change every near-dedup
+# decision.
+DEDUP_NUM_PERM: int = 128
+
+# Band split of the 128-row signature; see the S-curve above: 8 bands x 16 rows puts the
+# similarity bar for a band collision at s ~= 0.878 (50% point), i.e. high precision.
+DEDUP_BANDS: int = 8
+
+# Must stay DEDUP_NUM_PERM // DEDUP_BANDS; raising r shifts the whole S-curve right (fewer
+# false merges, more misses). Each band key hashes these 16 rows together.
+DEDUP_ROWS_PER_BAND: int = 16
+
+# Texts shorter than this many tokens bypass near-dedup entirely: below ~10 tokens a word
+# 5-gram shingle set has <6 members, so its MinHash Jaccard estimate is noise, not signal.
+MIN_NEAR_TOKENS: int = 10

@@ -8,6 +8,7 @@ from relmedner.clusters import YamlClusterParser
 from relmedner.collect import collect_outputs
 from relmedner.constants import DEFAULT_OUTPUT, LOCAL_HOST
 from relmedner.deploy import deploy_cluster, run_cmd
+from relmedner.enums import DedupMode
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
 from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
@@ -21,8 +22,9 @@ def build_dataset(
     test_run: Annotated[bool, cyclopts.Parameter(alias="-t")] = False,
     output: Annotated[str, cyclopts.Parameter(alias="-o")] = DEFAULT_OUTPUT,
     direct: Annotated[bool, cyclopts.Parameter("--direct", alias="-d")] = False,
+    dedup_mode: Annotated[DedupMode, cyclopts.Parameter("--dedup-mode")] = DedupMode.NEAR,
 ) -> None:
-    Config: RunConfig = RunConfig.from_flags(test_run, output)
+    Config: RunConfig = RunConfig.from_flags(test_run, output, dedup_mode)
     if direct:
         # cluster-free path: the DirectRunner keeps the caller's local output path and needs no
         # flink cluster, no vpn route, and no podman -- see PLAN.md "Cluster reachability without VPN"

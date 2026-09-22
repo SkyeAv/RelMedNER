@@ -8,7 +8,7 @@ from dataclasses_avroschema.pydantic import AvroBaseModel
 from pydantic import BaseModel, ConfigDict, Field
 
 from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
-from relmedner.enums import OutputShapes, ProcessingTypes
+from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
 
 
 class StrictBase(AvroBaseModel):
@@ -33,14 +33,19 @@ class RunConfig(StrictBase):
     sample_limit: int | None = Field(None)
     output: str = Field(DEFAULT_OUTPUT)
     run_id: str = Field(default_factory=lambda: uuid4().hex)
+    dedup_mode: DedupMode = Field(DedupMode.NEAR)
+    """repeats must not reach training data unless dedup is explicitly disabled (default ON).
+    use_enum_values stores the StrEnum's str value, which still compares equal to the member"""
 
     def artifact_name(self: Self) -> str:
         Output: Path = Path(self.output)
         return f"{Output.stem}-{self.run_id}{Output.suffix}"
 
     @classmethod
-    def from_flags(cls, test_run: bool, output: str = DEFAULT_OUTPUT) -> Self:
-        return cls(sample_limit=TEST_ROW_LIMIT if test_run else None, output=output)
+    def from_flags(cls, test_run: bool, output: str = DEFAULT_OUTPUT, dedup_mode: DedupMode = DedupMode.NEAR) -> Self:
+        """new flags append at the end; the first two positional args keep their established
+        order so existing callers (tests, cli) cannot silently shift meaning"""
+        return cls(sample_limit=TEST_ROW_LIMIT if test_run else None, output=output, dedup_mode=dedup_mode)
 
 
 class TaskBase(StrictBase):
