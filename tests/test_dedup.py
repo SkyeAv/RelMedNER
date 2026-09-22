@@ -16,6 +16,7 @@ from relmedner.constants import DEDUP_BANDS, DEDUP_NUM_PERM, MIN_NEAR_TOKENS
 from relmedner.dedup import (
     DEDUP_METRICS_NAMESPACE,
     KeepPriorityWinnerByKey,
+    NearDeduplicate,
     band_keys,
     base_hash,
     exact_key,
@@ -67,6 +68,14 @@ def dedup_counters(result: PipelineResult) -> dict[str, int]:
     query = result.metrics().query(MetricsFilter().with_namespace(DEDUP_METRICS_NAMESPACE))
     found = {counter.key.metric.name: counter.committed for counter in query["counters"]}
     return {name: found.get(name, 0) for name in ("exact_in", "exact_dropped", "exact_kept")}
+
+
+def near_counters(result: PipelineResult) -> dict[str, int]:
+    """read the four near-dedup counters out of a finished pipeline result (absent means zero)"""
+    query = result.metrics().query(MetricsFilter().with_namespace(DEDUP_METRICS_NAMESPACE))
+    found = {counter.key.metric.name: counter.committed for counter in query["counters"]}
+    names = ("near_in", "near_dropped", "near_kept", "near_buckets_nontrivial")
+    return {name: found.get(name, 0) for name in names}
 
 
 def test_exact_key_folds_whitespace_and_preserves_case() -> None:
@@ -202,3 +211,79 @@ def test_near_identical_texts_share_a_band_and_dissimilar_do_not() -> None:
 
     with pytest.raises(ValueError, match="rows"):
         band_keys(signature(NEAR_BASE_TEXT)[:10])
+
+
+def test_near_stage_drops_lower_priority_and_survives_dissimilar() -> None:
+    """REQ-NEAR-4: of three records where A~B (shingle Jaccard 0.979, sharing 5 of 8 band keys
+    at seed 42) with different weights and C dissimilar (sharing no band key with either), the
+    lower-priority of A/B drops exactly once and C survives untouched"""
+    base_low = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant_high = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+    unrelated = a_distinguishable_example(UNRELATED_TEXT, weight=2.0)
+
+    pipeline = TestPipeline()
+    survivors = pipeline | beam.Create([base_low, variant_high, unrelated]) | NearDeduplicate()
+    assert_that(survivors | beam.Map(normalized_text), equal_to([NEAR_VARIANT_TEXT, UNRELATED_TEXT]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    counters = near_counters(result)
+    assert counters == {"near_in": 3, "near_dropped": 1, "near_kept": 2, "near_buckets_nontrivial": 5}
+    assert counters["near_in"] == counters["near_dropped"] + counters["near_kept"]
+
+
+def test_near_stage_counters_reconcile_including_all_bypass_input() -> None:
+    """REQ-NEAR-5/6: near_in == near_dropped + near_kept on every input. All-bypass input
+    (texts under MIN_NEAR_TOKENS tokens, including blanks) yields near_dropped == 0 and
+    near_buckets_nontrivial == 0: short texts never reach a band bucket. A mixed input of
+    short + near-pair + dissimilar reconciles to the full count too"""
+    short_one = a_distinguishable_example("aspirin", weight=1.0)
+    blank = TrainingExample(text="")
+    whitespace_only = TrainingExample(text="  \n\t ")
+
+    pipeline = TestPipeline()
+    survivors = pipeline | beam.Create([short_one, blank, whitespace_only]) | NearDeduplicate()
+    assert_that(survivors | beam.Map(normalized_text), equal_to(["aspirin", "", ""]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    counters = near_counters(result)
+    assert counters == {"near_in": 3, "near_dropped": 0, "near_kept": 3, "near_buckets_nontrivial": 0}
+    assert counters["near_in"] == counters["near_dropped"] + counters["near_kept"]
+
+    mixed_pipeline = TestPipeline()
+    mixed = (
+        mixed_pipeline
+        | beam.Create(
+            [short_one, blank, a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0), a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)]
+        )
+        | NearDeduplicate()
+    )
+    assert_that(mixed | beam.Map(normalized_text), equal_to(["aspirin", "", NEAR_VARIANT_TEXT]))
+
+    mixed_result = mixed_pipeline.run()
+    mixed_result.wait_until_finish()
+    mixed_counters = near_counters(mixed_result)
+    assert mixed_counters["near_in"] == 4
+    assert mixed_counters["near_dropped"] == 1
+    assert mixed_counters["near_kept"] == 3
+    assert mixed_counters["near_in"] == mixed_counters["near_dropped"] + mixed_counters["near_kept"]
+
+
+def test_near_stage_winner_that_loses_another_band_does_not_resurrect() -> None:
+    """REQ-NEAR-6: base (weight 1) loses the 5 bands it shares with variant (weight 3) but WINS
+    its 3 remaining singleton bands -- if per-band winners were unioned without the global
+    exact-key collapse it would reappear. The collapse sees its lose tags and suppresses it;
+    variant, which wins all 8 of its bands, is emitted exactly once (near_kept == 1, not 8)"""
+    base_low = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant_high = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+
+    pipeline = TestPipeline()
+    survivors = pipeline | beam.Create([base_low, variant_high]) | NearDeduplicate()
+    assert_that(survivors, equal_to([variant_high]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    counters = near_counters(result)
+    assert counters == {"near_in": 2, "near_dropped": 1, "near_kept": 1, "near_buckets_nontrivial": 5}
+    assert counters["near_in"] == counters["near_dropped"] + counters["near_kept"]
