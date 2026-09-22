@@ -196,8 +196,14 @@ remote):
 
 ## Testing
 
-    uv run pytest -q
-    uv run ruff check src tests
+    make test        # full gate: every test, measured, 90% coverage floor
+    make test-fast   # iteration loop: parallel, no coverage measurement
+    make lint        # ruff check + format check
+
+Pre-commit runs `make lint` only (sub-second); the suite runs at the pre-push boundary, so it gates
+once per pushed batch instead of taxing every commit. Install both hook types once:
+
+    uv run pre-commit install -t pre-commit -t pre-push
 
 Entity resolution reads a local fullmap database from the hardcoded
 `FULLMAP_DIR` path in `src/relmedner/constants.py`; fullmap-dependent tests skip when that

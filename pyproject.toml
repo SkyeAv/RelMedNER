@@ -37,7 +37,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "--cov=relmedner --cov-report=term-missing -n auto"
+# coverage stays out of addopts so a targeted `uv run pytest tests/test_x.py` is fast; `make test`
+# is the full gate and passes the coverage flags (with a floor) explicitly
+addopts = "-n auto"
 
 [tool.ruff]
 line-length = 150

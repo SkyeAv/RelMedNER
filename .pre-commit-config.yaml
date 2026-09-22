@@ -1,15 +1,19 @@
 repos:
   - repo: local
     hooks:
+      # commit stage stays sub-second: ruff check + format check only. Running the whole suite on
+      # every commit cost ~80s and trained people to pass --no-verify, which gates nothing.
       - id: lint
         name: make lint
         entry: make lint
         language: system
         pass_filenames: false
         stages: [pre-commit]
+      # the suite moves to the push boundary, where it runs once per pushed batch instead of once
+      # per commit and still blocks anything broken from reaching origin
       - id: test
         name: make test
         entry: make test
         language: system
         pass_filenames: false
-        stages: [pre-commit]
+        stages: [pre-push]
