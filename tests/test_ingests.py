@@ -4,7 +4,7 @@ import pytest
 
 from relmedner.ingests import YamlIngestsParser
 
-# per-dataset locks: each dataset's entry is asserted independently so adding a third dataset is an
+# per-ingest locks: each declared ingest's entry is asserted independently so adding a dataset is an
 # additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
 # parallel dataset worktrees
 EXPECTED: dict[str, tuple[object, ...]] = {
@@ -80,7 +80,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("conversations",),
         ),
     ),
-    "TrialPanorama/TrialPanorama-database": (
+    "TrialPanorama/TrialPanorama-database:studies": (
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
@@ -92,7 +92,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("abstract",),
         ),
     ),
-    "aps/super_glue": (
+    "aps/super_glue:multirc": (
         "hf",
         (
             ("script", "SuperGlueMultiRCScript", ("classifications",)),
@@ -151,7 +151,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
-    "knowledgator/PubMedAbstractsNER": (
+    "knowledgator/PubMedAbstractsNER:train.json": (
         "hf_json",
         (
             ("script", "PubmedAbstractsScript", ("entities", "relations")),
@@ -163,18 +163,40 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "aps/super_glue:record": (
+        "hf",
+        (
+            ("script", "SuperGlueRecordScript", ("entities", "classifications")),
+            1.0,
+            "aps/super_glue",
+            "record",
+            "train",
+            None,
+            ("passage", "query", "entities", "entity_spans", "answers"),
+        ),
+    ),
 }
 
 
-def tuples_by_dataset() -> dict[str, tuple[object, ...]]:
+def entry_key(payload: tuple[object, ...]) -> str:
+    """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
+    "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
+    different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
+    the loser would vanish from both locks and the failure would be silent"""
+    dataset = str(payload[2])
+    discriminator = payload[3] if len(payload) > 3 else None
+    return f"{dataset}:{discriminator}" if discriminator is not None else dataset
+
+
+def tuples_by_ingest() -> dict[str, tuple[object, ...]]:
     # the repo id moved to payload position 2 when the weight field joined DatasetBase
-    return {entry[1][2]: entry for entry in YamlIngestsParser().generate_tuples()}
+    return {entry_key(payload): (source, payload) for source, payload in YamlIngestsParser().generate_tuples()}
 
 
-@pytest.mark.parametrize("dataset", sorted(EXPECTED))
-def test_the_declared_tuple_shape_is_locked_per_dataset(dataset: str) -> None:
-    assert tuples_by_dataset()[dataset] == EXPECTED[dataset]
+@pytest.mark.parametrize("ingest", sorted(EXPECTED))
+def test_the_declared_tuple_shape_is_locked_per_ingest(ingest: str) -> None:
+    assert tuples_by_ingest()[ingest] == EXPECTED[ingest]
 
 
-def test_every_declared_dataset_is_accounted_for() -> None:
-    assert set(tuples_by_dataset()) == set(EXPECTED)
+def test_every_declared_ingest_is_accounted_for() -> None:
+    assert set(tuples_by_ingest()) == set(EXPECTED)

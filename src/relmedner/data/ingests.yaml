@@ -158,3 +158,20 @@ datasets:
     columns_out:
       - tokenized_text
       - ner
+  - task:
+      type: script
+      name: SuperGlueRecordScript
+      outputs:
+        - entities
+        - classifications
+    source: hf
+    dataset: aps/super_glue
+    subset: record
+    split: train
+    weight: 1.0
+    columns_out:
+      - passage
+      - query
+      - entities
+      - entity_spans
+      - answers

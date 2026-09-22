@@ -10,3 +10,4 @@
 /.ruff_cache/
 dist/
 /.ralph/
+.ralph/

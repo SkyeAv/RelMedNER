@@ -8,6 +8,7 @@ from relmedner.scripts.pile_ner_type import PileNerTypeScript
 from relmedner.scripts.pubmed_abstracts import PubmedAbstractsScript
 from relmedner.scripts.sentence_rex import SentenceRexScript
 from relmedner.scripts.super_glue_multirc import SuperGlueMultiRCScript
+from relmedner.scripts.super_glue_record import SuperGlueRecordScript
 
 __all__ = [
     "CtkpInterventionsScript",
@@ -20,4 +21,5 @@ __all__ = [
     "PubmedAbstractsScript",
     "SentenceRexScript",
     "SuperGlueMultiRCScript",
+    "SuperGlueRecordScript",
 ]

@@ -45,6 +45,13 @@ def validate_label_map(label_map: dict[str, str], owner: str) -> None:
             raise ValueError(f"{owner} fallback {raw_label!r} -> {category!r} is not a biolink class")
 
 
+def validate_category(category: str, owner: str) -> None:
+    """validate_label_map for the single shared constant: a script that labels every gold span under
+    one catch-all class fails loudly at import on a typo instead of silently training garbage labels"""
+    if not ScriptUtils.is_biolink_category(category):
+        raise ValueError(f"{owner} CATEGORY {category!r} is not a biolink class")
+
+
 class RowFamily(ABC):
     """one row shape of a multi-task corpus; subclasses self-register and are consulted in PRIORITY order,
     mirroring the Script.REGISTRY paradigm one level down. matches() is pure label-set dispatch -- the

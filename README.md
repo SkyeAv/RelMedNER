@@ -39,7 +39,8 @@ types share one declarative pipeline:
 | `TrialPanorama/TrialPanorama-database` (`studies`) | `fullmap` (max_ngram=6, taxon=9606) | `abstract` | entities, relations | 1,332,141 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
-| `aps/super_glue` (multirc) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
+| `aps/super_glue` (`multirc`) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
+| `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
 | `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
 
 All script tasks except the multilingual ingest (which labels directly, see its
@@ -234,6 +235,27 @@ Mined rows flow through the same resolution chain and quality gates as the
 is documented under [How fullmap mining works](#how-fullmap-mining-works) and not
 re-described here.
 
+## SuperGLUE ReCoRD
+
+The one ingest whose script ships general-domain text: `aps/super_glue` subset `record` is a
+CNN news passage per row (100,730 training rows), annotated with gold entity spans
+(`entity_spans` is a dict of parallel `text`/`start`/`end` lists) and a cloze-style query whose
+answers name which spans fill its placeholder.
+
+`SuperGlueRecordScript` trusts the dataset's gold and re-resolves nothing: spans ship verbatim
+under the single catch-all biolink class `NamedThing`, the same trust-gold stance as
+`CtkpInterventionsScript`, because the passages are news text unrelated to the biomedical
+vocabularies fullmap resolves against -- re-categorizing "Dallas" or "the Rams" through those
+would be noise, and ReCoRD declares no gold relations either. A span survives only when its
+table is well-formed (equal-length lists) and `passage[start:end]` matches `text` exactly;
+malformed or ragged span tables yield zero spans rather than a crash.
+
+The cloze task ships as one `Classification(task='cloze entity resolution')`: labels are the
+surviving span surfaces, `true_label` the gold answers that occur in that label set, and
+`prompt` the raw query. Answers whose surface never survives span validation drop rather than
+corrupting the label set; when no gold answer survives, the row ships entities only (subset
+semantics of the declared-outputs filter).
+
 ## How post-training row families work
 
 `src/relmedner/families.py` splits the multi-task corpus into disjoint families on the NER
@@ -327,6 +349,22 @@ Pre-commit runs `make lint` only (sub-second); the suite runs at the pre-push bo
 once per pushed batch instead of taxing every commit. Install both hook types once:
 
     uv run pre-commit install -t pre-commit -t pre-push
+
+The default suite is fully offline: the ReCoRD live smoke (`tests/test_super_glue_record_live.py`)
+streams one real hub row and runs only when `RELMEDNER_LIVE_HF=1` is set, so hub downloads never
+happen in the default run.
+
+The suite can also run on the wenceslaus box to keep the laptop unloaded. The remote shell is
+bash-only and the snap `uv` on its PATH is broken, so sync with rsync and invoke uv by absolute
+path; `PYTHONUTF8=1` is required for the remote pytest (UTF-8 locale gaps):
+
+    ssh wenceslaus 'mkdir -p ~/Code/RelMedNER-worktrees/super-glue-record'
+    rsync -a --delete --exclude .venv --exclude .ralph --exclude .git \
+      /home/skyeav/Code/ISB/RelMedNER-worktrees/super-glue-record/ \
+      wenceslaus:~/Code/RelMedNER-worktrees/super-glue-record/
+    ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && ~/.local/bin/uv sync'
+    ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && PYTHONUTF8=1 ~/.local/bin/uv run pytest -q'
+    ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && ~/.local/bin/uv run ruff check ./src ./tests && ~/.local/bin/uv run ruff format --check ./src ./tests'
 
 Entity resolution reads a local fullmap database from the hardcoded
 `FULLMAP_DIR` path in `src/relmedner/constants.py`; fullmap-dependent tests skip when that
