@@ -167,7 +167,9 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `task` | yes | none | `script` or `fullmap` task block (see above) | what happens to each row of this dataset |
-| `weight` | no | 1.0 | must be > 0 | per-source mixing weight stamped onto every `TrainingExample` the source emits; stock gliner2 has no per-example weight channel, so consumption is weighted duplication at avro->JSONL export. Two entries sharing one row key (hub repo id, or local path) must agree on the weight or stamping would be ambiguous |
+| `weight` | no | 1.0 | 0 <= w (0 = soft drop) | per-source mixing weight stamped onto every `TrainingExample` the source emits; stock gliner2 has no per-example weight channel, so consumption is weighted duplication at avro->JSONL export. 0 soft-drops: the record still ships to avro but duplicates zero times at export (discouraged, see docs/weighting.md). Two entries sharing one row key (hub repo id, or local path) must agree on the weight or stamping would be ambiguous |
+| `trust` | no | 1.0 | 0..1 | source-level trust score suggested by the offline `relmedner validate-trust` run; folds into the stamped weight as `weight * trust`, clamped to a fixed +-20% band (only `trust: 0` lands outside it, as the explicit soft drop). 1.0 = no adjustment. Review the JSONL report before committing a value (workflow: docs/weighting.md) |
+| `trust_edges` | no | none | map of relation name -> 0..1 | per-predicate edge trust: the heuristic application of sampled validation to the WHOLE dataset. Every record carrying a relation whose name is in this map gets its stamped weight scaled by the weakest flagged predicate's trust (records without flagged relations keep the source weight untouched; `0` soft-drops those records). Keyword-only, like `trust` and `filters` |
 
 `HuggingFaceDataset` (`source: hf`):
 
@@ -193,6 +195,22 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | --- | --- | --- | --- | --- |
 | `column` | yes | none | string | dataset column to test |
 | `values` | yes | none | list of strings | accepted values; rows whose `column` is not in this list are skipped |
+
+### `x-trust` (validate-trust driver settings)
+
+Optional top-level section (model field `x_trust`, YAML key `x-trust`, same aliasing
+convention as `x-defaults`) holding the `relmedner validate-trust` defaults; CLI flags
+(`--sample-size`, `--backend`, `--report`) override these one-for-one:
+
+```yaml
+x-trust:
+  sample_size: 50      # records sampled per source (>= 1)
+  backend: pubmed      # 'pubmed' (E-utilities) or 'firecrawl' (self-hosted)
+  report: trust-report.jsonl
+```
+
+Secrets never belong here (`ingests.yaml` is committed): `NCBI_API_KEY`,
+`FIRECRAWL_BASE_URL`, and `FIRECRAWL_API_KEY` come from the environment only.
 
 ### Row filters (`filters` / `RowFilters`)
 

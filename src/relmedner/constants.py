@@ -205,3 +205,41 @@ DEDUP_ROWS_PER_BAND: int = 16
 # Texts shorter than this many tokens bypass near-dedup entirely: below ~10 tokens a word
 # 5-gram shingle set has <6 members, so its MinHash Jaccard estimate is noise, not signal.
 MIN_NEAR_TOKENS: int = 10
+
+# ---------------------------------------------------------------- trust knobs ----
+# Source-level trust (US-011): an offline sampled validation (validate.py, NEVER inside the
+# Beam graph) scores a source's entities/relations against PubMed E-utilities and suggests a
+# trust in [0, 1] that folds into the stamped weight as weight * trust, clamped to the fixed
+# symmetric band below. Trust nudges; it cannot overturn a declared weight.
+
+# Half-width of the trust adjustment band around the declared weight: trust-scaled weight is
+# clamped to [w*(1-TRUST_RANGE), min(1.0, w*(1+TRUST_RANGE))]. Fixed for every source -- a
+# wider or narrower band is a declared-weight change, not a trust change. 0.2 means the best
+# a fully-trusted (trust=1.0) source gains is +20%, the worst a distrusted one loses is -20%.
+TRUST_RANGE: float = 0.2
+
+# Records sampled per source by `relmedner validate-trust` when the caller passes no size.
+# Large enough that a source with ~20% bad rows shows a visibly sub-1.0 trust, small enough
+# that 3 rps of PubMed E-utilities finishes a source in well under a minute.
+TRUST_SAMPLE_SIZE: int = 50
+
+# Relation hit grading (validators.grade_relation): >= 5 co-occurring PubMed documents is
+# strong attestation, 1-4 is a real but possibly coincidental co-occurrence (half credit),
+# 0 is unverified. Spans stay binary (one hit verifies) because a surface+label pair has no
+# coincidental-middle case the way entity pairs do.
+TRUST_RELATION_VERIFIED_HITS: int = 5
+TRUST_RELATION_PARTIAL_HITS: int = 1
+
+# NCBI E-utilities esearch endpoint (no key: 3 rps; NCBI_API_KEY env raises to 10 rps).
+# PubMed is the PRIMARY validator: biomedical domain fit is exact and it is free; the
+# self-hosted Firecrawl fallback (FIRECRAWL_BASE_URL env) covers non-biomedical sources.
+PUBMED_ESEARCH_URL: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+# 3.4 requests/second ceiling under the no-key 3 rps policy (the 0.1 headroom absorbs jitter
+# in NCBI's window accounting); with NCBI_API_KEY set the client uses a 0.11s delay for 9 rps.
+PUBMED_THROTTLE_SECONDS: float = 0.29
+PUBMED_THROTTLE_SECONDS_KEYED: float = 0.11
+
+# Self-hosted Firecrawl fallback for validate-trust (duckduckgo-search was REJECTED: the
+# library renamed and DDG's 202 rate-limit breakage makes it unreliable for a scored corpus
+# workflow). Base URL carries no path -- the client appends /v1/search.
+FIRECRAWL_BASE_URL: str = environ.get("FIRECRAWL_BASE_URL", "http://localhost:3002")

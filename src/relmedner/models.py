@@ -8,8 +8,12 @@ from dataclasses_avroschema.pydantic import AvroBaseModel
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from tablassert.biolink import Predicates
 
-from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
+from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT, TRUST_SAMPLE_SIZE
 from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
+
+TrustScore = Annotated[float, Field(ge=0.0, le=1.0)]
+"""one trust value in [0, 1]; a named alias so trust/trust_edges carry the bound in the
+schema without duplicated Annotated expressions"""
 
 
 class StrictBase(AvroBaseModel):
@@ -105,9 +109,10 @@ class RowFilters(StrictBase):
 
 
 class DatasetBase(StrictBase):
-    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters"})
-    """names that never enter the packed payload: "source" is the dict key today; "filters" is
-    reserved for US-008 so its later append cannot shift any existing tuple position"""
+    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges"})
+    """names that never enter the packed payload: "source" is the dict key today; "filters",
+    "trust", and "trust_edges" are validation-time keyword-only fields, so none can shift an
+    existing tuple position"""
 
     tuple_fields: ClassVar[tuple[str, ...]]
     """the explicit field packing order frozen by tests/test_ingests.py EXPECTED locks; concrete
@@ -115,13 +120,30 @@ class DatasetBase(StrictBase):
     position shift"""
 
     task: Task = Field(...)
-    weight: float = Field(1.0, gt=0.0)
+    weight: float = Field(1.0, ge=0.0)
     """per-source mixing weight stamped onto every TrainingExample the source emits. Stock
     gliner2 has no per-example weight channel (InputExample/from_dict/ExtractorDataset all
-    drop it), so consumption is weighted duplication at avro->JSONL export, not in-training"""
+    drop it), so consumption is weighted duplication at avro->JSONL export, not in-training.
+    0 is legal and means soft drop: the record still reaches the avro provenance but
+    duplicates zero times at export -- discouraged (docs/weighting.md), prefer trust: 0 or
+    row filters for unwanted data"""
+
+    trust: float = Field(1.0, ge=0.0, le=1.0)
+    """source-level trust score in [0, 1] suggested by the offline validation step
+    (`relmedner validate-trust`, see docs/weighting.md); folds into the stamped weight as
+    weight * trust clamped to the fixed +-TRUST_RANGE band (validators.adjust_weight).
+    1.0 (default) = no adjustment; 0 = explicit soft drop bypassing the band. Kept OUT of
+    the frozen payload tuple (NON_PAYLOAD_FIELDS) like filters, so it shifts no position"""
+
+    trust_edges: dict[str, TrustScore] | None = Field(None)
+    """per-predicate edge trust: relation NAME -> trust in [0, 1], the heuristic application
+    of sampled validation to the WHOLE dataset -- a predicate the sample found unreliable is
+    down-weighted on every record carrying it, untouched records keep the source weight
+    (validators.record_edge_factor takes the weakest flagged predicate on the record). 0
+    soft-drops records carrying that edge. Keyword-only, never in the frozen payload tuple"""
 
     filters: RowFilters | None = Field(None)
-    """declarative row filters applied by the stream after match_on; appended LAST (after weight)
+    """declarative row filters applied by the stream after match_on; appended LAST (after trust)
     and excluded from tuple_fields, so it cannot shift any frozen payload position"""
 
     @property
@@ -328,6 +350,31 @@ class GazetteerSpec(StrictBase):
         return self
 
 
+class ValidateTrustConfig(StrictBase):
+    """the optional top-level `x-trust:` section of ingests.yaml: driver settings for the
+    offline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags
+    override these one-for-one, so the yaml holds the per-repo default and the command line
+    holds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,
+    ingests.yaml is a committed artifact"""
+
+    sample_size: int = Field(TRUST_SAMPLE_SIZE, ge=1)
+    """records sampled per source"""
+    backend: str = Field("pubmed")
+    """'pubmed' (E-utilities esearch, primary) or 'firecrawl' (self-hosted general-web fallback)"""
+    report: str = Field("trust-report.jsonl")
+    """JSONL report path"""
+
+    @field_validator("backend")
+    @classmethod
+    def backend_is_known(cls, value: str) -> str:
+        # a plain str with an explicit membership check, not Literal: Literal renders fine in
+        # the pydantic JSON Schema but dataclasses-avroschema cannot map it for avro schema
+        # generation (mirrors GazetteerPredicate.name_is_a_biolink_predicate)
+        if value not in ("pubmed", "firecrawl"):
+            raise ValueError(f"backend {value!r} is not 'pubmed' or 'firecrawl'")
+        return value
+
+
 class YamlIngests(StrictBase):
     """compose-spec x- extension namespace: a top-level "x-defaults" map hosts reusable YAML anchor
     definitions document-wide; CSafeLoader resolves the anchors before pydantic sees anything, so the
@@ -338,6 +385,9 @@ class YamlIngests(StrictBase):
     gazetteer: GazetteerSpec | None = Field(None)
     """optional relation-gazetteer overlay (US-010); appended LAST, after x_defaults, and kept
     out of generate_tuples/stream_args, so it shifts no frozen dataset payload position"""
+    x_trust: ValidateTrustConfig | None = Field(None, alias="x-trust")
+    """optional validate-trust driver settings (US-011); appended LAST, after gazetteer, kept
+    out of generate_tuples/stream_args. CLI flags override these values one-for-one"""
 
     class Meta(StrictBase.Meta):
         # dataclasses-avroschema cannot map dict[str, Any] (no typing.Any arm exists, schema
@@ -365,6 +415,31 @@ class YamlIngests(StrictBase):
             if weights.setdefault(dataset.row_key, dataset.weight) != dataset.weight:
                 raise ValueError(f"dataset {dataset.row_key!r} is declared twice with conflicting weights")
         return weights
+
+    def trusts_by_source(self: Self) -> dict[str, float]:
+        """row key -> declared trust; mirrors weights_by_source's shared-key agreement raise:
+        two entries over one row key must agree on trust or the stamped weight would be
+        ambiguous (weight * trust is computed once per row key, not per entry)"""
+        trusts: dict[str, float] = {}
+        for dataset in self.datasets:
+            if trusts.setdefault(dataset.row_key, dataset.trust) != dataset.trust:
+                raise ValueError(f"dataset {dataset.row_key!r} is declared twice with conflicting trusts")
+        return trusts
+
+    def trust_edges_by_source(self: Self) -> dict[str, dict[str, float]]:
+        """row key -> {predicate: trust}; entries sharing one row key MERGE their maps (the two
+        Nemotron splits may each flag different predicates) but the same predicate twice with
+        different values raises, matching weights_by_source's ambiguity rule"""
+        edges: dict[str, dict[str, float]] = {}
+        for dataset in self.datasets:
+            if dataset.trust_edges is None:
+                continue
+            slot: dict[str, float] = edges.setdefault(dataset.row_key, {})
+            for predicate, score in dataset.trust_edges.items():
+                if predicate in slot and slot[predicate] != score:
+                    raise ValueError(f"dataset {dataset.row_key!r} declares conflicting trust for predicate {predicate!r}")
+                slot[predicate] = score
+        return edges
 
 
 class Entity(StrictBase):
@@ -434,10 +509,11 @@ def describe(descriptions: list[Description] | None) -> dict[str, str]:
 
 class TrainingExample(StrictBase):
     text: str = Field(...)
-    weight: float = Field(1.0, gt=0.0)
-    """source-declared mixing weight; rides the avro record as provenance and stays out of the
+    weight: float = Field(1.0, ge=0.0)
+    """effective (trust-adjusted) mixing weight; rides the avro record as provenance and stays out of the
     gliner2 to_output() projection -- stock gliner2 silently drops extra keys, so the actual
-    training-time consumption is weighted duplication at the avro->JSONL export step"""
+    training-time consumption is weighted duplication at the avro->JSONL export step. ge=0.0
+    because trust == 0 soft-drops a record: it still ships to avro but duplicates zero times"""
     entities: list[Entity] = Field(default_factory=list)
     classifications: list[Classification] = Field(default_factory=list)
     structures: list[Structure] = Field(default_factory=list)
