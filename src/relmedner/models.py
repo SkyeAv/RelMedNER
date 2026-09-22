@@ -5,7 +5,7 @@ from typing import Annotated, Any, Literal, Self
 from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
 from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
@@ -338,7 +338,16 @@ class WorkerNode(StrictBase):
 
 class Cluster(StrictBase):
     ssh_user: str = Field(...)
+    jobmanager: str = Field(...)
+    """head host running the jobmanager stack; deploy, the beam driver, and shard collection all
+    run from this host's checkout, and it also carries a taskmanager + sdkworker of its own"""
     workers: list[WorkerNode] = Field(...)
+
+    @model_validator(mode="after")
+    def _jobmanager_is_a_worker(self: Self) -> Self:
+        if self.jobmanager not in {worker.host for worker in self.workers}:
+            raise ValueError(f"jobmanager host {self.jobmanager!r} is not a declared worker")
+        return self
 
 
 class FlinkJob(BaseModel):

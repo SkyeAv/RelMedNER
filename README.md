@@ -381,10 +381,10 @@ deployment, watching, and shard collection):
 
     uv run relmedner build-dataset --direct -o ./relmedner.avro
 
-Full run on the LAN flink cluster (requires the VPN route to every `cluster.yaml` worker -- the SSH
-gateway alone is not enough, because flink taskmanagers connect back to the laptop's jobmanager
-ports and `YamlClusterParser.jobmanager()` resolves the laptop via a route probe toward the first
-remote):
+Full run on the LAN flink cluster — run from the checkout **on the head host** (wenceslaus, in
+tmux); the cluster is fully self-contained there (jobmanager, both taskmanagers, and the ssh
+tunnels that carry the :22-only cross-host traffic), so the laptop needs no VPN and no cluster
+ports:
 
     uv run relmedner build-dataset -o ./relmedner.avro
 
@@ -421,9 +421,12 @@ mount is absent, and miner unit tests inject fake `lookup_rows` rows so they nev
 
 ## Cluster
 
-`make deploy` targets the LAN Flink cluster declared in
-`src/relmedner/data/cluster.yaml`; workers bind-mount the fullmap bundle read-only at
-`/opt/fullmap`. The compute node is only reachable through the gateway SSH hop -- from
-off-VPN, add a `ProxyJump` through the gateway in `~/.ssh/config`, or run without the
-cluster entirely: `build-dataset --direct` (no pipeline options) keeps output on the local
-filesystem.
+`make deploy` runs from the head-host checkout (wenceslaus) and targets the LAN Flink cluster
+declared in `src/relmedner/data/cluster.yaml`: a jobmanager + taskmanager + sdkworker on the head,
+a taskmanager + sdkworker on hypatia, and per-host ssh `-L` tunnels (one tmux session per target,
+`relmedner-tunnel-*`) because cross-host traffic is :22-only. Workers bind-mount the fullmap bundle
+read-only at `/opt/fullmap` (the sdkworker reads it via `RELMEDNER_FULLMAP_DIR`). Cross-host ports
+are firewalled, so everything — deploy, submit, monitoring, shard collection — happens on the head
+host; from off-LAN, reach a head-host shell with a `ProxyJump` through the gateway in
+`~/.ssh/config`, or run without the cluster entirely: `build-dataset --direct` (no pipeline
+options) keeps output on the local filesystem.

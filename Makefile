@@ -19,8 +19,10 @@ fmt:
 	uv run ruff check --fix ./src ./tests
 	uv run ruff format ./src ./tests
 
+# deploy runs from a checkout ON the head host (wenceslaus) — native docker, no podman socket.
+# the laptop only edits and pushes; see plans/flink-remote-cluster.md
 deploy:
-	DOCKER_HOST=unix:///run/user/$$(id -u)/podman/podman.sock uv run relmedner deploy-cluster
+	uv run relmedner deploy-cluster
 
 teardown:
-	DOCKER_HOST=unix:///run/user/$$(id -u)/podman/podman.sock uv run relmedner deploy-cluster --teardown
+	uv run relmedner deploy-cluster --teardown

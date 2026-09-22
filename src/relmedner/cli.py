@@ -6,7 +6,7 @@ import cyclopts
 
 from relmedner.clusters import YamlClusterParser
 from relmedner.collect import collect_outputs
-from relmedner.constants import DEFAULT_OUTPUT, LOCAL_HOST
+from relmedner.constants import DEFAULT_OUTPUT
 from relmedner.deploy import deploy_cluster, run_cmd
 from relmedner.enums import DedupMode
 from relmedner.ingests import YamlIngestsParser
@@ -40,7 +40,9 @@ def build_dataset(
     before: frozenset[str] = job_ids(fetch_jobs(rest_url))
     BeamPipeline(options=Parser.runner_options(parallelism)).run(Config)
     watch_jobs(rest_url, before)
-    collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, LOCAL_HOST, run_cmd)
+    # the driver runs on the head host, whose worker entry is the collection source this process
+    # can read directly; every other worker's shards arrive over ssh (gateway hop from off-LAN)
+    collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, Parser.jobmanager(), run_cmd)
 
 
 @APP.command(name="deploy-cluster")
