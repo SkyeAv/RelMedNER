@@ -580,7 +580,7 @@ class ScriptUtils:
 
         import yaml
 
-        schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text()
+        schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text(encoding="utf-8")
         slots: dict[str, dict[str, Any]] = yaml.safe_load(schema)["slots"]
 
         def definition(name: str, seen: frozenset[str] = frozenset()) -> str | None:

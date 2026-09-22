@@ -99,7 +99,8 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
     ]
 
     def remote(worker: WorkerNode, action: list[str], data_port: int) -> None:
-        rendered: str = Template(TASKMANAGER_COMPOSE.read_text()).substitute(compose_vars(worker, jobmanager, flink_image, worker_image, data_port))
+        template: Template = Template(TASKMANAGER_COMPOSE.read_text(encoding="utf-8"))
+        rendered: str = template.substitute(compose_vars(worker, jobmanager, flink_image, worker_image, data_port))
         run_cmd(["ssh", "-o", "BatchMode=yes", f"{ssh_user}@{worker.host}", *COMPOSE, "-f", "-", *action], dry_run, stdin=rendered)
 
     if teardown:
