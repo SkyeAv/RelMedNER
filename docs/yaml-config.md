@@ -119,6 +119,56 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | `column` | yes | none | string | dataset column to test |
 | `values` | yes | none | list of strings | accepted values; rows whose `column` is not in this list are skipped |
 
+### Row filters (`filters` / `RowFilters`)
+
+Every dataset entry (hf and local) accepts an optional `filters` block: declarative row-quality
+filters applied by the stream AFTER `match_on`, before the row reaches the declared task. Filters
+sit outside the frozen payload tuple, so adding or changing a `filters` block never shifts any
+tuple position.
+
+Drop reasons evaluate in this fixed order; the first match drops the row:
+
+1. `drop_empty` - every projected value is None, `""`, or an empty list/tuple/dict
+2. `min_text_len` - the joined text is shorter than this
+3. `max_text_len` - the joined text is longer than this
+4. `include_regex` - the joined text does NOT match this pattern
+5. `exclude_regex` - the joined text DOES match this pattern
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `drop_empty` | no | false | bool | drop rows where every projected value is empty (None, `""`, or an empty list/tuple/dict) |
+| `min_text_len` | no | absent | int >= 0 | drop rows whose joined text is shorter than this |
+| `max_text_len` | no | absent | int >= 0 | drop rows whose joined text is longer than this; must be >= `min_text_len` when both are set |
+| `include_regex` | no | absent | string | drop rows whose joined text does not match (unanchored `re.search` semantics) |
+| `exclude_regex` | no | absent | string | drop rows whose joined text matches |
+
+The text rule: the text every length/regex filter measures is `" ".join` over the projected
+payload values in order. A value contributes as itself when it is a str, as its elements joined
+when it is a list/tuple of str (this is what makes `tokenized_text` columns filterable), and not
+at all otherwise. For a local avro dataset the same rule applies over the record's field values.
+A row whose values carry no str at all has text `""`.
+
+Tripwires:
+
+- Unknown keys inside `filters` fail validation (`extra="forbid"` applies there too), as does
+  `min_text_len` > `max_text_len`.
+- An invalid regex fails at stream construction with `re.error`, before any row streams.
+- Fail-loud zero-yield guard: when a `filters` block drops 100% of the rows of a non-empty
+  source, the run raises `ZeroYieldError` instead of silently shipping an empty training set.
+  A genuinely empty source (0 rows in) is not an error. A dataset with no `filters` block keeps
+  the historical unfiltered behavior exactly.
+
+Copy-paste example (keep only the rows longer than 20 chars, drop empties):
+
+```yaml
+- task: {type: script, name: GlinerBiomedScript, outputs: [entities]}
+  source: hf
+  dataset: anthonyyazdaniml/gliner-biomed-pre-training
+  split: train
+  columns_out: [tokenized_text]
+  filters: {drop_empty: true, min_text_len: 20}
+```
+
 ### Copy-paste templates
 
 Templates (a) through (c) each validate as-is against the current models. Prove a

@@ -84,7 +84,7 @@ class BeamPipeline:
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (
                 new_pipeline
-                | "load declarative ingests" >> beam.Create(Ingests.generate_tuples())
+                | "load declarative ingests" >> beam.Create(Ingests.stream_args())
                 | "initialize datastream classes" >> beam.MapTuple(build_stream)
                 | "stream declared data" >> beam.FlatMap(stream_rows, config=config)
             )

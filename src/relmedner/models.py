@@ -5,7 +5,7 @@ from typing import Annotated, Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
 from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
@@ -80,6 +80,29 @@ Task: Annotated = Annotated[
 ]
 
 
+class RowFilters(StrictBase):
+    """declarative per-dataset row filters; kept OUT of the frozen payload tuple (NON_PAYLOAD_FIELDS)
+    and handed to the stream ctor as a keyword so filter changes never shift tuple positions.
+    The drop decision itself is the pure evaluator relmedner.row_filters.first_drop_reason"""
+
+    drop_empty: bool = Field(False)
+    """drop rows where every projected value is None, "", or an empty list/tuple/dict"""
+    min_text_len: int | None = Field(None, ge=0)
+    """drop rows whose joined text is shorter than this"""
+    max_text_len: int | None = Field(None, ge=0)
+    """drop rows whose joined text is longer than this"""
+    include_regex: str | None = Field(None)
+    """drop rows whose joined text does NOT match this pattern"""
+    exclude_regex: str | None = Field(None)
+    """drop rows whose joined text DOES match this pattern"""
+
+    @model_validator(mode="after")
+    def min_within_max(self: Self) -> Self:
+        if self.min_text_len is not None and self.max_text_len is not None and self.min_text_len > self.max_text_len:
+            raise ValueError(f"min_text_len {self.min_text_len} exceeds max_text_len {self.max_text_len}")
+        return self
+
+
 class DatasetBase(StrictBase):
     NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters"})
     """names that never enter the packed payload: "source" is the dict key today; "filters" is
@@ -96,6 +119,10 @@ class DatasetBase(StrictBase):
     gliner2 has no per-example weight channel (InputExample/from_dict/ExtractorDataset all
     drop it), so consumption is weighted duplication at avro->JSONL export, not in-training"""
 
+    filters: RowFilters | None = Field(None)
+    """declarative row filters applied by the stream after match_on; appended LAST (after weight)
+    and excluded from tuple_fields, so it cannot shift any frozen payload position"""
+
     @property
     def row_key(self: Self) -> str:
         """the name streamed rows are stamped with (DataStream.rows yields it per row); the
@@ -104,6 +131,12 @@ class DatasetBase(StrictBase):
 
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
         return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).tuple_fields))
+
+    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None]:
+        """the (source, payload, filters) envelope build_stream unpacks; the payload stays the
+        frozen 2-tuple shape cli.py and the EXPECTED locks depend on, filters ride keyword-only"""
+        source, payload = self.to_tuple()
+        return (source, payload, self.filters)
 
 
 class MatchOn(StrictBase):
@@ -209,7 +242,14 @@ class YamlIngests(StrictBase):
         exclude = ["x_defaults"]
 
     def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
+        """KEPT at the frozen 2-tuple shape: cli.py parallelism count and the test_ingests.py
+        entry[1][2] helper index the payload positionally"""
         return tuple(dataset.to_tuple() for dataset in self.datasets)
+
+    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None], ...]:
+        """the pipeline's Create stage feeds build_stream, which unpacks each 3-tuple as
+        (source, payload, filters)"""
+        return tuple(dataset.to_stream_args() for dataset in self.datasets)
 
     def weights_by_source(self: Self) -> dict[str, float]:
         """row key -> declared mixing weight; rows key on the source's repo id (not the "hf"
