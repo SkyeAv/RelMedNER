@@ -94,6 +94,10 @@ def test_compose_command_falls_back_to_the_nix_profile_standalone(monkeypatch: p
 
     command: list[str] = deploy.compose_command("sgoetz", Worker)
 
+    # the probe must travel as one argv element — ssh would otherwise re-parse the remote line and
+    # silently run the bare `command` builtin
+    assert "command -v docker-compose" in calls[1][-1]
+    assert "sh" not in calls[1]
     assert command[-3:] == ["/users/sgoetz/.nix-profile/bin/docker-compose", "-p", "relmedner"]
     assert command[:3] == ["ssh", "-o", "BatchMode=yes"]
     assert "sgoetz@10.2.9.19" in command
