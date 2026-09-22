@@ -115,3 +115,14 @@ def test_compose_command_fails_loud_on_an_empty_standalone_probe(monkeypatch: py
 
     with pytest.raises(SystemExit, match="no docker compose plugin"):
         deploy.compose_command("sgoetz", Worker, "relmedner")
+
+
+def test_dyn_forwarder_script_relays_new_pool_endpoints_to_the_head() -> None:
+    script: str = deploy.dyn_forwarder_script("10.2.9.11", "sgoetz")
+
+    assert "docker logs -f --tail 0 relmedner-sdkworker-1" in script
+    assert "endpoint localhost:[0-9]+" in script
+    assert "relmedner-dyn-$p" in script
+    assert "-L 127.0.0.1:$p:127.0.0.1:$p sgoetz@10.2.9.11" in script
+    # idempotent: a seen port never opens a second tunnel
+    assert 'grep -qx "$p" "$seen"' in script

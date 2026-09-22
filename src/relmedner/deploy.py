@@ -151,6 +151,26 @@ def tunnel_session_name(target: str) -> str:
     return f"{TUNNEL_SESSION}-{target.replace('.', '-')}"
 
 
+DYN_WATCH_SESSION: str = "relmedner-dynwatch"
+
+
+def dyn_forwarder_script(jobmanager_host: str, user: str) -> str:
+    """bash snippet, run inside tmux on a taskmanager host: the beam worker pool dials the job
+    server's FnAPI endpoints, which the java job server binds on RANDOM ports per submission —
+    unfixable from flags. the cross-host firewall means those dials must be relayed over ssh, so
+    watch the pool log for each new `endpoint localhost:<port>` and forward that port to the head
+    host before the pool's worker-retry loop gives the tunnel time to come up"""
+    return (
+        'seen=/tmp/relmedner-dyn-ports; : > "$seen"; '
+        "docker logs -f --tail 0 relmedner-sdkworker-1 2>&1 "
+        "| grep --line-buffered -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+' "
+        '| while read p; do grep -qx "$p" "$seen" 2>/dev/null && continue; '
+        'echo "$p" >> "$seen"; '
+        f"tmux new-session -d -s relmedner-dyn-$p 'ssh -o BatchMode=yes -o ExitOnForwardFailure=yes "
+        f"-o ServerAliveInterval=30 -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host}'; done"
+    )
+
+
 def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
     Parser: YamlClusterParser = YamlClusterParser()
     ClusterSpec = Parser.parse_cluster()
@@ -176,6 +196,17 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
         for host, targets in Plan.items():
             for target in targets:
                 kill_tunnel_session(host, target)
+        for worker in workers:
+            if worker.host != jobmanager_host:
+                run_cmd(
+                    [
+                        *ssh_to(ssh_user, worker.host),
+                        "tmux kill-session -t " + DYN_WATCH_SESSION + " 2>/dev/null; "
+                        "tmux list-sessions 2>/dev/null | grep -oE '^relmedner-dyn-[0-9]+' "
+                        "| xargs -r -n1 tmux kill-session -t; true",
+                    ],
+                    dry_run,
+                )
         jm_index: int = workers.index(jobmanager_worker)
         for index, worker in enumerate(workers):
             run_cmd([*compose_command(ssh_user, worker, PROJECT), "-f", "-", "down"], dry_run, stdin=render_tm(worker, index))
@@ -240,5 +271,23 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
                     stdout=DEVNULL,
                     stderr=DEVNULL,
                 )
+
+    # per-job FnAPI forwarder watcher on every remote taskmanager host — the head's pool dials the
+    # job server natively and needs no relay
+    for worker in workers:
+        if worker.host != jobmanager_host:
+            run_cmd([*ssh_to(ssh_user, worker.host), "tmux", "kill-session", "-t", DYN_WATCH_SESSION], dry_run)
+            run_cmd(
+                [
+                    *ssh_to(ssh_user, worker.host),
+                    "tmux",
+                    "new-session",
+                    "-d",
+                    "-s",
+                    DYN_WATCH_SESSION,
+                    dyn_forwarder_script(jobmanager_host, ssh_user),
+                ],
+                dry_run,
+            )
 
     return
