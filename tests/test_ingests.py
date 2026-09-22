@@ -8,6 +8,9 @@ from relmedner.ingests import YamlIngestsParser
 from relmedner.models import (
     Cluster,
     FullmapTask,
+    GazetteerPredicate,
+    GazetteerQualifier,
+    GazetteerSpec,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
     LocalAvroDataset,
@@ -245,6 +248,9 @@ _DOC_MODELS = (
     MatchOn,
     Cluster,
     WorkerNode,
+    GazetteerPredicate,
+    GazetteerQualifier,
+    GazetteerSpec,
 )
 
 _DOC_FIELD_NAMES: tuple[str, ...] = tuple(sorted({name for model in _DOC_MODELS for name in model.model_fields}))

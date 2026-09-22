@@ -4,6 +4,7 @@ from typing import Any, Self
 
 import relmedner.scripts  # noqa: F401 -- imported so every Script subclass self-registers
 from relmedner.constants import INGESTS_YAML
+from relmedner.gazetteer import configure_gazetteer
 from relmedner.models import ScriptTask, YamlIngests
 from relmedner.parsers import YamlParser
 from relmedner.types import Script
@@ -16,6 +17,9 @@ class YamlIngestsParser(YamlParser):
     def parse_ingests(self: Self) -> YamlIngests:
         serialized_yaml: Any = self.parse()
         ParsedIngests: YamlIngests = YamlIngests.model_validate(serialized_yaml)
+        # US-010 choke point: every parse rebuilds the gazetteer tables from the builtin
+        # constants plus this section (last-parse-wins), so the tables always match the YAML
+        configure_gazetteer(ParsedIngests.gazetteer)
 
         for dataset in ParsedIngests.datasets:
             if isinstance(dataset.task, ScriptTask) and dataset.task.name not in Script.REGISTRY:

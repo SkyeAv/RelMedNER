@@ -5,7 +5,8 @@ from typing import Annotated, Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from tablassert.biolink import Predicates
 
 from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
 from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
@@ -226,6 +227,107 @@ Dataset: Annotated = Annotated[
 ]
 
 
+def _reject_malformed_phrases(owner: str, phrases: list[list[str]]) -> None:
+    """shared phrase rules for every gazetteer trigger/cue table: an empty phrase or token can
+    never match and only masks an authoring bug, and an uppercase token can never match the
+    lowercased scan input (mirrors gazetteer.validate_trigger_table)"""
+    for phrase in phrases:
+        if not phrase:
+            raise ValueError(f"{owner} has an empty phrase")
+        for token in phrase:
+            if not token:
+                raise ValueError(f"{owner} phrase {phrase!r} contains an empty token")
+            if token != token.lower():
+                raise ValueError(f"{owner} phrase {phrase!r} contains uppercase token {token!r}")
+
+
+class GazetteerPredicate(StrictBase):
+    """one YAML-declared predicate arm of the relation gazetteer (US-010). WHY a model instead
+    of raw dicts: the name must be a tablassert.biolink.Predicates member (mirroring
+    gazetteer.validate_trigger_table) so a typo'd predicate fails at parse time instead of
+    emitting KGX edges that fail Biolink validation downstream"""
+
+    name: str = Field(...)
+    triggers: list[list[str]] = Field(..., min_length=1)
+
+    @field_validator("name")
+    @classmethod
+    def name_is_a_biolink_predicate(cls, value: str) -> str:
+        valid: frozenset[str] = frozenset(predicate.value for predicate in Predicates)
+        if value not in valid:
+            raise ValueError(f"predicate {value!r} is not a tablassert.biolink.Predicates member")
+        return value
+
+    @field_validator("triggers")
+    @classmethod
+    def triggers_are_wellformed(cls, value: list[list[str]]) -> list[list[str]]:
+        _reject_malformed_phrases("a YAML-declared predicate", value)
+        return value
+
+
+class GazetteerQualifier(StrictBase):
+    """one qualifier arm; ONLY structurally validated in this tree. The qualifier scanner
+    machinery (QUALIFIER_TRIGGERS, QUALIFIER_RANGES, DISABLED_QUALIFIERS) lives on the
+    add-qualifiers-to-relationship-pipelines branch and lands with PR #22, so declaring
+    qualifiers in ingests.yaml raises a structured NotImplementedError at configure time
+    (gazetteer.configure_gazetteer) instead of being silently accepted and ignored"""
+
+    slot: str = Field(...)
+    range: str | None = Field(None)
+    triggers: list[list[str]] = Field(default_factory=list)
+
+    @field_validator("slot")
+    @classmethod
+    def slot_is_named(cls, value: str) -> str:
+        if not value:
+            raise ValueError("a YAML-declared qualifier has an empty slot")
+        return value
+
+    @field_validator("triggers")
+    @classmethod
+    def triggers_are_wellformed(cls, value: list[list[str]]) -> list[list[str]]:
+        _reject_malformed_phrases("a YAML-declared qualifier", value)
+        return value
+
+
+class GazetteerSpec(StrictBase):
+    """the optional top-level `gazetteer:` section of ingests.yaml (US-010). Predicates merge
+    additively over the builtin trigger table (see gazetteer.configure_gazetteer); qualifiers
+    and negation_cues parse and validate structurally but raise at configure time until PR #22
+    lands the scanner -- fail-loud, never silent accept-and-ignore"""
+
+    predicates: list[GazetteerPredicate] | None = Field(None)
+    qualifiers: list[GazetteerQualifier] | None = Field(None)
+    negation_cues: list[list[str]] | None = Field(None)
+
+    @field_validator("negation_cues")
+    @classmethod
+    def negation_cues_are_wellformed(cls, value: list[list[str]] | None) -> list[list[str]] | None:
+        if value is not None:
+            _reject_malformed_phrases("YAML-declared negation_cues", value)
+        return value
+
+    @model_validator(mode="after")
+    def the_section_declares_something(self: Self) -> Self:
+        if not (self.predicates or self.qualifiers or self.negation_cues):
+            raise ValueError("gazetteer section is empty: declare predicates, qualifiers, or negation_cues")
+        return self
+
+    @model_validator(mode="after")
+    def yaml_phrases_have_one_owner(self: Self) -> Self:
+        """two YAML predicates claiming one phrase would make the longest-match winner depend on
+        merge order; builtin-vs-YAML ownership is rejected later, at configure time, where the
+        builtin table is reachable without a circular models<->gazetteer import"""
+        owners: dict[tuple[str, ...], str] = {}
+        for entry in self.predicates or []:
+            for phrase in entry.triggers:
+                key = tuple(phrase)
+                owner = owners.setdefault(key, entry.name)
+                if owner != entry.name:
+                    raise ValueError(f"phrase {key!r} is claimed by both {owner!r} and {entry.name!r}")
+        return self
+
+
 class YamlIngests(StrictBase):
     """compose-spec x- extension namespace: a top-level "x-defaults" map hosts reusable YAML anchor
     definitions document-wide; CSafeLoader resolves the anchors before pydantic sees anything, so the
@@ -233,6 +335,9 @@ class YamlIngests(StrictBase):
 
     datasets: list[Dataset] = Field(...)
     x_defaults: dict[str, Any] | None = Field(None, alias="x-defaults")
+    gazetteer: GazetteerSpec | None = Field(None)
+    """optional relation-gazetteer overlay (US-010); appended LAST, after x_defaults, and kept
+    out of generate_tuples/stream_args, so it shifts no frozen dataset payload position"""
 
     class Meta(StrictBase.Meta):
         # dataclasses-avroschema cannot map dict[str, Any] (no typing.Any arm exists, schema
