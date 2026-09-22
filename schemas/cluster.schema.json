@@ -1,0 +1,59 @@
+{
+  "$defs": {
+    "WorkerNode": {
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "title": "Host",
+          "type": "string"
+        },
+        "slots": {
+          "minimum": 1,
+          "title": "Slots",
+          "type": "integer"
+        },
+        "memory": {
+          "title": "Memory",
+          "type": "string"
+        },
+        "fullmap": {
+          "title": "Fullmap",
+          "type": "string"
+        },
+        "outputs": {
+          "title": "Outputs",
+          "type": "string"
+        }
+      },
+      "required": [
+        "host",
+        "slots",
+        "memory",
+        "fullmap",
+        "outputs"
+      ],
+      "title": "WorkerNode",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "ssh_user": {
+      "title": "Ssh User",
+      "type": "string"
+    },
+    "workers": {
+      "items": {
+        "$ref": "#/$defs/WorkerNode"
+      },
+      "title": "Workers",
+      "type": "array"
+    }
+  },
+  "required": [
+    "ssh_user",
+    "workers"
+  ],
+  "title": "Cluster",
+  "type": "object"
+}

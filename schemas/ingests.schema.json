@@ -1,0 +1,504 @@
+{
+  "$defs": {
+    "FullmapTask": {
+      "additionalProperties": false,
+      "description": "distant-supervision entity/relation mining over unlabeled text via the fullmap redb\n\nMeasured-good gates (function-word guards, GENELIKE casing rule, strict unigram name\nagreement, junk-category gate, NONHUMAN_PREFIXES exclusion) live as constants in\nrelmedner.constants / relmedner.fullmap_mine with the measurements that fixed them;\nadd fields here later to make any of them tunable.",
+      "properties": {
+        "type": {
+          "const": "fullmap",
+          "title": "Type",
+          "type": "string"
+        },
+        "max_ngram": {
+          "default": 6,
+          "maximum": 10,
+          "minimum": 1,
+          "title": "Max Ngram",
+          "type": "integer"
+        },
+        "taxon": {
+          "default": "9606",
+          "title": "Taxon",
+          "type": "string"
+        },
+        "relations": {
+          "default": true,
+          "title": "Relations",
+          "type": "boolean"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/OutputShapes"
+          },
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "outputs"
+      ],
+      "title": "FullmapTask",
+      "type": "object"
+    },
+    "GazetteerPredicate": {
+      "additionalProperties": false,
+      "description": "one YAML-declared predicate arm of the relation gazetteer (US-010). WHY a model instead\nof raw dicts: the name must be a tablassert.biolink.Predicates member (mirroring\ngazetteer.validate_trigger_table) so a typo'd predicate fails at parse time instead of\nemitting KGX edges that fail Biolink validation downstream",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "triggers": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "minItems": 1,
+          "title": "Triggers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "triggers"
+      ],
+      "title": "GazetteerPredicate",
+      "type": "object"
+    },
+    "GazetteerQualifier": {
+      "additionalProperties": false,
+      "description": "one qualifier arm; ONLY structurally validated in this tree. The qualifier scanner\nmachinery (QUALIFIER_TRIGGERS, QUALIFIER_RANGES, DISABLED_QUALIFIERS) lives on the\nadd-qualifiers-to-relationship-pipelines branch and lands with PR #22, so declaring\nqualifiers in ingests.yaml raises a structured NotImplementedError at configure time\n(gazetteer.configure_gazetteer) instead of being silently accepted and ignored",
+      "properties": {
+        "slot": {
+          "title": "Slot",
+          "type": "string"
+        },
+        "range": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Range"
+        },
+        "triggers": {
+          "items": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Triggers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "slot"
+      ],
+      "title": "GazetteerQualifier",
+      "type": "object"
+    },
+    "GazetteerSpec": {
+      "additionalProperties": false,
+      "description": "the optional top-level `gazetteer:` section of ingests.yaml (US-010). Predicates merge\nadditively over the builtin trigger table (see gazetteer.configure_gazetteer); qualifiers\nand negation_cues parse and validate structurally but raise at configure time until PR #22\nlands the scanner -- fail-loud, never silent accept-and-ignore",
+      "properties": {
+        "predicates": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/GazetteerPredicate"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Predicates"
+        },
+        "qualifiers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/GazetteerQualifier"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Qualifiers"
+        },
+        "negation_cues": {
+          "anyOf": [
+            {
+              "items": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Negation Cues"
+        }
+      },
+      "title": "GazetteerSpec",
+      "type": "object"
+    },
+    "HuggingFaceDataset": {
+      "additionalProperties": false,
+      "properties": {
+        "task": {
+          "discriminator": {
+            "mapping": {
+              "fullmap": "#/$defs/FullmapTask",
+              "script": "#/$defs/ScriptTask"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScriptTask"
+            },
+            {
+              "$ref": "#/$defs/FullmapTask"
+            }
+          ],
+          "title": "Task"
+        },
+        "weight": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowFilters"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "const": "hf",
+          "title": "Source",
+          "type": "string"
+        },
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "subset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Subset"
+        },
+        "split": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Split"
+        },
+        "match_on": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MatchOn"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match On"
+        },
+        "columns_out": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns Out",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task",
+        "source",
+        "dataset",
+        "columns_out"
+      ],
+      "title": "HuggingFaceDataset",
+      "type": "object"
+    },
+    "LocalDataset": {
+      "additionalProperties": false,
+      "description": "an avro container built out-of-band and read from disk by LocalAvroDataStream\n\npath is resolved with expanduser at stream time; the whole avro record ships to the declared\nscript, which owns the record shape (there is no columns_out projection like the hf streams\nhave, because the file's own schema is already the contract)",
+      "properties": {
+        "task": {
+          "discriminator": {
+            "mapping": {
+              "fullmap": "#/$defs/FullmapTask",
+              "script": "#/$defs/ScriptTask"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScriptTask"
+            },
+            {
+              "$ref": "#/$defs/FullmapTask"
+            }
+          ],
+          "title": "Task"
+        },
+        "weight": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowFilters"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "const": "local",
+          "title": "Source",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task",
+        "source",
+        "path"
+      ],
+      "title": "LocalDataset",
+      "type": "object"
+    },
+    "MatchOn": {
+      "additionalProperties": false,
+      "properties": {
+        "column": {
+          "title": "Column",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "column",
+        "values"
+      ],
+      "title": "MatchOn",
+      "type": "object"
+    },
+    "OutputShapes": {
+      "enum": [
+        "entities",
+        "classifications",
+        "structures",
+        "relations"
+      ],
+      "title": "OutputShapes",
+      "type": "string"
+    },
+    "RowFilters": {
+      "additionalProperties": false,
+      "description": "declarative per-dataset row filters; kept OUT of the frozen payload tuple (NON_PAYLOAD_FIELDS)\nand handed to the stream ctor as a keyword so filter changes never shift tuple positions.\nThe drop decision itself is the pure evaluator relmedner.row_filters.first_drop_reason",
+      "properties": {
+        "drop_empty": {
+          "default": false,
+          "title": "Drop Empty",
+          "type": "boolean"
+        },
+        "min_text_len": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Text Len"
+        },
+        "max_text_len": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Text Len"
+        },
+        "include_regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Include Regex"
+        },
+        "exclude_regex": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exclude Regex"
+        }
+      },
+      "title": "RowFilters",
+      "type": "object"
+    },
+    "ScriptTask": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "script",
+          "title": "Type",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/OutputShapes"
+          },
+          "minItems": 1,
+          "title": "Outputs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "type",
+        "name",
+        "outputs"
+      ],
+      "title": "ScriptTask",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "compose-spec x- extension namespace: a top-level \"x-defaults\" map hosts reusable YAML anchor\ndefinitions document-wide; CSafeLoader resolves the anchors before pydantic sees anything, so the\nparsed value is stored but never read by loader code (extra=\"forbid\" stays intact otherwise)",
+  "properties": {
+    "datasets": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "hf": "#/$defs/HuggingFaceDataset",
+            "local": "#/$defs/LocalDataset"
+          },
+          "propertyName": "source"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/HuggingFaceDataset"
+          },
+          {
+            "$ref": "#/$defs/LocalDataset"
+          }
+        ]
+      },
+      "title": "Datasets",
+      "type": "array"
+    },
+    "x-defaults": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "X-Defaults"
+    },
+    "gazetteer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GazetteerSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "datasets"
+  ],
+  "title": "YamlIngests",
+  "type": "object"
+}

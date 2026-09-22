@@ -377,3 +377,32 @@ with `<<: &wenceslaus-paths ...`.
 - After validation, `YamlIngestsParser` checks every `script` task `name`
   against `Script.REGISTRY`; an undeclared script raises with the list of
   declared scripts.
+
+## Machine-readable schemas
+
+Two JSON Schema artifacts (Draft 2020-12), generated from the models above,
+are checked in at the repo root:
+
+- `schemas/ingests.schema.json` -- the `ingests.yaml` contract (validation shape).
+- `schemas/cluster.schema.json` -- the `cluster.yaml` contract.
+
+They are GENERATED, never hand-edited: `uv run relmedner schema` regenerates
+both (use `-o/--output-dir` to write elsewhere), and the drift guard in
+`tests/test_schemas.py` fails CI if a model change lands without rerunning it.
+The schemas describe the validation shape only; tuple packing
+(`to_tuple`/`tuple_fields`) is internal and deliberately not represented.
+
+Editor and agent recipe: point the yaml-language-server at the artifact as the
+first line of the YAML file you are editing, and the editor autocompletes and
+pre-validates against the same contract the loader enforces:
+
+```yaml
+# yaml-language-server: $schema=../schemas/ingests.schema.json
+x-defaults:
+  ...
+```
+
+Relative paths resolve against the edited file's directory, so a YAML file in
+`src/relmedner/data/` uses the `../..` depth shown above. Agents can likewise
+pre-validate a candidate config against `schemas/ingests.schema.json` before
+the pipeline ever runs.
