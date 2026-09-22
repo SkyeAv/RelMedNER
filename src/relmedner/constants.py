@@ -1,5 +1,6 @@
 from importlib.resources import files
 from importlib.resources.abc import Traversable
+from os import environ
 from pathlib import Path
 
 DATA: Traversable = files("relmedner") / "data"
@@ -31,7 +32,9 @@ WORKER_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.worker"
 FLINK_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.flink"
 
 # Local fullmap database directory for resolution on the driver (no cluster mount).
-FULLMAP_DIR: Path = Path("/home/skyeav/Desktop/fullmap")
+# RELMEDNER_FULLMAP_DIR lets the beam sdkworker container point at its own mount
+# (/opt/fullmap); hosts resolve the literal Desktop path by default.
+FULLMAP_DIR: Path = Path(environ.get("RELMEDNER_FULLMAP_DIR") or "/home/skyeav/Desktop/fullmap")
 
 # ---------------------------------------------------------------- fullmap mining knobs ----
 # Every constant below was fixed by measurement against the live fullmap (2026jul22,
