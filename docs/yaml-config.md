@@ -169,6 +169,30 @@ Copy-paste example (keep only the rows longer than 20 chars, drop empties):
   filters: {drop_empty: true, min_text_len: 20}
 ```
 
+### Reading ingest quality numbers
+
+Every pass over a dataset's rows ends with exactly one INFO line on the stdlib logger
+`relmedner.quality` (no logging setup needed: the Beam DirectRunner and the flink sdkworkers
+capture logged records through their own handlers):
+
+    ingest quality anthonyyazdaniml/gliner-biomed-pre-training: rows_in=1000 rows_out=842 dropped={match_on:150, min_text_len:8}
+
+How to read it:
+
+- `rows_in` counts every row read from the source, before `match_on` (for a local avro
+  source: every record read).
+- `rows_out` counts the rows handed to the declared task.
+- `dropped` lists one `reason:count` pair per drop reason, in the order reasons first fired:
+  `match_on` (which used to be silent) plus the filter reasons above. It is omitted entirely
+  when nothing was dropped.
+- The numbers reconcile: `rows_in - rows_out` equals the sum of the `dropped` counts. If they
+  do not add up, the run was truncated (for example `sample_limit`) before the source was
+  exhausted.
+
+Honest limitation: the counts are per stream instance, which under Beam means per worker
+process, not a run-global aggregate; a multi-worker run logs one line per worker. If a global
+aggregate is ever needed, Beam's built-in Metrics counters are the path.
+
 ### Copy-paste templates
 
 Templates (a) through (c) each validate as-is against the current models. Prove a

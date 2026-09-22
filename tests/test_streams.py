@@ -1,19 +1,22 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from itertools import count
+from pathlib import Path
 from typing import Any, ClassVar, Self
 
 import pytest
+from fastavro import parse_schema, writer
 
 from relmedner import hf_json
 from relmedner.hf_json import HuggingFaceJsonDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
-from relmedner.models import RunConfig, YamlIngests
+from relmedner.models import RowFilters, RunConfig, YamlIngests
 from relmedner.registry import SOURCE_REGISTRY, build_stream
-from relmedner.streams import DataStream, StreamedRow
+from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
 
 
 class CountingDataStream(DataStream):
@@ -256,3 +259,147 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(RuntimeError, match="hub exploded"):
         list(Stream.rows())
+
+
+# ------------------------------------------------------------------ US-009 quality accounting --
+
+_QUALITY_TASK: tuple[Any, ...] = ("script", "GlinerBiomedScript", ("entities",))
+_QUALITY_SCHEMA: dict[str, Any] = {
+    "type": "record",
+    "name": "QualityRow",
+    "namespace": "relmedner.tests",
+    "fields": [{"name": "name", "type": "string"}],
+}
+
+
+def _write_avro(path: Path, records: list[dict[str, Any]]) -> Path:
+    with path.open("wb") as handle:
+        writer(handle, parse_schema(_QUALITY_SCHEMA), records)
+    return path
+
+
+def _hf_stream(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, Any]], **overrides: Any) -> HuggingFaceDataStream:
+    """an hf stream over in-memory rows: load_dataset is patched out, so the production rows()
+    loop (match_on -> evaluator -> counters) is what the test exercises"""
+    monkeypatch.setattr("relmedner.huggingface.load_dataset", lambda *args, **kwargs: rows)
+    declared: dict[str, Any] = dict(
+        task=_QUALITY_TASK,
+        weight=1.0,
+        dataset="fake/quality",
+        subset=None,
+        split="train",
+        match_on=None,
+        columns_out=("text",),
+    )
+    declared.update(overrides)
+    return HuggingFaceDataStream(**declared)
+
+
+def test_report_line_is_stable_and_omits_empty_dropped() -> None:
+    Stats: StreamStats = StreamStats(rows_in=1000, rows_out=842, dropped_by={"match_on": 150, "min_text_len": 8})
+    assert Stats.report() == "rows_in=1000 rows_out=842 dropped={match_on:150, min_text_len:8}"
+
+    Clean: StreamStats = StreamStats(rows_in=20, rows_out=20)
+    assert Clean.report() == "rows_in=20 rows_out=20"
+
+
+def test_every_drop_reason_fires_exactly_once_and_the_stats_sum(monkeypatch: pytest.MonkeyPatch) -> None:
+    """crafted rows hit match_on plus all five evaluator reasons exactly once each; the spec
+    example math must hold (rows_in - rows_out == sum of dropped) and the report line itself
+    is part of the asserted contract"""
+    Rows: list[dict[str, Any]] = [
+        {"domain": "other", "text": "a fine row dropped only by match_on"},
+        {"domain": "ok", "text": ""},  # drop_empty
+        {"domain": "ok", "text": "hi"},  # min_text_len (2 < 5)
+        {"domain": "ok", "text": "nothing here"},  # include_regex ("world" absent)
+        {"domain": "ok", "text": "goodbye cruel world"},  # exclude_regex ("cruel" present)
+        {"domain": "ok", "text": "hello world"},  # kept
+    ]
+    Stream: HuggingFaceDataStream = _hf_stream(
+        monkeypatch,
+        Rows,
+        match_on=(("domain", ("ok",)),),
+        filters=RowFilters(drop_empty=True, min_text_len=5, include_regex="world", exclude_regex="cruel"),
+    )
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert Stream.stats.rows_in == 6  # every row read, the match_on drop included
+    assert Stream.stats.rows_out == 1
+    assert Stream.stats.dropped_by == {
+        "match_on": 1,
+        "drop_empty": 1,
+        "min_text_len": 1,
+        "include_regex": 1,
+        "exclude_regex": 1,
+    }
+    assert Stream.stats.rows_in - Stream.stats.rows_out == sum(Stream.stats.dropped_by.values())
+    assert Yielded == [("fake/quality", (_QUALITY_TASK, ("hello world",)))]
+    assert Stream.stats.report() == ("rows_in=6 rows_out=1 dropped={match_on:1, drop_empty:1, min_text_len:1, include_regex:1, exclude_regex:1}")
+
+
+def test_quality_line_logs_once_per_pass_on_the_quality_logger(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    Rows: list[dict[str, Any]] = [{"text": "aspirin trial"}, {"text": "x"}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows, filters=RowFilters(min_text_len=5))
+
+    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
+        Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert len(Yielded) == 1
+    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
+    assert len(Quality) == 1
+    assert Quality[0].getMessage() == "ingest quality fake/quality: rows_in=2 rows_out=1 dropped={min_text_len:1}"
+
+
+def test_quality_line_still_logs_before_zero_yield_error_raises(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the US-008 guard must not swallow the report: stream()'s finally lands the quality line
+    before ZeroYieldError reaches the caller"""
+    Rows: list[dict[str, Any]] = [{"text": "short"}, {"text": "tiny"}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows, filters=RowFilters(min_text_len=1000))
+
+    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
+        with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+            list(Stream.stream(RunConfig()))
+
+    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
+    assert len(Quality) == 1
+    assert Quality[0].getMessage() == "ingest quality fake/quality: rows_in=2 rows_out=0 dropped={min_text_len:2}"
+
+
+def test_no_filters_no_match_on_counts_without_touching_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the no-op guarantee: with neither filters nor match_on the yielded rows stay identical
+    to the plain projection while the counters still count and dropped_by stays empty"""
+    Rows: list[dict[str, Any]] = [{"text": "alpha"}, {"text": "beta"}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows)
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert Yielded == [("fake/quality", (_QUALITY_TASK, ("alpha",))), ("fake/quality", (_QUALITY_TASK, ("beta",)))]
+    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 2
+    assert Stream.stats.dropped_by == {}
+    assert Stream.stats.report() == "rows_in=2 rows_out=2"
+
+
+def test_local_stream_accounts_records_read_and_filter_drops(tmp_path: Path) -> None:
+    Target: Path = _write_avro(
+        tmp_path / "quality.avro",
+        [{"name": "aspirin trial"}, {"name": "x"}, {"name": ""}],
+    )
+    Stream: LocalAvroDataStream = LocalAvroDataStream(_QUALITY_TASK, 1.0, str(Target), filters=RowFilters(drop_empty=True, min_text_len=5))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["aspirin trial"]
+    assert Stream.stats.rows_in == 3 and Stream.stats.rows_out == 1
+    assert Stream.stats.dropped_by == {"drop_empty": 1, "min_text_len": 1}
+
+
+def test_local_unfiltered_pass_counts_without_dropping(tmp_path: Path) -> None:
+    Target: Path = _write_avro(tmp_path / "plain.avro", [{"name": "a"}, {"name": "b"}])
+    Stream: LocalAvroDataStream = LocalAvroDataStream(_QUALITY_TASK, 1.0, str(Target))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["a", "b"]
+    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 2
+    assert Stream.stats.dropped_by == {}
