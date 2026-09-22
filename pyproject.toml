@@ -13,6 +13,7 @@ dependencies = [
     "dataclasses-avroschema[pydantic]>=0.70.9",
     "datasets>=5.0.1",
     "fastavro>=1.12.2",
+    "gliner2>=0.1.0",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",
     "tablassert>=19.2.0",
@@ -27,7 +28,6 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "gliner2>=0.1.0",
     "pre-commit>=4.6.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",

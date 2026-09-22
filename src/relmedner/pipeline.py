@@ -95,6 +95,17 @@ def to_record(example: TrainingExample) -> dict[str, Any]:
     return example.asdict()
 
 
+def output_path(options: PipelineOptions | None, config: RunConfig) -> Path:
+    """external flink runs write into the durable sdkworker mount so the shards can be
+    collected back to the submitting host; direct-style runners keep the caller's ordinary
+    local path. Options presence alone is not the test: local prism runs carry options
+    (worker counts) yet must keep writing locally."""
+    Runner = (options.get_all_options().get("runner") or "") if options is not None else ""
+    if "flink" in Runner.lower():
+        return Path(OUTPUTS_MOUNT) / config.artifact_name()
+    return Path(config.output)
+
+
 class BeamPipeline:
     def __init__(self: Self, options: PipelineOptions | None = None) -> None:
         self.options: PipelineOptions | None = options
@@ -107,9 +118,7 @@ class BeamPipeline:
         # per-source mixing weight stamped onto every record each source emits (avro provenance;
         # stock gliner2 has no per-example weight, so duplication happens at JSONL export)
         Weights: dict[str, float] = Ingests.weights_by_source()
-        # Flink user code runs in the sdkworker, so external runs write to its durable output mount.
-        # DirectRunner keeps honoring the caller's ordinary local path for development and unit tests.
-        Output: Path = Path(config.output) if self.options is None else Path(OUTPUTS_MOUNT) / config.artifact_name()
+        Output: Path = output_path(self.options, config)
 
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (

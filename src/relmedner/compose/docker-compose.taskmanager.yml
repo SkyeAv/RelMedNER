@@ -23,6 +23,11 @@ services:
       - taskmanager.numberOfTaskSlots=${SLOTS}
       - -D
       - taskmanager.memory.process.size=${MEMORY}
+      # beam's per-slot grpc fn servers (netty epoll direct buffers) live outside flink's own
+      # memory pools; task off-heap defaults to 0 and the JVM then caps direct memory near the
+      # 128m framework off-heap, which OOMs mid-job (OutOfMemoryError: Direct buffer memory)
+      - -D
+      - taskmanager.memory.task.off-heap.size=2g
     user: "0:0"
     restart: unless-stopped
 
