@@ -152,8 +152,8 @@ MAX_BATCH_ROWS: int = 2000
 
 # ------------------------------------------------------- training-row token cap knobs ----
 # Platform-wide cap on one training row's joined text, applied ALWAYS-ON by
-# row_filters.first_drop_reason (independent of any declared RowFilters rules): a row is a
-# platform constant concern, not per-dataset config, so no ingests.yaml setting may waive it.
+# row_filters.first_drop_reason (independent of any declared RowFilters rules): the cap
+# is a platform constant concern, not per-dataset config, so no ingests.yaml setting may waive it.
 
 # Largest allowed text, in TOKENS. Chars-to-tokens conversion uses the OpenAI rule of thumb
 # of ~4 characters per token for English

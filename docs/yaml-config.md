@@ -241,8 +241,9 @@ Tripwires:
 - Unknown keys inside `filters` fail validation (`extra="forbid"` applies there too), as does
   `min_text_len` > `max_text_len`.
 - An invalid regex fails at stream construction with `re.error`, before any row streams.
-- Fail-loud zero-yield guard: when a `filters` block drops 100% of the rows of a non-empty
-  source, the run raises `ZeroYieldError` instead of silently shipping an empty training set.
+- Fail-loud zero-yield guard: when a declared filter OR the always-on `max_tokens` cap
+  drops 100% of the rows of a non-empty source, the run raises `ZeroYieldError` instead of
+  silently shipping an empty training set.
   A genuinely empty source (0 rows in) is not an error. A dataset with no `filters` block keeps
   the historical unfiltered behavior exactly.
 
