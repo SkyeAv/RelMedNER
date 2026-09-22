@@ -151,6 +151,18 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "knowledgator/PubMedAbstractsNER": (
+        "hf_json",
+        (
+            ("script", "PubmedAbstractsScript", ("entities", "relations")),
+            1.0,
+            "knowledgator/PubMedAbstractsNER",
+            "train.json",
+            "train",
+            None,
+            ("tokenized_text", "ner"),
+        ),
+    ),
 }
 
 

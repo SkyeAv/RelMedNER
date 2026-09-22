@@ -126,8 +126,28 @@ class LocalDataset(DatasetBase):
         return self.path
 
 
+class HuggingFaceJsonDataset(DatasetBase):
+    """json-builder ingest over an hf:// URL inside one hub repo file; see relmedner.hf_json for the
+    two measured blockers (old-style dataset_infos.json, cold-cache streaming corruption) that keep
+    this route out of the "hf" source"""
+
+    source: Literal["hf_json"] = Field(...)
+    dataset: str = Field(...)
+    file: str = Field(..., min_length=1)
+    """file name inside the hub repo; min_length keeps the hf://datasets/{dataset}/{file} URL well formed"""
+    split: str | None = Field(None)
+    match_on: list[MatchOn] | None = Field(None)
+    columns_out: list[str] = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        """the stream stamps rows with the repo id alone, so two hf_json entries over the same
+        repo (different files) share one weight slot; weights_by_source raises if they disagree"""
+        return self.dataset
+
+
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalDataset,
+    HuggingFaceDataset | LocalDataset | HuggingFaceJsonDataset,
     Field(discriminator="source"),
 ]
 

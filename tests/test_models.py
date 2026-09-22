@@ -3,14 +3,17 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
+from relmedner.enums import OutputShapes, ProcessingTypes
 from relmedner.models import (
     ChoiceField,
     Classification,
+    Dataset,
     Description,
     Entity,
     HuggingFaceDataset,
+    HuggingFaceJsonDataset,
     Relation,
     RelationField,
     ScriptTask,
@@ -282,3 +285,64 @@ def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projectio
 
     assert Restored == Example and Restored.relations[0].evidence == "distant"
     assert Restored.to_output()["output"]["relations"] == [{"treats": {"head": "Aspirin", "tail": "headache"}}]
+
+
+def test_huggingface_json_dataset_pins_the_positional_payload_contract() -> None:
+    """registry.build_stream splats to_tuple positionally into HuggingFaceJsonDataStream.__init__, so the
+    model field order minus source IS the stream constructor order"""
+    Entry: HuggingFaceJsonDataset = HuggingFaceJsonDataset(
+        task=ScriptTask(type=ProcessingTypes.SCRIPT, name="PubmedAbstractsScript", outputs=[OutputShapes.ENTITIES]),
+        source="hf_json",
+        dataset="knowledgator/PubMedAbstractsNER",
+        file="train.json",
+        split="train",
+        match_on=None,
+        columns_out=["tokenized_text", "ner"],
+    )
+
+    assert list(HuggingFaceJsonDataset.model_fields) == ["task", "weight", "source", "dataset", "file", "split", "match_on", "columns_out"]
+    assert Entry.to_tuple() == (
+        "hf_json",
+        (
+            ("script", "PubmedAbstractsScript", ("entities",)),
+            1.0,
+            "knowledgator/PubMedAbstractsNER",
+            "train.json",
+            "train",
+            None,
+            ("tokenized_text", "ner"),
+        ),
+    )
+
+
+def test_the_dataset_discriminated_union_accepts_the_hf_json_variant() -> None:
+    """the annotated Dataset union is what ingests.yaml validation dispatches on; a missing arm would
+    reject the new source at yaml parse time"""
+    Parsed: HuggingFaceJsonDataset = TypeAdapter(Dataset).validate_python(
+        {
+            "task": {"type": "script", "name": "PubmedAbstractsScript", "outputs": ["entities"]},
+            "source": "hf_json",
+            "dataset": "knowledgator/PubMedAbstractsNER",
+            "file": "train.json",
+            "split": "train",
+            "match_on": None,
+            "columns_out": ["tokenized_text", "ner"],
+        }
+    )
+
+    assert isinstance(Parsed, HuggingFaceJsonDataset)
+
+
+def test_huggingface_json_dataset_rejects_an_empty_file_name() -> None:
+    """file rides into an hf://datasets/{dataset}/{file} URL; an empty name would only fail deep inside
+    the hub client, so the model gate fails loudly instead"""
+    with pytest.raises(ValidationError):
+        HuggingFaceJsonDataset(
+            task=ScriptTask(type=ProcessingTypes.SCRIPT, name="PubmedAbstractsScript", outputs=[OutputShapes.ENTITIES]),
+            source="hf_json",
+            dataset="knowledgator/PubMedAbstractsNER",
+            file="",
+            split="train",
+            match_on=None,
+            columns_out=["tokenized_text"],
+        )

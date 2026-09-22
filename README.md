@@ -40,6 +40,7 @@ types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 | `aps/super_glue` (multirc) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
+| `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
 
 All script tasks except the multilingual ingest (which labels directly, see its
 notes below) share one resolution chain -- fullmap first, a shared lowercased
@@ -120,6 +121,41 @@ Dataset-format notes (`SuperGlueMultiRCScript`): general-domain English true/fal
 `label` column arrives as a ClassLabel index or its decoded string; the test split also carries unlabeled rows
 (`label` -1), which this pipeline never ingests (train split only, per repo convention) and would skip rather
 than coerce. The nested `idx` column is deliberately excluded: row provenance, not training signal.
+
+Dataset-format notes (`PubmedAbstractsScript`): the hub file is one 35,000-object JSON
+array (151,668,527 bytes); `tokenized_text` is a token list and `ner` carries end-inclusive
+`[start, end, "<MeSH heading> - <definition>"]` spans -- 383,721 of them over 5,850
+distinct labels, every label shaped `heading - definition`. Rows are long (median 233 /
+max 1,558 tokens, none truncated) and 13 rows have empty `ner`, exiting as text-only
+examples that the permitted-shapes contract drops. The repo ships a broken old-style
+`dataset_infos.json`: under `datasets` 5.0.1 the hub path raises `KeyError: 'feature'`
+inside `Features.from_dict`, with and without `data_files=`, so the ingest reads the raw
+file non-streaming through the `hf_json` source (`HuggingFaceJsonDataStream`). Never read
+it streaming: on a cold cache the streaming JSON builder promotes every `ner` cell to utf8
+straight from the raw JSON text, `mention_spans` would then drop every span, and the
+ingest would silently yield nothing. Each label is split on its first `" - "` and only the
+bare heading reaches resolution: with the definition riding along, the shared gate's
+label-word buckets false-reject 45,975 of 383,721 full-corpus spans (12.0%: gate accepts
+the bare heading, rejects the full label -- 14.5% of the 316,600 fullmap-hit spans; e.g.
+'ankle' loses a correct Disease hit because the definition contains 'region'/'leg').
+Unresolved headings surface PascalCased (`Abdominal Core` -> `AbdominalCore`). Measured on
+the FULL 35,000-row corpus with one batched fullmap round trip and the shared gates:
+fullmap 316,600 spans (82.5%), fallback 15,437 (4.0%), raw 51,684 (13.5%) under the
+US-002 seed map. The `LABEL_MAP` coverage rule maps every heading whose actual mention
+surfaces fit one real biolink class -- every clean heading with >=30 raw-origin spans is
+mapped, and the residual >=30 tail is mixed/junk or borderline -- rather than chasing a
+>=90% share that is unreachable without mislabeling data; the US-004 map holds 211 entries
+(19 seed + 192 measured), and the honest measured coverage is 44.2% (origin shares after:
+82.5% / 10.0% / 7.5%) because the residual raw tail is dominated by headings with no
+faithful class -- `Investigative Techniques` is 94% the surfaces 'methods'/'METHODS',
+`Group Processes` is 99.7% 'role' and biolink has no Role class, `Chemical Phenomena` and
+`Genetic Phenomena` mix categories -- which stay unmapped on purpose (a wrong bucket
+silently mislabels training data). Re-measuring never re-downloads the 152MB file: cached
+full file + one batched fullmap round trip (`rs.normalize_terms` then `_fullmap_best`) +
+the shared gates make every candidate map pure set arithmetic over headings, so the harness
+stays throwaway and is deliberately not committed. Gazetteer relations over a 5,000-row
+sample through the production `run()` path with the expanded map: 18.4% of rows carry >=1
+relation (1,107 relations, 22 distinct predicates); 100% of rows emit entities.
 
 ## Output
 

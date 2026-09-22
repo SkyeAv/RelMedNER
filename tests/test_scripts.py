@@ -10,7 +10,7 @@ from relmedner.models import Entity, Relation, RelationField, TrainingExample
 from relmedner.scripts import GlinerBiomedScript, KnowledgatorBiomedScript, SentenceRexScript
 from relmedner.scripts.sentence_rex import parse_tagged_sentence
 from relmedner.types import DispatchedExample, Script, ScriptValues
-from relmedner.utils import ResolvedMention, ScriptUtils, strip_biolink_prefix
+from relmedner.utils import ResolutionGate, ResolvedMention, ScriptUtils, strip_biolink_prefix
 
 
 class StubScript(Script):
@@ -1339,3 +1339,190 @@ def expected_relation(name: str, head: str, tail: str) -> Relation:
         fields=[RelationField(name="head", value=head), RelationField(name="tail", value=tail)],
         description=ScriptUtils.predicate_description(name),
     )
+
+
+# ---------------------------------------------------------------------------
+# PubmedAbstractsScript (PubMedAbstractsNER ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_every_pubmed_heading_maps_to_a_biolink_category() -> None:
+    """dataset-local MeSH-heading vocabulary values stay real biolink classes"""
+    from relmedner.scripts import PubmedAbstractsScript
+
+    for heading, category in PubmedAbstractsScript.LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {heading!r} -> {category!r} is not a biolink class"
+
+
+def test_pubmed_seed_anchors_are_present() -> None:
+    """the measured raw-origin anchors the spec pins; only clearly-faithful headings are seeded
+    in this story (force-fitting 'Diagnosis'/'Population Characteristics'/'Blood' etc. to the
+    nearest-sounding class would silently mislabel training data -- coverage push is US-004)"""
+    from relmedner.scripts import PubmedAbstractsScript
+
+    assert PubmedAbstractsScript.LABEL_MAP["pathologic processes"] == "PathologicalProcess"
+    assert PubmedAbstractsScript.LABEL_MAP["persons"] == "Human"
+    assert PubmedAbstractsScript.LABEL_MAP["publication formats"] == "Publication"
+    assert PubmedAbstractsScript.LABEL_MAP["age groups"] == "PopulationOfIndividualOrganisms"
+
+
+def test_the_pubmed_script_splits_headings_before_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the definition tail must never reach resolve_mentions: the shared gate keys buckets on
+    label words, so definition words ('region', 'leg', 'process', 'measure') would flip fullmap
+    outcomes (measured live: 1,782/19,972 sample spans, 10.6%, lost to false rejections, e.g.
+    'Lower Extremity - ... the BUTTOCKS; HIP; and LEG.' rejecting a correct Disease hit for
+    'ankle') -- the script is pinned to pass bare headings only, with the dataset map merged"""
+    from relmedner.scripts import PubmedAbstractsScript
+
+    received: list[list[tuple[str, str]]] = []
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        received.append(list(mentions))
+        assert label_map is PubmedAbstractsScript.LABEL_MAP
+        return [ResolvedMention(mention=mention, category="Disease", origin="fallback") for mention, _ in mentions]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Ankle", "sprains", "are", "common", "in", "women", "athletes", "."]
+    Definition = " - The region of the lower limb, including the BUTTOCKS; HIP; and LEG."
+    Ner: list[list[Any]] = [[0, 1, "Pathologic Processes" + Definition], [5, 5, "Persons" + Definition]]
+    _, Example = Script.dispatch("PubmedAbstractsScript", (("entities",), (Tokens, Ner)))
+
+    assert received == [[("Ankle sprains", "Pathologic Processes"), ("women", "Persons")]]
+    assert Example.populated() == frozenset({"entities"})
+
+
+def test_pubmed_definition_words_do_not_flip_the_resolution_gate() -> None:
+    """the gate half of the split hazard, pinned directly so it runs without the fullmap db:
+    the full 'heading - definition' label fires the anatomy bucket on the definition words
+    'region'/'leg' and rejects a correct Disease-resolved mention that the bare heading accepts
+    (this is the measured 10.6% false-rejection loss the heading split removes)"""
+    Full = "Lower Extremity - The region of the lower limb, including the BUTTOCKS; HIP; and LEG."
+
+    assert ResolutionGate.accept("ankle", Full, "MONDO:0001234", "Disease") is False
+    assert ResolutionGate.accept("ankle", "Lower Extremity", "MONDO:0001234", "Disease") is True
+
+
+def test_the_pubmed_script_emits_nothing_for_rows_without_surviving_spans() -> None:
+    """the 13 measured empty-ner rows (of 35,000) exit as text-only examples whose empty
+    populated() pipeline.matches_declared_outputs drops; a row whose every span fails the
+    mention_spans shape/bounds guard (0 in this corpus, guard stays) is text-only too"""
+    _, EmptyNer = Script.dispatch("PubmedAbstractsScript", (("entities",), (["Breast", "anatomy", "review", "."], [])))
+    assert EmptyNer.text == "Breast anatomy review ."
+    assert EmptyNer.populated() == frozenset()
+    _, AllMalformed = Script.dispatch(
+        "PubmedAbstractsScript",
+        (("entities",), (["Breast", "anatomy"], [[9, 9, "Cells - the basic structural unit"], [-1, 0, "Persons"], [1, 0, "Disease"]])),
+    )
+    assert AllMalformed.populated() == frozenset()
+
+
+def test_the_pubmed_script_decodes_real_row_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end-to-end over the corpus's real shape: end-inclusive spans, 'heading - definition'
+    labels split to bare headings, and mixed fullmap/fallback/raw origins grouped by category"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [
+            ("Malaria", "Pathologic Processes"),
+            ("patients", "Persons"),
+            ("questionnaires", "Investigative Techniques"),
+        ]
+        return [
+            ResolvedMention(mention="malaria", category="Disease", curie="MONDO:0005388", preferred_name="malaria", origin="fullmap"),
+            ResolvedMention(mention="patients", category="Human", origin="fallback"),
+            ResolvedMention(mention="questionnaires", category="Investigative Techniques", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Malaria", "is", "endemic", "among", "patients", "surveyed", "with", "questionnaires", "."]
+    Ner: list[list[Any]] = [
+        [0, 0, "Pathologic Processes - Parasitic diseases characterized by fever and chills."],
+        [4, 4, "Persons - Individuals grouped by age, sex, or occupation."],
+        [7, 7, "Investigative Techniques - Procedures and methods used in research."],
+    ]
+    _, Example = Script.dispatch("PubmedAbstractsScript", (("entities",), (Tokens, Ner)))
+
+    assert Example.text == "Malaria is endemic among patients surveyed with questionnaires ."
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Disease": ["malaria"],
+        "Human": ["patients"],
+        "InvestigativeTechniques": ["questionnaires"],
+    }
+    assert Example.entities[0].description is not None and "[fullmap: MONDO:0005388 | malaria]" in Example.entities[0].description
+
+
+def test_the_pubmed_script_pascalcases_raw_headings_but_keeps_mapped_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """unmapped MeSH headings surface biolink-cased raw categories exactly like
+    PileNerBiomedScript's raw tail ('Abdominal Core' -> 'AbdominalCore'); LABEL_MAP/fallback
+    hits already name a biolink class and must stay untouched"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Adults", "Age Groups"), ("abdominal core", "Abdominal Core")]
+        return [
+            ResolvedMention(mention="adults", category="PopulationOfIndividualOrganisms", origin="fallback"),
+            ResolvedMention(mention="abdominal core", category="Abdominal Core", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Adults", "show", "increased", "activity", "in", "the", "abdominal", "core", "."]
+    Ner: list[list[Any]] = [[0, 0, "Age Groups - Age classifications of humans."], [6, 7, "Abdominal Core - The central abdominal region."]]
+    _, Example = Script.dispatch("PubmedAbstractsScript", (("entities",), (Tokens, Ner)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "PopulationOfIndividualOrganisms": ["adults"],
+        "AbdominalCore": ["abdominal core"],
+    }
+
+
+def test_the_pubmed_script_emits_gazetteer_relations_over_resolved_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a trigger phrase between two resolved mentions emits an edge; the ingest declares
+    outputs: [entities, relations] (US-003) so both shapes must come off one row (measured
+    on a 5,000-row sample through the production run() path with the expanded map: 18.4% of
+    rows carry >=1 relation, 1,107 relations across 22 distinct predicates)"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Tokens: list[str] = ["Aspirin", "is", "used", "to", "treat", "migraine"]
+    Ner: list[list[Any]] = [
+        [0, 0, "Organic Chemical - a carbon-based substance with medicinal use."],
+        [5, 5, "Disease - a disorder of structure or function."],
+    ]
+    _, Example = Script.dispatch("PubmedAbstractsScript", (("entities",), (Tokens, Ner)))
+
+    assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
+
+
+def test_pubmed_coverage_push_pins_the_measured_raw_headings() -> None:
+    """US-004 raw-origin coverage rule: with the US-002 seed map 51,684 of 383,721 full-corpus
+    spans land in raw origin over 1,637 headings, and every heading with >=30 raw-origin spans
+    whose actual mention surfaces fit one real biolink class is mapped (measured coverage 44.2%
+    after the US-004 expansion: the residual raw
+    tail is dominated by headings with NO faithful class -- 'Investigative Techniques' is 94%
+    the surfaces 'methods'/'METHODS', 'Group Processes' is 99.7% 'role' with no biolink Role
+    class, 'Chemical Phenomena'/'Genetic Phenomena' are mixed-category -- which stay unmapped
+    because a wrong bucket silently mislabels training data). Pins the top measured raw
+    headings to their chosen classes AND the monsters' absence, so a future edit can neither
+    silently gut the coverage rule nor force-fit an unfaithful mapping; pure-data, no DB
+    (import-time validate_label_map separately pins every value to a real biolink class)"""
+    from relmedner.scripts import PubmedAbstractsScript
+
+    label_map = PubmedAbstractsScript.LABEL_MAP
+    assert label_map["metabolism"] == "BiologicalProcess"
+    assert label_map["genetic variation"] == "SequenceVariant"
+    assert label_map["food and beverages"] == "Food"
+    assert label_map["vertebrates"] == "Vertebrate"
+    assert label_map["neoplasms, glandular and epithelial"] == "Disease"
+    assert label_map["body temperature changes"] == "PhenotypicFeature"
+    assert label_map["white people"] == "PopulationOfIndividualOrganisms"
+    assert label_map["drug resistance"] == "PhenotypicFeature"
+    assert label_map["brain"] == "AnatomicalEntity"
+    assert label_map["epithelial cells"] == "CellLine"
+    assert label_map["dna repair"] == "BiologicalProcess"
+    assert label_map["butyrates"] == "ChemicalEntity"
+    assert len(label_map) == 211
+    for unmapped in ("investigative techniques", "group processes", "chemical phenomena", "genetic phenomena"):
+        assert unmapped not in label_map, f"{unmapped!r} has no faithful class and must stay unmapped"

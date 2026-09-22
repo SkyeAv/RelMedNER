@@ -5,6 +5,7 @@ from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
 from relmedner.scripts.knowledgator_biomed import KnowledgatorBiomedScript
 from relmedner.scripts.pile_ner_biomed import PileNerBiomedScript
 from relmedner.scripts.pile_ner_type import PileNerTypeScript
+from relmedner.scripts.pubmed_abstracts import PubmedAbstractsScript
 from relmedner.scripts.sentence_rex import SentenceRexScript
 from relmedner.scripts.super_glue_multirc import SuperGlueMultiRCScript
 
@@ -16,6 +17,7 @@ __all__ = [
     "KnowledgatorBiomedScript",
     "PileNerBiomedScript",
     "PileNerTypeScript",
+    "PubmedAbstractsScript",
     "SentenceRexScript",
     "SuperGlueMultiRCScript",
 ]

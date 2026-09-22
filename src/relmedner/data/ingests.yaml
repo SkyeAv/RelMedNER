@@ -144,3 +144,17 @@ datasets:
       - question
       - answer
       - label
+  - task:
+      type: script
+      name: PubmedAbstractsScript
+      outputs:
+        - entities
+        - relations
+    source: hf_json
+    dataset: knowledgator/PubMedAbstractsNER
+    file: train.json
+    split: train
+    weight: 1.0
+    columns_out:
+      - tokenized_text
+      - ner
