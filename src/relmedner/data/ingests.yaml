@@ -105,3 +105,15 @@ datasets:
     columns_out:
       - text
       - entities
+  - task:
+      type: script
+      name: GlinerMultilingualScript
+      outputs:
+        - entities
+    source: hf
+    dataset: knowledgator/gliner-multilingual-synthetic
+    split: train
+    weight: 1.0
+    columns_out:
+      - tokenized_text
+      - ner

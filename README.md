@@ -33,12 +33,14 @@ types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
 | `knowledgator/biomed_NER` | `script` -> `KnowledgatorBiomedScript` | `text`, `entities` | entities | 4,840 |
+| `knowledgator/gliner-multilingual-synthetic` | `script` -> `GlinerMultilingualScript` | `tokenized_text`, `ner` | entities | 96,606 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 | `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 
-All script tasks share one resolution chain — fullmap first, a shared lowercased
+All script tasks except the multilingual ingest (which labels directly, see its
+notes below) share one resolution chain — fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
 `resolve_mentions(label_map=...)`), raw labels last — and two shared quality gates:
 
@@ -97,6 +99,19 @@ measured on the full 4,840-row train split (21 canonical classes with an honest 
 8 plural/legacy variants; LANGUAGE, REGULATION OR LAW, MONEY, Unlabelled,
 and the bare INTELLECTUAL variant stay unmapped -> raw PascalCase tails; gazetteer relations may
 still fire as free signal beyond the declared shapes).
+
+Dataset-format notes (`GlinerMultilingualScript`): the streaming loader delivers this
+corpus's `ner` spans as stringified indices with quote-wrapped labels
+(`[["18", "21", "\"organization\""]]`) while `tokenized_text` arrives as a real list, so the
+script coerces defensively and skips malformed spans. The label tail is long and
+multilingual: 21,640 distinct labels with the top-60 covering only 43.6% of spans, and the
+labels themselves are multilingual (`person`/`Person`/`personne`/`Persona`/`Pessoa`/`Osoba`),
+so the cross-lingual head labels map onto biolink classes (Human, GeographicLocation, Agent,
+Disease, Drug, Food, Plant, OrganismTaxon) and everything else rides PascalCase for
+zero-shot breadth. Fullmap is bypassed by design: its keys are byte-sorted bags of Porter2
+English stems over a biomedical vocabulary, so general-domain non-English surfaces never
+match it and label directly off `LABEL_MAP` plus PascalCase. Only `entities` is declared:
+the gazetteer's 129 triggers are English biomedical phrases, so relations are not declared.
 
 ## Output
 
