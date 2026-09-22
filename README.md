@@ -25,7 +25,7 @@ Two ingest types share one declarative pipeline:
 | --- | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
-| `knowledgator/biomed_NER` | `script` -> `KnowledgatorBiomedScript` | `text`, `entities` | entities, relations | 4,840 |
+| `knowledgator/biomed_NER` | `script` -> `KnowledgatorBiomedScript` | `text`, `entities` | entities | 4,840 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
@@ -55,8 +55,9 @@ spans through `ScriptUtils.char_spans_to_token_spans` with drop-then-snap (measu
 out-of-bounds dropped, ~0.4% whitespace slop normalized, 3.43% mid-token snaps); emitted `text` is
 the re-joined token stream so every mention surface stays findable (26.7% of raw-text surfaces
 would fail gliner2's validator); the 28-entry `LABEL_MAP` covers the 32-label observed vocabulary
-(24 canonical classes plus plural/legacy variants; LANGUAGE, REGULATION OR LAW, MONEY stay
-unmapped -> raw PascalCase tails).
+(24 canonical classes plus plural/legacy variants; LANGUAGE, REGULATION OR LAW, MONEY, Unlabelled,
+and the bare INTELLECTUAL variant stay unmapped -> raw PascalCase tails; gazetteer relations may
+still fire as free signal beyond the declared shapes).
 
 ## Output
 

@@ -623,7 +623,7 @@ def test_the_knowledgator_script_resolves_plural_variants_through_the_label_map(
 
 def test_every_knowledgator_label_map_value_is_a_biolink_category() -> None:
     """dataset-local vocabulary values stay real biolink classes (import-time validate_label_map
-    already raises; this pins the invariant for the whole 29-entry map)"""
+    already raises; this pins the invariant for the whole 28-entry map)"""
     for raw_label, category in KnowledgatorBiomedScript.LABEL_MAP.items():
         assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
 
