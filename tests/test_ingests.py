@@ -1,8 +1,22 @@
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 
 from relmedner.ingests import YamlIngestsParser
+from relmedner.models import (
+    Cluster,
+    FullmapTask,
+    HuggingFaceDataset,
+    HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
+    MatchOn,
+    ScriptTask,
+    WorkerNode,
+    YamlIngests,
+)
 
 # per-ingest locks: each declared ingest's entry is asserted independently so adding a dataset is an
 # additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
@@ -212,3 +226,31 @@ def test_the_declared_tuple_shape_is_locked_per_ingest(ingest: str) -> None:
 
 def test_every_declared_ingest_is_accounted_for() -> None:
     assert set(tuples_by_ingest()) == set(EXPECTED)
+
+
+# doc drift guard: docs/yaml-config.md is the agent-facing schema reference, and it rots silently
+# when a model field is added or renamed; parametrizing over the live model_fields (not a copied
+# list) means the guard itself cannot go stale. Every name below must appear in the doc.
+# Every concrete dataset source is listed: main split the single LocalDataset into the avro,
+# delimited, and hf_json kinds, and a doc naming only one of them is exactly the silent rot
+# this guard exists to catch.
+_DOC_MODELS = (
+    YamlIngests,
+    ScriptTask,
+    FullmapTask,
+    HuggingFaceDataset,
+    HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
+    MatchOn,
+    Cluster,
+    WorkerNode,
+)
+
+_DOC_FIELD_NAMES: tuple[str, ...] = tuple(sorted({name for model in _DOC_MODELS for name in model.model_fields}))
+
+
+@pytest.mark.parametrize("field_name", _DOC_FIELD_NAMES)
+def test_every_yaml_model_field_is_named_in_docs_yaml_config(field_name: str) -> None:
+    text = pathlib.Path("docs/yaml-config.md").read_text(encoding="utf-8")
+    assert field_name in text, f"field {field_name!r} is missing from docs/yaml-config.md"
