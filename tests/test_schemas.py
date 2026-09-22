@@ -48,9 +48,10 @@ def test_ingests_top_level_properties() -> None:
 
 def test_ingests_filters_live_on_every_dataset_shape() -> None:
     # DatasetBase is not its own $defs entry: pydantic flattens the inherited fields into each
-    # concrete dataset shape, so `filters` (US-008) must appear on both source arms
+    # concrete dataset shape, so `filters` (US-008) must appear on EVERY source arm -- a new
+    # arm that silently lacked it would accept a declared filter and never apply it
     defs: dict = load_ingests()["$defs"]
-    for shape in ("HuggingFaceDataset", "LocalDataset"):
+    for shape in ("HuggingFaceDataset", "HuggingFaceJsonDataset", "LocalAvroDataset", "LocalDelimitedDataset"):
         assert "filters" in defs[shape]["properties"]
 
 
@@ -60,7 +61,9 @@ def test_datasets_carries_source_discriminator() -> None:
         "propertyName": "source",
         "mapping": {
             "hf": "#/$defs/HuggingFaceDataset",
-            "local": "#/$defs/LocalDataset",
+            "hf_json": "#/$defs/HuggingFaceJsonDataset",
+            "local": "#/$defs/LocalAvroDataset",
+            "local_delimited": "#/$defs/LocalDelimitedDataset",
         },
     }
 
