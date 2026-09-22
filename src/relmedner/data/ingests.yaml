@@ -94,3 +94,131 @@ datasets:
     split: test
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
+  # tensorshield reddit corpora: general Reddit, MIT, all >= 100k rows (226 at 22,572 rows is
+  # excluded -- projected yield after the health filter is noise). match_on keeps only
+  # biomedical/health communities; values match the corpus EXACTLY (apply_match is exact
+  # membership, so casing must be the Reddit canonical form). Provisional list pending
+  # measurement -- see .ralph/specs/health-community-allowlist.md.
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_157
+    split: train
+    # anchor sits on the LIST node (match_on: list[MatchOn], src/relmedner/models.py:95) so
+    # match_on: *biomed_communities in the sibling entries resolves to a valid list
+    match_on: &biomed_communities
+      - column: communityName
+        values:
+          - r/AskDocs
+          - r/medical
+          - r/medicine
+          - r/Health
+          - r/diabetes
+          - r/ADHD
+          - r/autism
+          - r/Anxiety
+          - r/depression
+          - r/suicidewatch
+          - r/cancer
+          - r/Celiac
+          - r/ibs
+          - r/IBD
+          - r/CrohnsDisease
+          - r/UlcerativeColitis
+          - r/eczema
+          - r/Psoriasis
+          - r/acne
+          - r/migraine
+          - r/ChronicPain
+          - r/menopause
+          - r/endometriosis
+          - r/PCOS
+          - r/infertility
+          - r/birthcontrol
+          - r/lupus
+          - r/MultipleSclerosis
+          - r/hypothyroidism
+          - r/Hashimotos
+          - r/asthma
+          - r/COPD
+          - r/epilepsy
+          - r/schizophrenia
+          - r/bipolar
+          - r/BPD
+          - r/OCD
+          - r/PTSD
+          - r/EatingDisorders
+          - r/dentistry
+          - r/pharmacy
+          - r/nursing
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_30
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_84
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_171
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_85
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_217
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_237
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
