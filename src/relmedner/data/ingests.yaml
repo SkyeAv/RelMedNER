@@ -1,187 +1,86 @@
+# ingests.yaml -- dataset declarations for the relmedner pipeline.
+# Anchor scheme (compose-spec style): reusable fragments live in x-defaults below,
+# anchored with &name, referenced with *name, or merged with <<: *name.
+# CSafeLoader resolves every anchor/alias/merge key at parse time, before pydantic
+# sees the document -- resolved values are identical to writing each block out.
+# Rules: alias depth is one level (never alias an alias); every entry still names
+# its dataset id, its task (script name or fullmap type), and its columns_out;
+# anything an entry merges (source/split/weight) stays visible in x-defaults.
+# The &weight scalar anchor nested inside the anchored hf-train map is legal: anchors are
+# document-global wherever they are defined, and the local entry below aliases it as *weight
+# (same value, one declaration) instead of re-anchoring.
+# Full field reference: docs/yaml-config.md.
+x-defaults:
+  hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
+  fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+
 datasets:
-  - task:
-      type: script
-      name: GlinerBiomedScript
-      outputs:
-        - entities
-        - relations
-    source: hf
+  - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
+    <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-pre-training
-    split: train
-    weight: 1.0
-    columns_out:
-      - tokenized_text
-      - ner
-  - task:
-      type: script
-      name: PileNerBiomedScript
-      outputs:
-        - entities
-    source: hf
+    columns_out: [tokenized_text, ner]
+  - task: {type: script, name: PileNerBiomedScript, outputs: [entities]}
+    <<: *hf-train
     dataset: disi-unibo-nlp/Pile-NER-biomed-IOB
-    split: train
-    weight: 1.0
-    columns_out:
-      - tokens
-      - ner_tags
-  - task:
-      type: script
-      name: SentenceRexScript
-      outputs:
-        - relations
-    source: hf
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: SentenceRexScript, outputs: [relations]}
+    <<: *hf-train
     dataset: knowledgator/sentence_rex
-    split: train
-    weight: 1.0
-    columns_out:
-      - sentences
-      - labels
-  - task:
-      type: script
-      name: PileNerTypeScript
-      outputs:
-        - entities
-    source: hf
+    columns_out: [sentences, labels]
+  - task: {type: script, name: PileNerTypeScript, outputs: [entities]}
+    <<: *hf-train
     dataset: Universal-NER/Pile-NER-type
-    split: train
-    weight: 1.0
-    columns_out:
-      - conversations
-  - task:
-      type: fullmap
-      outputs:
-        - entities
-        - relations
-    source: hf
+    columns_out: [conversations]
+  - task: *fullmap-task
+    <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-curated-corpus
-    split: train
-    weight: 1.0
-    columns_out:
-      - text
-  - task:
-      type: fullmap
-      outputs:
-        - entities
-        - relations
-    source: hf
+    columns_out: [text]
+  - task: *fullmap-task
+    <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-balanced-curated-corpus
-    split: train
-    weight: 1.0
-    columns_out:
-      - text
-  - task:
-      type: script
-      name: CtkpInterventionsScript
-      outputs:
-        - entities
+    columns_out: [text]
+  - task: {type: script, name: CtkpInterventionsScript, outputs: [entities]}
     source: local
-    weight: 1.0
+    weight: *weight
     path: ~/Desktop/interventions.avro
-  - task:
-      type: script
-      name: GlinerBiomedPostScript
-      outputs:
-        - entities
-        - classifications
-        - structures
-        - relations
-    source: hf
+  - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
+    <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-post-training
-    split: train
-    weight: 1.0
-    columns_out:
-      - tokenized_text
-      - ner
-      - negatives
-  - task:
-      type: script
-      name: KnowledgatorBiomedScript
-      outputs:
-        - entities
-    source: hf
+    columns_out: [tokenized_text, ner, negatives]
+  - task: {type: script, name: KnowledgatorBiomedScript, outputs: [entities]}
+    <<: *hf-train
     dataset: knowledgator/biomed_NER
-    split: train
-    weight: 1.0
-    columns_out:
-      - text
-      - entities
-  - task:
-      type: script
-      name: GlinerMultilingualScript
-      outputs:
-        - entities
-    source: hf
+    columns_out: [text, entities]
+  - task: {type: script, name: GlinerMultilingualScript, outputs: [entities]}
+    <<: *hf-train
     dataset: knowledgator/gliner-multilingual-synthetic
-    split: train
-    weight: 1.0
-    columns_out:
-      - tokenized_text
-      - ner
-  - task:
-      type: fullmap
-      outputs:
-        - entities
-        - relations
+    columns_out: [tokenized_text, ner]
+  - task: *fullmap-task
     source: hf
+    weight: *weight
     dataset: TrialPanorama/TrialPanorama-database
     subset: studies
     split: all
-    weight: 1.0
-    columns_out:
-      - abstract
-  - task:
-      type: script
-      name: SuperGlueMultiRCScript
-      outputs:
-        - classifications
-    source: hf
+    columns_out: [abstract]
+  - task: {type: script, name: SuperGlueMultiRCScript, outputs: [classifications]}
+    <<: *hf-train
     dataset: aps/super_glue
     subset: multirc
-    split: train
-    weight: 1.0
-    columns_out:
-      - paragraph
-      - question
-      - answer
-      - label
-  - task:
-      type: script
-      name: PubmedAbstractsScript
-      outputs:
-        - entities
-        - relations
+    columns_out: [paragraph, question, answer, label]
+  - task: {type: script, name: PubmedAbstractsScript, outputs: [entities, relations]}
     source: hf_json
+    split: train
+    weight: *weight
     dataset: knowledgator/PubMedAbstractsNER
     file: train.json
-    split: train
-    weight: 1.0
-    columns_out:
-      - tokenized_text
-      - ner
-  - task:
-      type: script
-      name: SuperGlueRecordScript
-      outputs:
-        - entities
-        - classifications
-    source: hf
+    columns_out: [tokenized_text, ner]
+  - task: {type: script, name: SuperGlueRecordScript, outputs: [entities, classifications]}
+    <<: *hf-train
     dataset: aps/super_glue
     subset: record
-    split: train
-    weight: 1.0
-    columns_out:
-      - passage
-      - query
-      - entities
-      - entity_spans
-      - answers
-  - task:
-      type: fullmap
-      outputs:
-        - entities
-        - relations
+    columns_out: [passage, query, entities, entity_spans, answers]
+  - task: *fullmap-task
     source: local_delimited
+    weight: *weight
     path: qualifiers/qualifier_corpus.tsv
-    weight: 1.0
-    columns_out:
-      - text
+    columns_out: [text]
