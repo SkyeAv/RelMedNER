@@ -92,6 +92,18 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("abstract",),
         ),
     ),
+    "aps/super_glue": (
+        "hf",
+        (
+            ("script", "SuperGlueMultiRCScript", ("classifications",)),
+            1.0,
+            "aps/super_glue",
+            "multirc",
+            "train",
+            None,
+            ("paragraph", "question", "answer", "label"),
+        ),
+    ),
     # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
     # tuple is deliberately shorter than the hf ones above (it still carries the weight field, which
     # DatasetBase declares for every source)

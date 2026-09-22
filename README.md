@@ -39,6 +39,7 @@ types share one declarative pipeline:
 | `TrialPanorama/TrialPanorama-database` (`studies`) | `fullmap` (max_ngram=6, taxon=9606) | `abstract` | entities, relations | 1,332,141 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `aps/super_glue` (multirc) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 
 All script tasks except the multilingual ingest (which labels directly, see its
 notes below) share one resolution chain -- fullmap first, a shared lowercased
@@ -113,6 +114,12 @@ zero-shot breadth. Fullmap is bypassed by design: its keys are byte-sorted bags 
 English stems over a biomedical vocabulary, so general-domain non-English surfaces never
 match it and label directly off `LABEL_MAP` plus PascalCase. Only `entities` is declared:
 the gazetteer's 129 triggers are English biomedical phrases, so relations are not declared.
+
+Dataset-format notes (`SuperGlueMultiRCScript`): general-domain English true/false reading-comprehension QA
+(SuperGLUE MultiRC), mapped classification-only -- the corpus carries no entity or relation annotations. The
+`label` column arrives as a ClassLabel index or its decoded string; the test split also carries unlabeled rows
+(`label` -1), which this pipeline never ingests (train split only, per repo convention) and would skip rather
+than coerce. The nested `idx` column is deliberately excluded: row provenance, not training signal.
 
 ## Output
 

@@ -129,3 +129,18 @@ datasets:
     weight: 1.0
     columns_out:
       - abstract
+  - task:
+      type: script
+      name: SuperGlueMultiRCScript
+      outputs:
+        - classifications
+    source: hf
+    dataset: aps/super_glue
+    subset: multirc
+    split: train
+    weight: 1.0
+    columns_out:
+      - paragraph
+      - question
+      - answer
+      - label
