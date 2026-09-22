@@ -25,6 +25,59 @@ from relmedner.models import (
 # per-ingest locks: each declared ingest's entry is asserted independently so adding a dataset is an
 # additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
 # parallel dataset worktrees
+# the single health-community allowlist match_on lock, shared by all seven tensorshield reddit
+# entries (values match the corpus EXACTLY: apply_match is exact membership, so casing must be
+# the Reddit canonical form or the row is silently dropped)
+EXPECTED_REDDIT_MATCH: tuple[object, ...] = (
+    (
+        "communityName",
+        (
+            "r/AskDocs",
+            "r/medical",
+            "r/medicine",
+            "r/Health",
+            "r/diabetes",
+            "r/ADHD",
+            "r/autism",
+            "r/Anxiety",
+            "r/depression",
+            "r/SuicideWatch",
+            "r/cancer",
+            "r/Celiac",
+            "r/ibs",
+            "r/IBD",
+            "r/CrohnsDisease",
+            "r/UlcerativeColitis",
+            "r/eczema",
+            "r/Psoriasis",
+            "r/acne",
+            "r/migraine",
+            "r/ChronicPain",
+            "r/Menopause",
+            "r/endometriosis",
+            "r/PCOS",
+            "r/infertility",
+            "r/birthcontrol",
+            "r/lupus",
+            "r/MultipleSclerosis",
+            "r/hypothyroidism",
+            "r/Hashimotos",
+            "r/asthma",
+            "r/COPD",
+            "r/epilepsy",
+            "r/schizophrenia",
+            "r/bipolar",
+            "r/BPD",
+            "r/OCD",
+            "r/ptsd",
+            "r/EatingDisorders",
+            "r/Dentistry",
+            "r/pharmacy",
+            "r/nursing",
+        ),
+    ),
+)
+
 EXPECTED: dict[str, tuple[object, ...]] = {
     "anthonyyazdaniml/gliner-biomed-pre-training": (
         "hf",
@@ -227,6 +280,92 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "test",
             None,
             ("text", "spans"),
+        ),
+    ),
+    # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
+    # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
+    "tensorshield/reddit_dataset_157": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_157",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_171": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_171",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_217": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_217",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_237": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_237",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_30": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_30",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_84": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_84",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_85": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_85",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
         ),
     ),
 }
