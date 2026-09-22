@@ -264,6 +264,43 @@ def test_dispatch_row_keeps_the_neutral_weight_when_none_is_declared() -> None:
     assert Example.weight == 1.0
 
 
+def test_x_defaults_namespace_accepted_and_ignored() -> None:
+    """compose-spec x- convention (https://compose-spec.github.io/compose-spec/11-extension.html):
+    reusable fragments live in a top-level x-defaults map OUTSIDE the validated datasets list;
+    anchors are resolved by CSafeLoader before pydantic sees anything, so the value only has to
+    round-trip untouched while dataset tuples stay byte-identical"""
+    Declaration: dict[str, Any] = {
+        "datasets": [
+            {
+                "source": "hf",
+                "dataset": "a/b",
+                "task": {"type": "script", "name": "GlinerBiomedScript", "outputs": ["entities"]},
+                "columns_out": ["text"],
+            }
+        ]
+    }
+    Baseline: YamlIngests = YamlIngests.model_validate(Declaration)
+    Extended: YamlIngests = YamlIngests.model_validate({"x-defaults": {"hf-train": {"weight": 1.0, "split": "train"}}, **Declaration})
+
+    assert Extended.x_defaults == {"hf-train": {"weight": 1.0, "split": "train"}}
+    assert Baseline.x_defaults is None
+    assert Extended.generate_tuples() == Baseline.generate_tuples()
+
+
+def test_unknown_top_level_key_still_rejected() -> None:
+    """extra="forbid" guards the positional tuple locks in test_ingests.py; x-defaults is the only
+    top-level key admitted beyond datasets"""
+    with pytest.raises(ValidationError):
+        YamlIngests.model_validate({"bogus": 1, "datasets": []})
+
+
+def test_x_defaults_declared_after_datasets() -> None:
+    """model_fields declaration order is the positional contract frozen by DatasetBase.to_tuple()
+    and the EXPECTED locks; appending (never inserting or renaming) is the only safe model change,
+    so a future reorder fails loudly here"""
+    assert tuple(YamlIngests.model_fields) == ("datasets", "x_defaults")
+
+
 def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projection() -> None:
     """gliner2's Relation(**fields) swallows extra keys (dropping head/tail) and validates
     every string value as a mention -- so evidence/negated ride in avro records only"""
