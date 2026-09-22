@@ -9,12 +9,15 @@ from relmedner.models import Relation, RelationField, Structure, StructureField,
 from relmedner.types import Script, ScriptValues
 from relmedner.utils import ResolvedMention, ScriptUtils
 
-HENRIQUE_SOURCE: str = "HenriqueGodoy-extract-0"
-JIRAYA_SOURCE: str = "Jiraya-html_to_json_information_extraction_dataset"
-OWKIN_SOURCE: str = "owkin-medical_knowledge_from_extracts"
-PROFESSOR_BOB_SOURCE: str = "ProfessorBob-relation_extraction"
-ROBOROVSKI_SOURCE: str = "roborovski-dolly-entity-extraction"
-SANDEEPPANEM_SOURCE: str = "sandeeppanem-resume-json-extraction-5k"
+# the `source` column carries the ORIGINAL hub repo ids (slashes), not the dashed config names the
+# yaml subsets declare; a measured first pass keyed on the config names matched zero rows (the
+# silent-zero-yield failure mode), so every map key below uses the hub-column value verbatim
+HENRIQUE_SOURCE: str = "HenriqueGodoy/extract-0"
+JIRAYA_SOURCE: str = "Jiraya/html_to_json_information_extraction_dataset"
+OWKIN_SOURCE: str = "owkin/medical_knowledge_from_extracts"
+PROFESSOR_BOB_SOURCE: str = "ProfessorBob/relation_extraction"
+ROBOROVSKI_SOURCE: str = "roborovski/dolly-entity-extraction"
+SANDEEPPANEM_SOURCE: str = "sandeeppanem/resume-json-extraction-5k"
 
 # sandeeppanem resume corpora carry mojibake placeholder companies whose values all start with
 # this prefix (measured forms: "Company Name", "Company Name <mojibake> City , State",
@@ -31,9 +34,11 @@ CHEMICAL_INTERVENTION_TYPES: frozenset[str] = frozenset({"drug", "biological", "
 # whose value is exactly this marker (measured marker paths: entity, result.entity, results[].entity)
 PERSON_TYPE_MARKER: str = "Person"
 
-# ProfessorBob's eight top predicates are all outside the biolink Predicates vocabulary (250
-# snake_case members), so the map ships empty and the relation family ships nothing until the
-# US-002 full-split census of all 222 distinct predicate values finds honest biolink targets
+# ProfessorBob's 222 distinct predicate values are almost all outside the biolink Predicates
+# vocabulary (250 snake_case members): 31,303/31,740 triples carry a non-biolink predicate.
+# The US-002 full-split census found exactly ONE honest target, "member of" -> member_of
+# (158 triples, 85 with both endpoints verbatim in the text); the corpus's top predicates
+# ("no relation" 14,333, "instance of" 1,598, "occupation" 1,387) stay unmapped
 NO_RELATION_PREDICATE: str = "no relation"
 
 
@@ -157,13 +162,25 @@ class JsonExtractionScript(Script):
     no resolve_mentions/fullmap round trip happens; every entity ships with origin="fallback"
     under the dataset-local LABEL_MAPS class. Maps hold only honest biolink targets: HenriqueGodoy
     ships structures only (entity_name[] mixes drugs, paper titles and finance concepts with no
-    type qualifier), ProfessorBob ships no entity map (open vocabulary) and an empty PREDICATE_MAP
-    until the US-002 census lands, sandeeppanem companies map to Agent because Organization is not
+    type qualifier), ProfessorBob ships no entity map (open vocabulary) and a one-entry
+    PREDICATE_MAP (the census-landed "member of" -> member_of), sandeeppanem companies map to
+    Agent because Organization is not
     a tablassert Categories member (Agent's own definition covers organizations; landed precedent
     organization -> Agent), sandeeppanem location and Jiraya job titles/IDs/links stay unmapped,
     and owkin/roborovski names ride behind their measured sibling-marker qualifiers. No whitespace
     or case rewriting anywhere: containment is verbatim and gliner2 requires every mention surface
     in the emitted text.
+
+    US-002 census of the qualifier-gated paths (full split): roborovski's Person marker qualifies only
+    33 name leaves (32 contained verbatim; tiny but honest), sandeeppanem carries 13,992 company leaves
+    of which 5,650 (40.4%) start with the "Company Name" mojibake placeholder prefix and never become
+    mentions, and its 3,787 location leaves (2,894 contained verbatim) stay unmapped because the
+    "City, State" placeholder noise has no honest biolink target; owkin chem-qualified intervention
+    names are contained verbatim 678/2,530 (26.8%), other intervention types 54/424, and conditions
+    only 141/1,963 (7.2%), a corpus property (values are normalized extractions from abstracts), not
+    a bug. ProfessorBob predicate census: 222 distinct values, 31,303/31,740 triples non-biolink,
+    exactly one honest relation target ("member of" -> member_of, 158 triples, 85 with both endpoints
+    verbatim in the text).
     """
 
     NAME: ClassVar[str] = "JsonExtractionScript"
@@ -198,10 +215,12 @@ class JsonExtractionScript(Script):
         }
     )
 
-    # ProfessorBob predicate string -> biolink Predicates member, validated at import; ships
-    # empty (no relation emits) until the US-002 full-split census of the 222 distinct predicate
-    # values finds honest biolink targets -- an empty map is an honest outcome, not a bug
-    PREDICATE_MAP: ClassVar[dict[str, str]] = {}
+    # ProfessorBob predicate string -> biolink Predicates member, validated at import. The
+    # US-002 full-split census of the 222 distinct predicate values found exactly one honest
+    # target: "member of" is a biolink member (member_of, 158 triples, 85 with both endpoints
+    # verbatim in the text). Every other predicate (top: "no relation" 14,333, "instance of"
+    # 1,598, "occupation" 1,387) is outside the Predicates vocabulary and stays unmapped
+    PREDICATE_MAP: ClassVar[dict[str, str]] = {"member of": "member_of"}
 
     def _qualifying_values(self: Self, source: str, decoded: Any) -> dict[tuple[str, str], set[str]]:
         """the surviving sibling-marker value sets for this row's qualified paths only"""
@@ -247,8 +266,9 @@ class JsonExtractionScript(Script):
     def _relations(self: Self, decoded: Any, text: str) -> list[Relation]:
         """ProfessorBob asserted relations: one per decoded root-list object whose predicate maps,
         whose endpoints differ, and both of which occur verbatim in the text; everything else
-        drops the relation, never the row. With the shipped-empty PREDICATE_MAP this yields zero
-        relations by design until the US-002 census lands honest targets"""
+        drops the relation, never the row. The census-landed PREDICATE_MAP carries exactly one
+        entry (member of -> member_of); every other triple drops at the map, the no-relation
+        guard, the self-loop guard, or the endpoint-containment guard"""
         relations: list[Relation] = []
         if not isinstance(decoded, list):
             return relations
