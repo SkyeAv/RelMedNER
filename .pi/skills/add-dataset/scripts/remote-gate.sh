@@ -25,6 +25,10 @@ set -uo pipefail
 
 HOST="wenceslaus"
 BASE="Code/RelMedNER-worktrees"
+# one canonical remote fullmap path: the runner's RELMEDNER_FULLMAP_DIR env override and the
+# sed-patched constants.py fallback literal must name the SAME directory, or the env-capture
+# constants tests see two different paths and the suite fails on the box's $HOME spelling.
+REMOTE_FULLMAP="/home/sgoetz/Desktop/fullmap"
 DO_SYNC=1
 TMUX=0
 SESSION=""
@@ -82,7 +86,7 @@ fi
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
 #    history are never touched). The grep line printed back is the receipt.
 echo "== remote FULLMAP_DIR patch"
-remote "cd '$REMOTE_REL' && sed -i 's#/home/skyeav/Desktop/fullmap#/home/sgoetz/Desktop/fullmap#' src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
+remote "cd '$REMOTE_REL' && sed -i 's#/home/skyeav/Desktop/fullmap#$REMOTE_FULLMAP#' src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
 
 # 3. run the mode. Long jobs go in remote tmux because the gateway idle-kills raw ssh masters.
 if [ "$MODE" = "smoke" ]; then
@@ -95,7 +99,7 @@ fi
 
 if [ "$TMUX" -eq 1 ]; then
     echo "== launching remote tmux session '$SESSION'"
-    remote "tmux kill-session -t '$SESSION' 2>/dev/null; tmux new-session -d -s '$SESSION' \"cd '$REMOTE_REL' && bash '$RUNNER' \\\$PWD \\\$HOME/'$LOG_REL' $MODE_ARG ${EXTRA[*]}\"" || exit 1
+    remote "tmux kill-session -t '$SESSION' 2>/dev/null; tmux new-session -d -s '$SESSION' \"cd '$REMOTE_REL' && RELMEDNER_FULLMAP_DIR='$REMOTE_FULLMAP' bash '$RUNNER' \\\$PWD \\\$HOME/'$LOG_REL' $MODE_ARG ${EXTRA[*]}\"" || exit 1
     echo "   poll: ssh $HOST 'tmux capture-pane -p -t $SESSION | tail -30'"
     echo "   log:  ssh $HOST 'tail -40 ~/$LOG_REL | tr \":\" \"~\"'"
     if [ "$WAIT" -gt 0 ]; then
@@ -109,7 +113,7 @@ if [ "$TMUX" -eq 1 ]; then
     fi
 else
     echo "== remote run ($MODE)"
-    remote "cd '$REMOTE_REL' && bash '$RUNNER' \"\$PWD\" \"\$HOME/$LOG_REL\" $MODE_ARG ${EXTRA[*]}"
+    remote "cd '$REMOTE_REL' && RELMEDNER_FULLMAP_DIR='$REMOTE_FULLMAP' bash '$RUNNER' \"\$PWD\" \"\$HOME/$LOG_REL\" $MODE_ARG ${EXTRA[*]}"
     echo "== exit=$?"
 fi
 

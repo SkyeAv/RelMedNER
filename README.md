@@ -86,6 +86,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/synthetic-ner-ade-tweets.md](docs/synthetic-ner-ade-tweets.md) -- the synthetic ADE-tweets corpus, its BRAT-standoff decode, and its gold-plus-unannotated ingest pair.
 - [docs/weighting.md](docs/weighting.md) -- how to pick ingest weights, the `trust` band, and the offline `validate-trust` literature check.
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
+- [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
 
 ## Reddit corpora
 
