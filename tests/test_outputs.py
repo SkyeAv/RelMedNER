@@ -46,22 +46,24 @@ def test_smoke_pipeline_propagates_unexpected_pipeline_errors(monkeypatch: pytes
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
 def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_path: Path) -> None:
     """live-data smoke run; the transport skip/propagation tests above stay un-gated without fullmap.
-    Five declared datasets (pre-training script, pile-ner IOB script, curated-corpus fullmap mining,
-    balanced curated-corpus fullmap mining, post-training multi-task script), up to five rows each."""
+    Six declared datasets (pre-training script, pile-ner IOB script, sentence_rex relations script,
+    curated-corpus fullmap mining, balanced curated-corpus fullmap mining, post-training multi-task
+    script), up to five rows each."""
     Output: Path = tmp_path / "test.avro"
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    # five declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
-    assert 1 <= len(Records) <= 5 * 5
+    # six declared ingests, each sampling up to five rows; empty/malformed rows may shrink the count
+    assert 1 <= len(Records) <= 6 * 5
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
         Populated: frozenset[str] = Example.populated()
-        # subset contract, not exact equality; every script at minimum emits NER entities
-        assert "entities" in Populated
+        # subset contract, not exact equality; every shipped record carries at least one output shape
+        # (the sentence_rex ingest emits relations only, so pinning "entities" here would fail it)
+        assert Populated
         assert Populated <= Declared
         # relation head/tail surfaces must occur in the record text, proving extraction never invents mentions
         for relation in Example.relations:

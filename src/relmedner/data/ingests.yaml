@@ -23,6 +23,17 @@ datasets:
       - tokens
       - ner_tags
   - task:
+      type: script
+      name: SentenceRexScript
+      outputs:
+        - relations
+    source: hf
+    dataset: knowledgator/sentence_rex
+    split: train
+    columns_out:
+      - sentences
+      - labels
+  - task:
       type: fullmap
       outputs:
         - entities

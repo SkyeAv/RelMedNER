@@ -72,6 +72,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "~/Desktop/interventions.avro",
         ),
     ),
+    "knowledgator/sentence_rex": (
+        "hf",
+        (
+            ("script", "SentenceRexScript", ("relations",)),
+            "knowledgator/sentence_rex",
+            None,
+            "train",
+            None,
+            ("sentences", "labels"),
+        ),
+    ),
 }
 
 
