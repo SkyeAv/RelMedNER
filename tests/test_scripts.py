@@ -5,7 +5,8 @@ from typing import Any, ClassVar, Self
 import pytest
 
 from relmedner.models import Entity, Relation, RelationField, TrainingExample
-from relmedner.scripts import GlinerBiomedScript
+from relmedner.scripts import GlinerBiomedScript, SentenceRexScript
+from relmedner.scripts.sentence_rex import parse_tagged_sentence
 from relmedner.types import DispatchedExample, Script, ScriptValues
 from relmedner.utils import ResolvedMention, ScriptUtils, strip_biolink_prefix
 
@@ -22,6 +23,7 @@ def test_subclasses_self_register_on_import() -> None:
     assert Script.REGISTRY["GlinerBiomedScript"] is not None
     assert isinstance(Script.REGISTRY["GlinerBiomedScript"], GlinerBiomedScript)
     assert isinstance(Script.REGISTRY["StubScript"], StubScript)
+    assert isinstance(Script.REGISTRY["SentenceRexScript"], SentenceRexScript)
 
 
 def test_the_registry_keys_on_the_declared_name() -> None:
@@ -374,6 +376,118 @@ def test_the_pile_ner_script_relation_gate_rejects_incompatible_categories(monke
     _, Example = Script.dispatch("PileNerBiomedScript", (("entities",), (Tokens, Tags)))
 
     assert Example.relations == []
+
+
+# ---------------------------------------------------------------------------
+# SentenceRexScript + parse_tagged_sentence (knowledgator/sentence_rex ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_tagged_sentence_extracts_both_surfaces_from_real_rows() -> None:
+    """row shapes verified verbatim on the knowledgator/sentence_rex dataset card; e1/e2 inner
+    whitespace ('<e1> Myristica fragrans </e1>') is lost by the surfaces but must stay in the text
+    (43,044/43,044 well-formed rows keep both stripped surfaces verbatim in the tag-stripped text)"""
+    Pope = (
+        "<e1>Pope Pius XII</e1> re - opened the cause on 7 December 1954 , and Pope John Paul II proclaimed him <e2> Venerable </e2> on 6 July 1985 ."
+    )
+    Nutmeg = (
+        'It is sometimes called the " nutmeg family " , after its most famous member , '
+        "<e1> Myristica fragrans </e1> , the source of the spices <e2> nutmeg </e2> and mace ."
+    )
+
+    assert parse_tagged_sentence(Pope) == ("Pope Pius XII", "Venerable")
+    assert parse_tagged_sentence(Nutmeg) == ("Myristica fragrans", "nutmeg")
+
+
+def test_parse_tagged_sentence_requires_exactly_one_of_each_tag() -> None:
+    """521 measured rows break the (1, 1, 1, 1) tag-count contract; each returns None instead of a
+    partially coerced parse (skip-don't-coerce for external data), and tag order is irrelevant"""
+    assert parse_tagged_sentence("<e2> B </e2> then <e1> A </e1>") == ("A", "B")
+
+    for Broken in (
+        "no tags at all",
+        "<e1> A </e1> but no e2 tags",
+        "<e1> A </e1> <e1> B </e1> <e2> C </e2>",
+        "<e1> A </e1> <e2> B </e2> </e2>",
+        "<e1> A </e1> <e2> B </e2> <e2> C </e2> </e2>",
+        "<e1></e1> <e2> B </e2> <e1> C </e1>",
+    ):
+        assert parse_tagged_sentence(Broken) is None
+
+
+def test_parse_tagged_sentence_guards_nested_empty_and_self_loop_surfaces() -> None:
+    """18 measured rows carry '<' inside a stripped surface (the real nested shape below), 0 empty
+    surfaces, and 48 case-insensitive self-loops; all return None so no impossible example ships"""
+    Nested = (
+        "Pharmacodynamics=== Doxylamine acts primarily as an antagonist or inverse agonist of the "
+        "<e1> histamine </e1> <e2> H < sub>1</sub > receptor </e2> ."
+    )
+
+    assert parse_tagged_sentence(Nested) is None
+    assert parse_tagged_sentence("<e1> H <br> </e1> x <e2> T </e2>") is None
+    assert parse_tagged_sentence("<e1> </e1> x <e2> T </e2>") is None
+    assert parse_tagged_sentence("<e1></e1> x <e2> T </e2>") is None
+    assert parse_tagged_sentence("<e1> H </e1> x <e2> H </e2>") is None
+    assert parse_tagged_sentence("<e1> H </e1> x <e2> h </e2>") is None
+    assert parse_tagged_sentence("<e1> H </e1> x <e2> T </e2>") == ("H", "T")
+
+
+def test_the_sentence_rex_script_emits_asserted_relations_for_real_rows() -> None:
+    """end-to-end over the card's rows 0 and 1: text strips ONLY the four tag literals, so the
+    doubled spaces around '<e2> Venerable </e2>' survive (gliner2 whitespace-tokenizes them inert);
+    native labels keep snake_case names with description None (17 of 837 measured labels are
+    biolink members, so None is the common case and must be handled)"""
+    Pope = (
+        "<e1>Pope Pius XII</e1> re - opened the cause on 7 December 1954 , and Pope John Paul II proclaimed him <e2> Venerable </e2> on 6 July 1985 ."
+    )
+    Nutmeg = (
+        'It is sometimes called the " nutmeg family " , after its most famous member , '
+        "<e1> Myristica fragrans </e1> , the source of the spices <e2> nutmeg </e2> and mace ."
+    )
+    Expected = "Pope Pius XII re - opened the cause on 7 December 1954 , and Pope John Paul II proclaimed him  Venerable  on 6 July 1985 ."
+    _, Example = Script.dispatch("SentenceRexScript", (("relations",), (Pope, "canonization status")))
+
+    assert Example.text == Expected
+    assert Example.populated() == frozenset({"relations"})
+    assert Example.relations == [expected_relation("canonization_status", "Pope Pius XII", "Venerable")]
+    assert Example.relations[0].description is None and Example.relations[0].negated is False
+    _, NutmegExample = Script.dispatch("SentenceRexScript", (("relations",), (Nutmeg, "this taxon is source of")))
+    assert NutmegExample.relations == [expected_relation("this_taxon_is_source_of", "Myristica fragrans", "nutmeg")]
+
+
+def test_the_sentence_rex_script_resolves_biolink_member_labels_with_descriptions() -> None:
+    """'expressed in' (a real card row) is one of the 17 measured biolink-member labels: the emitted
+    predicate is the snake_case member and its biolink slot definition rides as the description"""
+    Expressed = "No <e1> UDP glucuronosyltransferase 1 - A1 </e1> expression can be detected in the <e2> liver </e2> tissue ."
+    assert ScriptUtils.resolve_predicate("expressed in") == ("expressed_in", True)
+    _, Example = Script.dispatch("SentenceRexScript", (("relations",), (Expressed, "expressed in")))
+
+    assert Example.relations == [expected_relation("expressed_in", "UDP glucuronosyltransferase 1 - A1", "liver")]
+    assert Example.relations[0].description is not None
+
+
+def test_the_sentence_rex_script_emits_nothing_for_bad_rows() -> None:
+    """every drop rule lands on the empty example downstream filtering removes: 550 null/blank
+    sentences, 521 malformed tag counts, 18 nested, 0 empty surfaces, 48 self-loops, plus blank or
+    null labels on otherwise well-formed rows"""
+    Good = "<e1> H </e1> x <e2> T </e2>"
+
+    for Values in (
+        (None, "canonization status"),
+        ("", "canonization status"),
+        ("   ", "canonization status"),
+        (Good, None),
+        (Good, ""),
+        (Good, "   "),
+        ("no tags at all", "canonization status"),
+        ("<e1> H </e1> <e1> H </e1> x <e2> T </e2>", "canonization status"),
+        ("<e1> H <br> </e1> x <e2> T </e2>", "canonization status"),
+        ("<e1> </e1> x <e2> T </e2>", "canonization status"),
+        ("<e1> H </e1> x <e2> H </e2>", "canonization status"),
+    ):
+        _, Example = Script.dispatch("SentenceRexScript", (("relations",), Values))
+        assert Example.text == ""
+        assert Example.populated() == frozenset()
 
 
 def expected_relation(name: str, head: str, tail: str) -> Relation:

@@ -7,12 +7,15 @@ types share one declarative pipeline:
 
 - **script tasks** — datasets that already carry gold spans
   (`anthonyyazdaniml/gliner-biomed-pre-training`, the IOB-formatted
-  `disi-unibo-nlp/Pile-NER-biomed-IOB`, and the multi-task
-  `anthonyyazdaniml/gliner-biomed-post-training`); spans are relabeled to biolink classes
+  `disi-unibo-nlp/Pile-NER-biomed-IOB`, the multi-task
+  `anthonyyazdaniml/gliner-biomed-post-training`, and the relation-tagged
+  `knowledgator/sentence_rex`); spans are relabeled to biolink classes
   via tablassert `Categories` and local fullmap resolution, and relations are
   distant-supervised through a biolink-predicate gazetteer matched between mention surfaces.
   The post-training corpus additionally carries native gold relations and sampled
-  negatives, and splits into per-row task families (below).
+  negatives, and splits into per-row task families (below). `knowledgator/sentence_rex`
+  instead carries gold relations with both participant spans marked inline (`<e1>`/`<e2>`
+  tags) and labels kept native.
 - **fullmap tasks** — unlabeled text (e.g.
   `anthonyyazdaniml/gliner-biomed-curated-corpus` and the downsampled, class-balanced
   `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus`, a strict 158,890-row subset of
@@ -27,6 +30,7 @@ types share one declarative pipeline:
 | --- | --- | --- | --- | --- |
 | `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `knowledgator/sentence_rex` | `script` -> `SentenceRexScript` | `sentences`, `labels` | relations | 44,115 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
@@ -50,6 +54,19 @@ rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
 biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
 gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
 each carrying its biolink slot description as `relation_descriptions`).
+
+Dataset-format notes (`SentenceRexScript`): each `sentences` row wraps its two relation
+participants in `<e1>`/`<e2>` tags and `labels` carries the gold predicate; the text ships
+with ONLY the four tag literals stripped (no whitespace normalization), measured true on all
+43,044 well-formed rows. Of the 44,115 train rows, 550 are null and drop; 521 violate the
+one-pair-per-tag invariant, 18 well-formed-count rows carry nested angle-bracket markup
+inside a surface (`< sub>`), and 48 rows have case-insensitively identical head and tail
+surfaces (self-loops), so 42,978 rows ship. Labels: 846 distinct raw strings, 837 after
+snake_case normalization, of which 17 are biolink `Predicates` members covering 1,263 rows
+(2.9%); only 4.2% of rows carry a biomedical-marker label, and general-domain rows are kept.
+Formatting the strip-only rule deliberately tolerates: ~99% of rows wrap tag surfaces in
+internal whitespace (`<e1> Myristica fragrans </e1>`) and 95.8% use spaced punctuation
+(` ,`, ` .`).
 
 ## Output
 
