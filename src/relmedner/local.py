@@ -27,7 +27,14 @@ class LocalDataStream(DataStream):
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
     ) -> None:
         self.task: tuple[Any, ...] = tuple(task)
-        self.path: Path = Path(path) if Path(path).is_file() else Path(str(DATA)) / path
+        candidate: Path = Path(path)
+        try:
+            resolved: Path = candidate if candidate.is_file() else Path(str(DATA)) / path
+        except OSError:
+            # python 3.13 pathlib propagates PermissionError from is_file() probes; an
+            # unreadable parent means the caller's path is not a usable file either way
+            resolved = Path(str(DATA)) / path
+        self.path: Path = resolved
         self.name: str = self.path.stem
         self.columns_out: tuple[str, ...] = columns_out
         self.match_on: tuple[tuple[str, frozenset[str]], ...] = tuple((column, frozenset(values)) for column, values in match_on) if match_on else ()
@@ -36,7 +43,11 @@ class LocalDataStream(DataStream):
         return all(row.get(column) in values for column, values in self.match_on)
 
     def rows(self: Self) -> Iterator[StreamedRow]:
-        if not self.path.is_file():
+        try:
+            exists: bool = self.path.is_file()
+        except OSError:
+            exists = False
+        if not exists:
             raise FileNotFoundError(f"local source file not found: {self.path}")
         delimiter: str = self.DELIMITERS.get(self.path.suffix, "\t")
         with self.path.open(newline="", encoding="utf-8") as handle:
