@@ -63,6 +63,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    "aps/super_glue": (
+        "hf",
+        (
+            ("script", "SuperGlueMultiRCScript", ("classifications",)),
+            "aps/super_glue",
+            "multirc",
+            "train",
+            None,
+            ("paragraph", "question", "answer", "label"),
+        ),
+    ),
     # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
     # tuple is deliberately shorter than the hf ones above
     "~/Desktop/interventions.avro": (

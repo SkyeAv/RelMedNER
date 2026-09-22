@@ -31,6 +31,7 @@ types share one declarative pipeline:
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
 | `~/Desktop/interventions.avro` (local) | `script` → `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `aps/super_glue` (multirc) | `script` → `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 
 All script tasks share one resolution chain — fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
@@ -50,6 +51,12 @@ rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
 biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
 gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
 each carrying its biolink slot description as `relation_descriptions`).
+
+Dataset-format notes (`SuperGlueMultiRCScript`): general-domain English true/false reading-comprehension QA
+(SuperGLUE MultiRC), mapped classification-only — the corpus carries no entity or relation annotations. The
+`label` column arrives as a ClassLabel index or its decoded string; the test split also carries unlabeled rows
+(`label` -1), which this pipeline never ingests (train split only, per repo convention) and would skip rather
+than coerce. The nested `idx` column is deliberately excluded: row provenance, not training signal.
 
 ## Output
 

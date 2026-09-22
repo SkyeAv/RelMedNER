@@ -64,3 +64,17 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: script
+      name: SuperGlueMultiRCScript
+      outputs:
+        - classifications
+    source: hf
+    dataset: aps/super_glue
+    subset: multirc
+    split: train
+    columns_out:
+      - paragraph
+      - question
+      - answer
+      - label
