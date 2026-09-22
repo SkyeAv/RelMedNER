@@ -225,3 +225,15 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+  - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: ruslan/bioleaflets-biomedical-ner
+    columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
+  # the test split cannot merge *hf-train (that anchor pins split: train), so it spells its hf
+  # source out and aliases only the &weight scalar -- alias depth stays one level
+  - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
+    source: hf
+    split: test
+    weight: *weight
+    dataset: ruslan/bioleaflets-biomedical-ner
+    columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]

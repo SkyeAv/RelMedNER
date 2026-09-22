@@ -368,6 +368,32 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    # ruslan/bioleaflets-biomedical-ner: one repo id, two ingests distinguished ONLY by split (no
+    # subset), so entry_key qualifies BOTH keys with the split (same convention as nvidia/Nemotron-PII)
+    "ruslan/bioleaflets-biomedical-ner:train": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "train",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    "ruslan/bioleaflets-biomedical-ner:test": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "test",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
 }
 
 
@@ -375,13 +401,13 @@ def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str
     """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
     "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
     different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    the loser would vanish from both locks and the failure would be silent"""
+    split qualifies instead -- or the train and test locks would collide and one would silently
+    vanish. A repo id declared once per split (nvidia/Nemotron-PII, ruslan/bioleaflets-biomedical-ner)
+    therefore carries the split on BOTH keys, ':train' and ':test'."""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
-    # columns_out (a tuple), and there the declared path is already unique per file. A repo id
-    # declared once PER SPLIT (nvidia/Nemotron-PII) has no subset, so the split qualifies instead
-    # or the train and test locks would collide and one would silently vanish
+    # columns_out (a tuple), and there the declared path is already unique per file
     if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
         discriminator = payload[4]
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
