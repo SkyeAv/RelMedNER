@@ -153,11 +153,18 @@ class ResolutionGate:
             "Procedure Treatment ClinicalIntervention Device DiagnosticAid Activity Study ClinicalEntity ChemicalEntity",
         ),
         "person": _bucket(
-            "person patient group population cohort demographic occupation profession job ethnicity nationality people age group gender",
+            "person patient group population cohort demographic occupation profession job ethnicity nationality people age group gender"
+            " education employment race religious religion political sexuality language",
             "PopulationOfIndividualOrganisms Cohort StudyPopulation IndividualOrganism Human Agent Attribute BiologicalSex OrganismTaxon Behavior",
         ),
+        # Nemotron-PII person-name labels: a surname fullmap-hits as every kind of named entity, so
+        # only Human/IndividualOrganism ancestors survive; everything else falls through to fallback/raw
+        "pii-person-name": _bucket(
+            "first name last name user name given name surname family name middle name",
+            "Human IndividualOrganism",
+        ),
         "place": _bucket(
-            "location country city place geograph facility",
+            "location country city place geograph facility state county postcode street address coordinate",
             "GeographicLocation PlanetaryEntity EnvironmentalFeature AdministrativeEntity AnatomicalEntity",
         ),
         "org": _bucket(
@@ -169,7 +176,7 @@ class ResolutionGate:
             "InformationContentEntity Publication Study Dataset Attribute Activity",
         ),
         "measure": _bucket(
-            "measurement quantity unit percentage statistic parameter score rate dose attribute property characteristic trait",
+            "measurement quantity unit percentage statistic parameter score rate dose attribute property characteristic trait blood type",
             "Attribute ClinicalAttribute ClinicalMeasurement OrganismAttribute PhenotypicQuality"
             " SocioeconomicAttribute StudyVariable InformationContentEntity PhenotypicFeature"
             " Procedure",
