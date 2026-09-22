@@ -10,10 +10,13 @@ from relmedner.models import (
     ChoiceField,
     Classification,
     Dataset,
+    DatasetBase,
     Description,
     Entity,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
     Relation,
     RelationField,
     RunConfig,
@@ -299,6 +302,19 @@ def test_x_defaults_declared_after_datasets() -> None:
     and the EXPECTED locks; appending (never inserting or renaming) is the only safe model change,
     so a future reorder fails loudly here"""
     assert tuple(YamlIngests.model_fields) == ("datasets", "x_defaults")
+
+
+@pytest.mark.parametrize(
+    "model",
+    (HuggingFaceDataset, HuggingFaceJsonDataset, LocalAvroDataset, LocalDelimitedDataset),
+    ids=lambda model: model.__name__,
+)
+def test_dataset_tuple_fields_freeze_the_packing_order(model: type[DatasetBase]) -> None:
+    """tuple_fields is the explicit packing order DatasetBase.to_tuple() iterates and the streams
+    unpack positionally; pinning it equal to model_fields minus NON_PAYLOAD_FIELDS means any
+    reorder, rename, or unlisted append (e.g. US-008 filters, reserved in NON_PAYLOAD_FIELDS)
+    fails CI here instead of silently shifting the EXPECTED tuple locks in test_ingests.py"""
+    assert model.tuple_fields == tuple(name for name in model.model_fields if name not in DatasetBase.NON_PAYLOAD_FIELDS)
 
 
 def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projection() -> None:

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
@@ -81,6 +81,15 @@ Task: Annotated = Annotated[
 
 
 class DatasetBase(StrictBase):
+    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters"})
+    """names that never enter the packed payload: "source" is the dict key today; "filters" is
+    reserved for US-008 so its later append cannot shift any existing tuple position"""
+
+    tuple_fields: ClassVar[tuple[str, ...]]
+    """the explicit field packing order frozen by tests/test_ingests.py EXPECTED locks; concrete
+    dataset models declare it so a new model field is an opt-in tuple change, never an accidental
+    position shift"""
+
     task: Task = Field(...)
     weight: float = Field(1.0, gt=0.0)
     """per-source mixing weight stamped onto every TrainingExample the source emits. Stock
@@ -94,7 +103,7 @@ class DatasetBase(StrictBase):
         raise NotImplementedError
 
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
-        return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields if name != "source"))
+        return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).tuple_fields))
 
 
 class MatchOn(StrictBase):
@@ -103,6 +112,8 @@ class MatchOn(StrictBase):
 
 
 class HuggingFaceDataset(DatasetBase):
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "subset", "split", "match_on", "columns_out")
+
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
     subset: str | None = Field(None)
@@ -123,6 +134,8 @@ class LocalAvroDataset(DatasetBase):
     have, because the file's own schema is already the contract)
     """
 
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "path")
+
     source: Literal["local"] = Field(...)
     path: str = Field(...)
 
@@ -140,6 +153,8 @@ class LocalDelimitedDataset(DatasetBase):
     exist there, else against the package data dir, so in-repo corpora work from any CWD.
     """
 
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "path", "columns_out", "match_on")
+
     source: Literal["local_delimited"] = Field(...)
     path: str = Field(...)
     columns_out: list[str] = Field(..., min_length=1)
@@ -154,6 +169,8 @@ class HuggingFaceJsonDataset(DatasetBase):
     """json-builder ingest over an hf:// URL inside one hub repo file; see relmedner.hf_json for the
     two measured blockers (old-style dataset_infos.json, cold-cache streaming corruption) that keep
     this route out of the "hf" source"""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
 
     source: Literal["hf_json"] = Field(...)
     dataset: str = Field(...)
