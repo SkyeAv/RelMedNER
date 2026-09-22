@@ -273,6 +273,8 @@ class PredicateRangeGate:
         "OrganismTaxon IndividualOrganism CellularOrganism Virus Bacterium Fungus Plant Mammal"
         " Vertebrate Invertebrate Cell CellLine PopulationOfIndividualOrganisms"
     )
+    SEX: ClassVar[frozenset[str]] = _names("BiologicalSex")
+    POP: ClassVar[frozenset[str]] = _names("PopulationOfIndividualOrganisms Cohort Human IndividualOrganism")
 
     # predicate -> (allowed head-ancestor sets joined by "|", allowed tail-ancestor sets joined by "|");
     # None means ANY. Ancestor groups are ORs; head and tail are ANDs.
@@ -315,6 +317,20 @@ class PredicateRangeGate:
         head_ancestors: frozenset[str] = ResolutionGate.ancestors(head_category)
         tail_ancestors: frozenset[str] = ResolutionGate.ancestors(tail_category)
         return cls._side_ok(entry[0], head_ancestors) and cls._side_ok(entry[1], tail_ancestors)
+
+    @classmethod
+    def category_ok(cls, allowed: str | None, category: str) -> bool:
+        """True when one category clears an OR-group expression (qualifier range gates);
+        None or a non-biolink category means no opinion"""
+        return cls._side_ok(allowed, ResolutionGate.ancestors(category))
+
+    @classmethod
+    def category_ok_strict(cls, allowed: str | None, category: str) -> bool:
+        """category_ok without the no-opinion escape: DAKP's type-driven qualifier field map
+        is strictly typed, so a mention with no resolvable biolink ancestors can never
+        become a typed qualifier context (it may still be a predicate argument)"""
+        ancestors: frozenset[str] = ResolutionGate.ancestors(category)
+        return bool(ancestors) and cls._side_ok(allowed, ancestors)
 
     @classmethod
     def _side_ok(cls, allowed: str | None, ancestors: frozenset[str]) -> bool:

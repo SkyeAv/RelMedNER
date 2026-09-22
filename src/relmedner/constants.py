@@ -82,6 +82,12 @@ GENELIKE_CATEGORIES: frozenset[str] = frozenset(
     }
 )
 
+# gliner2-safe encoding of a negated statement: the relation NAME carries the negation
+# (not_<predicate>) alongside negated=True, because the validator has no slot for a boolean
+# flag. Shared by families (sampled dataset negatives) and the gazetteer (negation cues), so
+# it lives here rather than in either: families imports gazetteer, and neither may define it.
+NEGATIVE_NAME_PREFIX: str = "not_"
+
 # biolink categories that fullmap populates with qualifier/indexing concepts (UMLS C* etc.)
 # rather than the named entities NER training wants. Measured junk share at unigram level:
 # InformationContentEntity 41% of all selections. Kept as a GATE only -- the categories

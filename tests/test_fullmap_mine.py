@@ -215,6 +215,17 @@ def test_relations_carry_distant_evidence_and_drop_self_loops(fake_rows) -> None
     ]
 
 
+def test_negated_mined_relations_carry_the_not_name_distant_evidence_and_true_flag(fake_rows) -> None:
+    """the distant path mirrors the gazetteer's gliner2-safe negative encoding: not_<predicate>
+    name with negated=True, evidence upgraded to distant"""
+    fake_rows([exact_row("aspirin", "CHEBI:15365", "aspirin", "SmallMolecule"), exact_row("headach", "HP:0000001", "headache", "Disease")])
+    example = FullmapMiner.resolve_batch([("Aspirin is not associated with headache.", TASK)], db=None)[0]
+
+    assert [(r.name, {f.name: f.value for f in r.fields}, r.evidence, r.negated) for r in example.relations] == [
+        ("not_associated_with", {"head": "Aspirin", "tail": "headache"}, "distant", True)
+    ]
+
+
 def test_relations_false_task_suppresses_gazetteer(fake_rows) -> None:
     fake_rows([exact_row("aspirin", "CHEBI:15365", "aspirin", "SmallMolecule"), exact_row("headach", "HP:0000001", "headache", "Disease")])
     example = FullmapMiner.resolve_batch([("Aspirin is associated with headache.", TASK.model_copy(update={"relations": False}))], db=None)[0]

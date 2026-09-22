@@ -175,6 +175,16 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("passage", "query", "entities", "entity_spans", "answers"),
         ),
     ),
+    "qualifiers/qualifier_corpus.tsv": (
+        "local_delimited",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "qualifiers/qualifier_corpus.tsv",
+            ("text",),
+            None,
+        ),
+    ),
 }
 
 
@@ -185,7 +195,9 @@ def entry_key(payload: tuple[object, ...]) -> str:
     the loser would vanish from both locks and the failure would be silent"""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
-    return f"{dataset}:{discriminator}" if discriminator is not None else dataset
+    # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
+    # columns_out (a tuple), and there the declared path is already unique per file
+    return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
 
 
 def tuples_by_ingest() -> dict[str, tuple[object, ...]]:

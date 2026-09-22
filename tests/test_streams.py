@@ -10,7 +10,7 @@ from relmedner import hf_json
 from relmedner.hf_json import HuggingFaceJsonDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
-from relmedner.local import LocalAvroDataStream
+from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
 from relmedner.models import RunConfig, YamlIngests
 from relmedner.registry import SOURCE_REGISTRY, build_stream
 from relmedner.streams import DataStream, StreamedRow
@@ -66,7 +66,12 @@ def test_build_stream_constructs_every_declared_ingest() -> None:
 
     assert len(Built) == len(Ingests.datasets)
     # every source kind stays covered, so this invariant cannot silently degrade to hf-only again
-    assert {type(stream) for stream in Built} == {HuggingFaceDataStream, HuggingFaceJsonDataStream, LocalAvroDataStream}
+    assert {type(stream) for stream in Built} == {
+        HuggingFaceDataStream,
+        HuggingFaceJsonDataStream,
+        LocalAvroDataStream,
+        LocalDelimitedDataStream,
+    }
     for dataset, stream in zip(Ingests.datasets, Built, strict=True):
         assert stream.name == dataset.row_key, f"{type(dataset).__name__} row key drift"
         assert stream.weight == dataset.weight

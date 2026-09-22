@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, ClassVar, Self
 
+from relmedner.constants import NEGATIVE_NAME_PREFIX
 from relmedner.gazetteer import extract_relations
 from relmedner.models import Classification, Relation, RelationField, Structure, StructureField, TrainingExample
 from relmedner.utils import ResolvedMention, ScriptUtils
@@ -12,7 +13,6 @@ RELATION_DELIMITER: str = " <> "
 CLASSIFICATION_LABELS: frozenset[str] = frozenset({"label", "category", "class", "tag"})
 EXTRACTION_LABELS: frozenset[str] = frozenset({"match"})
 NEGATIVE_CAP_RATIO: int = 2
-NEGATIVE_NAME_PREFIX: str = "not_"
 
 
 @dataclass(frozen=True)

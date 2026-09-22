@@ -175,3 +175,13 @@ datasets:
       - entities
       - entity_spans
       - answers
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: local_delimited
+    path: qualifiers/qualifier_corpus.tsv
+    weight: 1.0
+    columns_out:
+      - text

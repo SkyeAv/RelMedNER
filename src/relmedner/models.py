@@ -110,7 +110,7 @@ class HuggingFaceDataset(DatasetBase):
         return self.dataset
 
 
-class LocalDataset(DatasetBase):
+class LocalAvroDataset(DatasetBase):
     """an avro container built out-of-band and read from disk by LocalAvroDataStream
 
     path is resolved with expanduser at stream time; the whole avro record ships to the declared
@@ -120,6 +120,25 @@ class LocalDataset(DatasetBase):
 
     source: Literal["local"] = Field(...)
     path: str = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        return self.path
+
+
+class LocalDelimitedDataset(DatasetBase):
+    """a header-delimited file (TSV/CSV) read from disk by LocalDelimitedDataStream
+
+    A separate source kind from "local" because the two contracts differ: avro ships whole
+    records and the file's schema is the contract, while a delimited file's header row makes
+    columns_out a real projection. Relative paths resolve against the caller's CWD when they
+    exist there, else against the package data dir, so in-repo corpora work from any CWD.
+    """
+
+    source: Literal["local_delimited"] = Field(...)
+    path: str = Field(...)
+    columns_out: list[str] = Field(..., min_length=1)
+    match_on: list[MatchOn] | None = Field(None)
 
     @property
     def row_key(self: Self) -> str:
@@ -147,7 +166,7 @@ class HuggingFaceJsonDataset(DatasetBase):
 
 
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalDataset | HuggingFaceJsonDataset,
+    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset,
     Field(discriminator="source"),
 ]
 

@@ -331,5 +331,5 @@ class FullmapMiner:
             fields = {field.name: field.value for field in relation.fields}
             if fields["head"] == fields["tail"]:
                 continue  # mined self-loop, e.g. ME3 -> ME3
-            relations.append(Relation(name=relation.name, fields=list(relation.fields), negated=False, evidence="distant"))
+            relations.append(Relation(name=relation.name, fields=list(relation.fields), negated=relation.negated, evidence="distant"))
         return relations
