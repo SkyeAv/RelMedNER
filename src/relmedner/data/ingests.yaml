@@ -117,3 +117,15 @@ datasets:
     columns_out:
       - tokenized_text
       - ner
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: TrialPanorama/TrialPanorama-database
+    subset: studies
+    split: all
+    weight: 1.0
+    columns_out:
+      - abstract
