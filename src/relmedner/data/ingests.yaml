@@ -97,8 +97,11 @@ datasets:
   # tensorshield reddit corpora: general Reddit, MIT, all >= 100k rows (226 at 22,572 rows is
   # excluded -- projected yield after the health filter is noise). match_on keeps only
   # biomedical/health communities; values match the corpus EXACTLY (apply_match is exact
-  # membership, so casing must be the Reddit canonical form). Provisional list pending
-  # measurement -- see .ralph/specs/health-community-allowlist.md.
+  # membership, so casing must be the Reddit canonical form). Casing measured against the
+  # live corpus (400k-row streaming probe of reddit_dataset_157, 2026-09-22): the four
+  # case-sensitive names r/SuicideWatch, r/Menopause, r/Dentistry, r/ptsd are the corpus
+  # canonical forms; zero-hit entries are kept (the corpus is 7.1M rows and they may
+  # appear later in the stream).
   - task:
       type: fullmap
       outputs:
@@ -121,7 +124,7 @@ datasets:
           - r/autism
           - r/Anxiety
           - r/depression
-          - r/suicidewatch
+          - r/SuicideWatch
           - r/cancer
           - r/Celiac
           - r/ibs
@@ -133,7 +136,7 @@ datasets:
           - r/acne
           - r/migraine
           - r/ChronicPain
-          - r/menopause
+          - r/Menopause
           - r/endometriosis
           - r/PCOS
           - r/infertility
@@ -149,9 +152,9 @@ datasets:
           - r/bipolar
           - r/BPD
           - r/OCD
-          - r/PTSD
+          - r/ptsd
           - r/EatingDisorders
-          - r/dentistry
+          - r/Dentistry
           - r/pharmacy
           - r/nursing
     columns_out:
