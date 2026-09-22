@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from relmedner.utils import PredicateRangeGate, ResolutionGate
+from relmedner.utils import PredicateRangeGate, ResolutionGate, ResolvedMention, ScriptUtils
 
 
 @pytest.mark.parametrize(
@@ -45,6 +45,40 @@ def test_is_label_compatible(label: str, category: str, expected: bool) -> None:
 
 
 @pytest.mark.parametrize(
+    ("label", "category", "expected"),
+    [
+        ("first name", "Gene", False),  # surnames fullmap-hit as every entity kind; gene hits must reject
+        ("first name", "Human", True),
+        ("last name", "Protein", False),
+        ("middle name", "SmallMolecule", False),
+        ("user name", "ChemicalEntity", False),
+        ("surname", "IndividualOrganism", True),
+        ("street address", "Gene", False),
+        ("state", "GeographicLocation", True),
+        ("county", "Gene", False),
+        ("postcode", "GeographicLocation", True),
+        ("coordinate", "GeographicLocation", True),
+        ("religious belief", "SmallMolecule", False),
+        ("religious belief", "Attribute", True),  # SocioeconomicAttribute survives through its Attribute ancestor
+        ("education level", "ChemicalEntity", False),
+        ("education level", "SocioeconomicAttribute", True),
+        # Agent already sits in the person bucket's allowed set and the gate change is strictly additive,
+        # so an Agent fullmap hit under employment_status stays accepted (the bucket cannot reject it)
+        ("employment status", "Agent", True),
+        ("employment status", "SocioeconomicAttribute", True),
+        ("blood type", "Disease", False),
+        ("blood type", "ClinicalMeasurement", True),
+    ],
+)
+def test_is_label_compatible_pii_buckets(label: str, category: str, expected: bool) -> None:
+    """Nemotron-PII labels gate fullmap hits exactly like biomed labels do: person-name labels only
+    survive Human/IndividualOrganism ancestors, socioeconomic labels survive Attribute descendants,
+    place labels survive GeographicLocation, and blood type only measurement-grade hits; every
+    rejection here is what pushes the mention onto the fallback/raw tail instead of a wrong category"""
+    assert ResolutionGate.is_label_compatible(label, category) is expected
+
+
+@pytest.mark.parametrize(
     ("mention", "label", "expected"),
     [
         ("HVA", "entity type", True),  # 4-hydroxypentanoate, a fullmap collision
@@ -62,6 +96,17 @@ def test_accept_composes_all_three_checks() -> None:
     assert ResolutionGate.accept("dogs", "organism", "FB:FBgn0016793", "ChemicalEntity") is False
     assert ResolutionGate.accept("Bax", "protein", "NCBIGene:581", "Gene") is True
     assert ResolutionGate.accept("eye color", "trait", "EFO:0003949", "PhenotypicFeature") is True
+
+
+@pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")
+def test_fullmap_person_name_label_never_keeps_a_non_human_hit() -> None:
+    """end-to-end gate proof: the common surname 'Boyce' fullmap-hits as non-Human entities too, so
+    under the first_name label any such hit must reject and the mention falls through to the Human
+    fallback -- no resolved mention may surface origin='fullmap' with a category outside Human"""
+    # the dataset vocabulary is inlined ({"first_name": "Human"}, the NemotronPiiScript entry) so
+    # this gate layer stays self-contained below the ingest layer that declares the full map
+    Resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions([("Boyce", "first_name")], label_map={"first_name": "Human"})
+    assert {item.category for item in Resolved if item.origin == "fullmap"} <= {"Human"}
 
 
 def test_ancestors_walk_the_biolink_mro_and_empty_for_raw_labels() -> None:
