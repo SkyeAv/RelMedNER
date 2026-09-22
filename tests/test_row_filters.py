@@ -196,7 +196,7 @@ def test_yaml_ingests_stream_args_round_every_declared_dataset() -> None:
 
 
 def test_build_stream_wires_filters_keyword_only() -> None:
-    Payload: tuple[Any, ...] = (TASK, 1.0, "~/Desktop/interventions.avro")
+    Payload: tuple[Any, ...] = (TASK, 1.0, "interventions/interventions.avro")
     Filters: RowFilters = RowFilters(drop_empty=True)
 
     Stream: LocalAvroDataStream = build_stream("local", Payload, Filters)

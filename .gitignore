@@ -11,3 +11,9 @@
 dist/
 /.ralph/
 .ralph/
+# operator-built avro corpora live in the package data dir so the declared path resolves
+# from any CWD, but the containers themselves stay out of git: interventions.avro is 92MB of
+# already-compressed avro (no delta or zlib win), it is rebuilt per AACT snapshot, and the
+# fullmap bundle is handled the same out-of-band way. Rebuild steps: the "CTKP interventions"
+# section of README.md.
+src/relmedner/data/interventions/*.avro

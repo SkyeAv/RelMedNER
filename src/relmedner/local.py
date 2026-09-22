@@ -33,17 +33,37 @@ class LocalAvroDataStream(DataStream):
         # verbatim: the declared path, not its basename (two distinct files may share a name and
         # must still be able to declare different weights)
         self.name: str = path
-        self.path: str = path
+        # resolved like the delimited stream: an absolute or ~-prefixed path that exists is used
+        # as declared, otherwise the name resolves against the packaged data dir. That keeps the
+        # in-repo corpus working from any CWD and inside the worker container, while an operator
+        # can still point the same declaration at an out-of-band file on disk.
+        candidate: Path = Path(path).expanduser()
+        try:
+            resolved: Path = candidate if candidate.is_file() else Path(str(DATA)) / path
+        except OSError:
+            # python 3.13 pathlib propagates PermissionError from is_file() probes; an
+            # unreadable parent means the caller's path is not a usable file either way
+            resolved = Path(str(DATA)) / path
+        self.path: Path = resolved
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         # the whole record ships as a single value so the receiving script owns the shape;
         # avro's reader is already lazy, so a 1M-record container never lands in memory at once
+        try:
+            exists: bool = self.path.is_file()
+        except OSError:
+            # an unsearchable parent directory makes is_file() raise PermissionError on
+            # python 3.13 pathlib; an unreadable path is not a usable file either way, and
+            # the contract is one error type (mirrors LocalDelimitedDataStream.rows below)
+            exists = False
+        if not exists:
+            raise FileNotFoundError(f"local source file not found: {self.path}")
 
         # US-009: one stats record per pass, reset here (not in stream()) so a direct rows()
         # call is accounted identically; the unfiltered path counts too (rows_in = records read),
         # while the rows it yields stay byte-identical
         self.stats = StreamStats()
-        with Path(self.path).expanduser().open("rb") as handle:
+        with self.path.open("rb") as handle:
             for record in reader(handle):
                 self.stats.rows_in += 1
                 # the text rule applies over the record's own values (same rule as the hf projection)
