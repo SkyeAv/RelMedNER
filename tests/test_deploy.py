@@ -123,7 +123,9 @@ def test_dyn_forwarder_script_relays_new_pool_endpoints_to_the_head() -> None:
     # polling, not streaming: each tick rebuilds the pipeline so no long-lived member can die
     # silently mid-job (observed with docker logs -f | grep)
     assert "docker logs --since 2m relmedner-sdkworker-1" in script
-    assert "endpoint localhost:[0-9]+" in script
+    # all four FnAPI endpoints appear as --name_endpoint=localhost:PORT in the spawn line;
+    # matching only the space form caught the logging endpoint alone
+    assert "(provision|control|logging|artifact)_endpoint.{0,16}localhost:[0-9]+" in script
     # forwards detach from any supervising terminal so a tmux server death cannot take them down
     assert "setsid nohup ssh" in script
     assert "-L 127.0.0.1:$p:127.0.0.1:$p sgoetz@10.2.9.11" in script

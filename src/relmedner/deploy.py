@@ -173,7 +173,8 @@ while true; do
   # 2>&1, never 2>/dev/null: hypatia's docker CLI emits log lines on STDERR — discarding it
   # blinded the watcher from day one (empty seen file, zero forwards, workers dialing dead ports)
   for p in $(docker logs --since 2m relmedner-sdkworker-1 2>&1 \\
-      | grep -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+'); do
+      | grep -oE '(provision|control|logging|artifact)_endpoint.{{0,16}}localhost:[0-9]+' \
+      | grep -oE 'localhost:[0-9]+' | grep -oE '[0-9]+' | sort -u); do
     grep -qx "$p" "$seen" 2>/dev/null && continue
     echo "$p" >> "$seen"
     setsid nohup ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
