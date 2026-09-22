@@ -25,6 +25,11 @@ def rebuild_task(task: tuple[Any, ...]) -> Any:
 class DataStream(ABC):
     SOURCE: ClassVar[str]
 
+    task: tuple[Any, ...]
+    """the whole frozen task tuple (discriminated by its leading type value), carried
+    positionally in the frozen payload tuple; the pipeline rebuilds the task model from it
+    so script dispatch and fullmap mining share one stream shape"""
+
     name: str
     """the source key every yielded row is stamped with. It must equal the declared dataset's
     DatasetBase.row_key exactly: the pipeline looks the source's mixing weight up by this string,
@@ -32,6 +37,19 @@ class DataStream(ABC):
 
     weight: float
     """the declared per-source mixing weight, carried positionally in the frozen payload tuple"""
+
+    def __init__(self, task: tuple[Any, ...] = (), weight: float = 1.0) -> None:
+        """the single shared entry point every DataStream subclass builds on: it owns the
+        frozen payload's leading fields, so each subclass ctor only adds its source-specific
+        ones after super().__init__(task, weight).
+
+        Parameter order must match DatasetBase.to_tuple's field order, because
+        registry.build_stream unpacks the declared payload positionally: task, weight, then
+        the source-specific fields. US-008 will extend this signature with a keyword-only
+        filters parameter (the defaults keep no-arg test doubles constructible).
+        """
+        self.task: tuple[Any, ...] = tuple(task)
+        self.weight: float = weight
 
     @abstractmethod
     def rows(self: Self) -> Iterator[StreamedRow]:
