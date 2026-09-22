@@ -24,7 +24,6 @@ from relmedner.models import WorkerNode
 
 COMPOSE: list[str] = ["docker", "compose"]
 JOBMANAGER_PROJECT: str = f"{PROJECT}-head"
-TUNNEL_SESSION: str = "relmedner-tunnel"
 PROJECT_ROOT: Path = Path(__file__).resolve().parents[2]
 
 
@@ -147,32 +146,36 @@ def tunnel_plan(
     return plan
 
 
-def tunnel_session_name(target: str) -> str:
-    return f"{TUNNEL_SESSION}-{target.replace('.', '-')}"
-
-
-DYN_WATCH_SESSION: str = "relmedner-dynwatch"
 DYN_WATCHER_REMOTE: str = "/tmp/relmedner-dynwatch.sh"
+DYN_WATCHER_LOG: str = "/tmp/relmedner-dynwatch.log"
+DYN_PIDS_REMOTE: str = "/tmp/relmedner-dyn-pids"
+DYN_SEEN_REMOTE: str = "/tmp/relmedner-dyn-ports"
 
 
 def dyn_forwarder_script(jobmanager_host: str, user: str) -> str:
-    """bash file, installed on a taskmanager host and run under tmux: the beam worker pool dials
-    the job server's FnAPI endpoints, which the java job server binds on RANDOM ports per
-    submission — unfixable from flags. the cross-host firewall means those dials must be relayed
-    over ssh, so watch the pool log for each new `endpoint localhost:<port>` and forward that port
-    to the head host before the pool's worker-retry loop gives the tunnel time to come up"""
+    """bash file, installed on a taskmanager host and run DETACHED (setsid nohup, not tmux): the
+    beam worker pool dials the job server's FnAPI endpoints, which the java job server binds on
+    RANDOM ports per submission - unfixable from flags. the cross-host firewall means those dials
+    must be relayed over ssh, so watch the pool log for each new `endpoint localhost:<port>` and
+    forward that port to the head host before the pool's worker-retry loop gives the tunnel time
+    to come up. tmux died once mid-job (server killed by an ssh blip) and took every forward with
+    it, so neither the watcher nor the forwards live in tmux anymore; forward pids are tracked in
+    a file so a redeploy reaps the previous generation"""
     return f"""#!/bin/bash
-seen=/tmp/relmedner-dyn-ports
+seen={DYN_SEEN_REMOTE}
+pids={DYN_PIDS_REMOTE}
 : > "$seen"
-tmux list-sessions 2>/dev/null | grep -oE '^relmedner-dyn-[0-9]+' | xargs -r -n1 tmux kill-session -t
+if [ -f "$pids" ]; then xargs -r kill 2>/dev/null < "$pids"; fi
+: > "$pids"
 # docker logs -f dies when the container is recreated; reattach so a deploy mid-run keeps watching
 while true; do docker logs -f --tail 0 relmedner-sdkworker-1 2>/dev/null; sleep 2; done \\
 | grep --line-buffered -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+' \\
 | while read p; do
   grep -qx "$p" "$seen" 2>/dev/null && continue
   echo "$p" >> "$seen"
-  tmux new-session -d -s "relmedner-dyn-$p" \\
-    "ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host}"
+  setsid nohup ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
+    -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host} </dev/null >/dev/null 2>&1 &
+  echo $! >> "$pids"
 done
 """
 
@@ -194,9 +197,11 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
         return Template(TASKMANAGER_COMPOSE.read_text(encoding="utf-8")).substitute(compose_vars(worker, flink_image, worker_image, data_port(index)))
 
     def kill_tunnel_session(host: str, target: str) -> None:
-        # one argv element: `tmux kill-session` exits nonzero on an unknown session and ssh would
-        # re-parse separate words anyway; `; true` swallows the not-found error
-        run_cmd([*ssh_to(ssh_user, host), f"tmux kill-session -t {tunnel_session_name(target)} 2>/dev/null; true"], dry_run)
+        # one argv element: ssh re-parses separate words on the remote side; the pid file is the
+        # handle on a detached tunnel (no tmux - a tmux server dying mid-job once took the relays
+        # down with it and killed the job)
+        pid_file = f"/tmp/relmedner-tunnel-{target.replace('.', '-')}.pid"
+        run_cmd([*ssh_to(ssh_user, host), f"kill $(cat {pid_file}) 2>/dev/null; rm -f {pid_file}; true"], dry_run)
 
     if teardown:
         for host, targets in Plan.items():
@@ -207,9 +212,9 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
                 run_cmd(
                     [
                         *ssh_to(ssh_user, worker.host),
-                        "tmux kill-session -t " + DYN_WATCH_SESSION + " 2>/dev/null; "
-                        "tmux list-sessions 2>/dev/null | grep -oE '^relmedner-dyn-[0-9]+' "
-                        "| xargs -r -n1 tmux kill-session -t; rm -f " + DYN_WATCHER_REMOTE + "; true",
+                        "pkill -f 'relmedner-dynwatch[.]sh' 2>/dev/null; "
+                        "xargs -r kill 2>/dev/null < " + DYN_PIDS_REMOTE + " 2>/dev/null; "
+                        "rm -f " + DYN_WATCHER_REMOTE + " " + DYN_PIDS_REMOTE + " " + DYN_SEEN_REMOTE + "; true",
                     ],
                     dry_run,
                 )
@@ -264,27 +269,38 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
         stdin=JobmanagerRendered,
     )
 
-    # inter-host tunnels over the :22-only path, one tmux session per target so they survive the
-    # deploy shell; flink's fixed-delay restart strategy absorbs brief tunnel drops
+    # inter-host tunnels over the :22-only path, detached with setsid so they survive both the
+    # deploy shell and a tmux server death; flink's fixed-delay restart strategy absorbs the brief
+    # drop while a redeploy re-establishes them
     for host, targets in Plan.items():
         for target, forwards in targets.items():
             kill_tunnel_session(host, target)
             if not dry_run:
                 inner: str = " ".join(tunnel_spec(forwards, target, ssh_user))
+                pid_file = f"/tmp/relmedner-tunnel-{target.replace('.', '-')}.pid"
                 Popen(
-                    [*ssh_to(ssh_user, host), "tmux", "new-session", "-d", "-s", tunnel_session_name(target), inner],
+                    [
+                        *ssh_to(ssh_user, host),
+                        f"setsid nohup ssh {inner} </dev/null >/dev/null 2>&1 & echo $! > {pid_file}",
+                    ],
                     start_new_session=True,
                     stdout=DEVNULL,
                     stderr=DEVNULL,
                 )
 
     # per-job FnAPI forwarder watcher on every remote taskmanager host — the head's pool dials the
-    # job server natively and needs no relay. the script ships as a remote file: inlining it in the
-    # tmux command would let the remote shell split it at the semicolons
+    # job server natively and needs no relay. the script ships as a remote file: inlining it in a
+    # remote shell command would let the shell split it at the semicolons
     for worker in workers:
         if worker.host != jobmanager_host:
-            run_cmd([*ssh_to(ssh_user, worker.host), f"tmux kill-session -t {DYN_WATCH_SESSION} 2>/dev/null; true"], dry_run)
+            run_cmd([*ssh_to(ssh_user, worker.host), "pkill -f 'relmedner-dynwatch[.]sh' 2>/dev/null; true"], dry_run)
             run_cmd([*ssh_to(ssh_user, worker.host), "cat > " + DYN_WATCHER_REMOTE], dry_run, stdin=dyn_forwarder_script(jobmanager_host, ssh_user))
-            run_cmd([*ssh_to(ssh_user, worker.host), "tmux new-session -d -s " + DYN_WATCH_SESSION + " bash " + DYN_WATCHER_REMOTE], dry_run)
+            run_cmd(
+                [
+                    *ssh_to(ssh_user, worker.host),
+                    "setsid nohup bash " + DYN_WATCHER_REMOTE + " > " + DYN_WATCHER_LOG + " 2>&1 < /dev/null &",
+                ],
+                dry_run,
+            )
 
     return
