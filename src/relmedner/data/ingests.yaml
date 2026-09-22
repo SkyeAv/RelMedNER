@@ -37,6 +37,17 @@ datasets:
       - sentences
       - labels
   - task:
+      type: script
+      name: PileNerTypeScript
+      outputs:
+        - entities
+    source: hf
+    dataset: Universal-NER/Pile-NER-type
+    split: train
+    weight: 1.0
+    columns_out:
+      - conversations
+  - task:
       type: fullmap
       outputs:
         - entities

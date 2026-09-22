@@ -7,7 +7,8 @@ types share one declarative pipeline:
 
 - **script tasks** — datasets that already carry gold spans
   (`anthonyyazdaniml/gliner-biomed-pre-training`, the IOB-formatted
-  `disi-unibo-nlp/Pile-NER-biomed-IOB`, the multi-task
+  `disi-unibo-nlp/Pile-NER-biomed-IOB`, the conversation-QA
+  `Universal-NER/Pile-NER-type`, the multi-task
   `anthonyyazdaniml/gliner-biomed-post-training`, and the relation-tagged
   `knowledgator/sentence_rex`); spans are relabeled to biolink classes
   via tablassert `Categories` and local fullmap resolution, and relations are
@@ -28,13 +29,14 @@ types share one declarative pipeline:
 
 | dataset | task | inputs | outputs | rows in |
 | --- | --- | --- | --- | --- |
-| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
-| `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` -> `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
+| `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` -> `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `Universal-NER/Pile-NER-type` | `script` -> `PileNerTypeScript` | `conversations` | entities | 45,889 |
 | `knowledgator/sentence_rex` | `script` -> `SentenceRexScript` | `sentences`, `labels` | relations | 44,115 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
-| `anthonyyazdaniml/gliner-biomed-post-training` | `script` → `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
-| `~/Desktop/interventions.avro` (local) | `script` → `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
+| `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 
 All script tasks share one resolution chain — fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
@@ -67,6 +69,23 @@ snake_case normalization, of which 17 are biolink `Predicates` members covering 
 Formatting the strip-only rule deliberately tolerates: ~99% of rows wrap tag surfaces in
 internal whitespace (`<e1> Myristica fragrans </e1>`) and 95.8% use spaced punctuation
 (` ,`, ` .`).
+
+Dataset-format notes (`PileNerTypeScript`): the general-domain pile-ner sibling packages NER
+as chat rather than IOB columns. One human turn carries the document behind a `Text: `
+prefix, then each entity type is asked for with the templated question
+`What describes <type> in the text?` and answered by the next gpt turn with a JSON list of
+surface mentions (`[]` for the negative-sampled types, whose rows fall out on the outputs
+gate). Answers are surfaces, not offsets, so spans are recovered by matching the mention's
+token subsequence case-insensitively against the document's whitespace tokens: that single
+rule is both the hallucination guard (gpt occasionally answers with surfaces the document
+never contains) and the tokenization guard, and it keeps entities and relation spans
+aligned. Emitted mentions are the document's own token slice, so gliner2's sanitizer can
+always find them, and repeated mentions contribute every occurrence as a relation span
+while appearing once in the entity list. The type vocabulary is open-ended GPT output
+(1,666 distinct types in a 1k-row probe, with `person`/`Person`/`PERSON` casing variants
+collapsing on the lowercased fallback lookup); head labels ride the dataset-local
+`LABEL_MAP` and the tail stays PascalCased raw. `Organization`, `Product` and `CreativeWork`
+are not biolink classes, so `organization` maps to `Agent` and `product` stays a raw tail.
 
 ## Output
 

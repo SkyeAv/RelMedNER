@@ -490,6 +490,237 @@ def test_the_sentence_rex_script_emits_nothing_for_bad_rows() -> None:
         assert Example.populated() == frozenset()
 
 
+# ---------------------------------------------------------------------------
+# PileNerTypeScript (Universal-NER/Pile-NER-type ingest: conversation-QA rows)
+# ---------------------------------------------------------------------------
+
+
+def conversations(text: str, *answered: tuple[str, str]) -> list[dict[str, str]]:
+    """build a Pile-NER-type conversations column: the 'Text: ' turn, the corpus's fixed
+    acknowledgement, then one templated question per entity type with its JSON answer turn"""
+    turns: list[dict[str, str]] = [
+        {"from": "human", "value": f"Text: {text}"},
+        {"from": "gpt", "value": "I've read this text."},
+    ]
+    for raw_label, answer in answered:
+        turns.append({"from": "human", "value": f"What describes {raw_label} in the text?"})
+        turns.append({"from": "gpt", "value": answer})
+    return turns
+
+
+def test_parse_conversations_decodes_the_real_row_shape() -> None:
+    """row ner_1 shape: a 'Text: ' turn plus one question/JSON-answer pair per entity type"""
+    Turns = conversations(
+        "Juho Haapoja was a Finnish boxer who held the European Union cruiserweight title .",
+        ("Person", '["Juho Haapoja"]'),
+        ("Organization", '["European Union"]'),
+        ("Date", "[]"),
+    )
+
+    assert ScriptUtils.parse_conversations(Turns) == (
+        "Juho Haapoja was a Finnish boxer who held the European Union cruiserweight title .",
+        [("Person", ["Juho Haapoja"]), ("Organization", ["European Union"]), ("Date", [])],
+    )
+
+
+def test_parse_conversations_decodes_python_repr_columns_too() -> None:
+    """same skip-don't-coerce decode posture as the python-repr pile-ner-biomed columns"""
+    Turns = conversations("Aspirin treats migraine .", ("drug", '["Aspirin"]'))
+
+    assert ScriptUtils.parse_conversations(str(Turns)) == ("Aspirin treats migraine .", [("drug", ["Aspirin"])])
+
+
+def test_parse_conversations_skips_malformed_rows_without_raising() -> None:
+    """a malformed external row becomes an empty example, never a crash"""
+    assert ScriptUtils.parse_conversations("garbage [") == ("", [])
+    assert ScriptUtils.parse_conversations(None) == ("", [])
+    assert ScriptUtils.parse_conversations([]) == ("", [])
+    assert ScriptUtils.parse_conversations([{"from": "gpt", "value": "I've read this text."}]) == ("", [])
+    assert ScriptUtils.parse_conversations([{"from": "human", "value": "no prefix here"}]) == ("", [])
+    assert ScriptUtils.parse_conversations([None, 3, {"from": "human", "value": "Text: kept"}]) == ("kept", [])
+
+
+def test_parse_mention_list_keeps_strings_and_drops_everything_else() -> None:
+    """answers are JSON arrays; python-repr is accepted too and non-string items are dropped"""
+    assert ScriptUtils.parse_mention_list('["Aspirin", " migraine "]') == ["Aspirin", "migraine"]
+    assert ScriptUtils.parse_mention_list("['Aspirin']") == ["Aspirin"]
+    assert ScriptUtils.parse_mention_list('["Aspirin", 3, null, ""]') == ["Aspirin"]
+    assert ScriptUtils.parse_mention_list("[]") == []
+    assert ScriptUtils.parse_mention_list("I've read this text.") == []
+
+
+def test_token_occurrences_finds_every_hit_case_insensitively() -> None:
+    """the corpus answers with surfaces, so spans are recovered by token-subsequence match"""
+    Tokens: list[str] = ["Aspirin", "treats", "migraine", ".", "aspirin", "again"]
+
+    assert ScriptUtils.token_occurrences(Tokens, "aspirin") == [(0, 0), (4, 4)]
+    assert ScriptUtils.token_occurrences(Tokens, "Aspirin treats") == [(0, 1)]
+    assert ScriptUtils.token_occurrences(Tokens, "never appears") == []
+    assert ScriptUtils.token_occurrences(Tokens, "") == []
+    assert ScriptUtils.token_occurrences([], "Aspirin") == []
+
+
+def test_token_occurrences_accepts_a_precomputed_haystack() -> None:
+    """the hoisted form must be identical to folding per call. A row matches dozens of mentions
+    against one document, so the script folds lowered_tokens(tokens) once and passes it in; a
+    haystack that disagreed with tokens would silently misplace every span in that row, which is
+    why the equivalence is pinned rather than assumed."""
+    Tokens: list[str] = ["Aspirin", "treats", "Migraine", "and", "migraine", "again"]
+    Lowered: list[str] = ScriptUtils.lowered_tokens(Tokens)
+
+    assert Lowered == ["aspirin", "treats", "migraine", "and", "migraine", "again"]
+    for Mention in ("migraine", "Aspirin treats", "MIGRAINE AND migraine", "never appears", ""):
+        assert ScriptUtils.token_occurrences(Tokens, Mention, Lowered) == ScriptUtils.token_occurrences(Tokens, Mention)
+
+
+def test_every_pile_ner_type_fallback_label_maps_to_a_biolink_category() -> None:
+    """dataset-local vocabulary values stay real biolink classes"""
+    from relmedner.scripts import PileNerTypeScript
+
+    for raw_label, category in PileNerTypeScript.LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
+
+
+def test_the_pile_ner_type_script_decodes_real_row_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end-to-end: conversation decode, surface->span recovery, resolution, and grouping"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Trypanosoma cruzi", "species"), ("Chagas disease", "disease")]
+        return [
+            ResolvedMention(
+                mention="Trypanosoma cruzi",
+                category="OrganismTaxon",
+                curie="NCBITaxon:5693",
+                preferred_name="Trypanosoma cruzi",
+                origin="fullmap",
+            ),
+            ResolvedMention(mention="Chagas disease", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations(
+        "Trypanosoma cruzi , the agent of Chagas disease , presents a clonal structure .",
+        ("species", '["Trypanosoma cruzi"]'),
+        ("disease", '["Chagas disease"]'),
+        ("Date", "[]"),
+    )
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert Example.text == "Trypanosoma cruzi , the agent of Chagas disease , presents a clonal structure ."
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "OrganismTaxon": ["Trypanosoma cruzi"],
+        "Disease": ["Chagas disease"],
+    }
+    assert Example.entities[0].description is not None and "[fullmap: NCBITaxon:5693 | Trypanosoma cruzi]" in Example.entities[0].description
+
+
+def test_the_pile_ner_type_script_drops_mentions_absent_from_the_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gpt answers occasionally name surfaces the document never contains; those must not train"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Aspirin", "drug")]
+        return [ResolvedMention(mention="Aspirin", category="Drug", origin="fallback")]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations("Aspirin eases the pain .", ("drug", '["Aspirin", "ibuprofen"]'))
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"]}
+
+
+def test_the_pile_ner_type_script_pascalcases_raw_labels_and_keeps_document_casing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """raw tails surface biolink-cased while fallback categories stay untouched; the emitted mention
+    is the document's own token slice so gliner2's sanitizer can always find it in the text"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Aspirin", "drug"), ("Contoso", "job title")]
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="Contoso", category="job title", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations("Aspirin ships from Contoso .", ("drug", '["aspirin"]'), ("job title", '["contoso"]'))
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"], "JobTitle": ["Contoso"]}
+
+
+def test_the_pile_ner_type_script_emits_nothing_for_empty_negative_or_malformed_rows() -> None:
+    """negative-sampled rows (every answer '[]') and malformed rows fall out on the outputs gate"""
+    _, Negative = Script.dispatch("PileNerTypeScript", (("entities",), (conversations("REDIRECT Athiyandal , Tiruvannamalai", ("age", "[]")),)))
+    assert Negative.text == "REDIRECT Athiyandal , Tiruvannamalai"
+    assert Negative.populated() == frozenset()
+    _, Malformed = Script.dispatch("PileNerTypeScript", (("entities",), ("garbage [",)))
+    assert Malformed.text == ""
+    assert Malformed.populated() == frozenset()
+    _, Unprefixed = Script.dispatch("PileNerTypeScript", (("entities",), ([{"from": "human", "value": "no prefix"}],)))
+    assert Unprefixed.text == ""
+
+
+def test_the_pile_ner_type_script_extracts_relations_over_resolved_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the shared gazetteer runs over whitespace tokens; a compatible pair emits an edge"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="dexamethasone", category="SmallMolecule", curie="CHEBI:41180", preferred_name="dexamethasone", origin="fullmap"),
+            ResolvedMention(mention="COPD", category="Disease", curie="MONDO:0005002", preferred_name="COPD", origin="fullmap"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations(
+        "dexamethasone in the treatment of COPD .",
+        ("chemical", '["dexamethasone"]'),
+        ("medical condition", '["COPD"]'),
+    )
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert Example.relations == [expected_relation("treats", "dexamethasone", "COPD")]
+
+
+def test_the_pile_ner_type_script_relation_gate_rejects_incompatible_categories(monkeypatch: pytest.MonkeyPatch) -> None:
+    """biolink domain/range: expressed_in needs a gene-ish head; a chemical head must not emit"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="benzene", category="ChemicalEntity", curie="CHEBI:167164", preferred_name="benzene", origin="fullmap"),
+            ResolvedMention(mention="epithelial cells", category="Cell", curie="CL:0000066", preferred_name="epithelial cell", origin="fullmap"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations(
+        "benzene expressed in epithelial cells .",
+        ("chemical", '["benzene"]'),
+        ("cell type", '["epithelial cells"]'),
+    )
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert Example.relations == []
+
+
+def test_the_pile_ner_type_script_spans_every_occurrence_of_a_repeated_mention(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a surface answer maps to all of its occurrences, so the gazetteer can bracket the nearest one
+    while the entity list still carries the mention once"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Aspirin", "drug"), ("migraine", "medical condition")]
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Turns = conversations(
+        "Aspirin is cheap . Aspirin is used to treat migraine .",
+        ("drug", '["Aspirin"]'),
+        ("medical condition", '["migraine"]'),
+    )
+    _, Example = Script.dispatch("PileNerTypeScript", (("entities",), (Turns,)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"], "Disease": ["migraine"]}
+    assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
+
+
 def expected_relation(name: str, head: str, tail: str) -> Relation:
     """emitted relations carry their biolink slot description; build the matching expectation"""
     return Relation(

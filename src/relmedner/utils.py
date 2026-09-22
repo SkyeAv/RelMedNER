@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import re
 from dataclasses import dataclass
 from functools import cache
@@ -48,6 +49,12 @@ def _bucket(keys: str, categories: str) -> tuple[tuple[str, ...], frozenset[str]
 
 LABEL_SPLIT: re.Pattern[str] = re.compile(r"[\s_/\-]+")
 ACRONYM_MENTION: re.Pattern[str] = re.compile(r"^[A-Z0-9][A-Z0-9\-/]{0,3}$")
+# Pile-NER-type conversation turns: the document rides a "Text: " prefix and every entity type is
+# asked for with one templated question whose answer turn carries the JSON mention list
+CONVERSATION_TEXT_PREFIX: str = "Text: "
+CONVERSATION_QUESTION: re.Pattern[str] = re.compile(r"^What describes (.+?) in the text\?$")
+HUMAN_TURN: str = "human"
+GPT_TURN: str = "gpt"
 MODEL_ORGANISM_PREFIXES: tuple[str, ...] = ("FB:", "ZFIN:", "WB:", "MGI:", "SGD:", "RGD:", "DICTYBASE:", "POMBASE:", "TAIR:", "XENBASE:")
 
 
@@ -361,17 +368,96 @@ class ScriptUtils:
     def join_tokens(tokens: list[str]) -> str:
         return " ".join(tokens)
 
-    @staticmethod
-    def parse_literal_list(value: Any) -> list[str]:
+    @classmethod
+    def parse_literal_list(cls, value: Any) -> list[str]:
         """safely decode python-repr string columns (ast.literal_eval, no code execution);
         malformed rows yield [] so callers skip them instead of crashing (skip-don't-coerce)"""
-        try:
-            decoded = ast.literal_eval(value) if isinstance(value, str) else value
-        except (ValueError, SyntaxError, MemoryError, RecursionError):
-            return []
+        decoded: Any = cls._decode_container(value)
         if not isinstance(decoded, list) or any(not isinstance(item, str) for item in decoded):
             return []
         return decoded
+
+    @staticmethod
+    def _decode_container(value: Any) -> Any:
+        """one decode posture for every external column: real containers pass through, python-repr
+        strings go through ast.literal_eval (no code execution), malformed input yields None"""
+        if not isinstance(value, str):
+            return value
+        try:
+            return ast.literal_eval(value)
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            return None
+
+    @classmethod
+    def parse_conversations(cls, value: Any) -> tuple[str, list[tuple[str, list[str]]]]:
+        """decode a Pile-NER-type conversations column into (text, [(raw_label, mentions), ...]).
+
+        The corpus packages NER as chat: one human turn carries the document behind a 'Text: '
+        prefix, then every entity type is asked for with the templated question
+        'What describes <type> in the text?' and answered by the next gpt turn with a JSON list of
+        surface mentions ('[]' for the negative-sampled types). Mentions are surfaces, not offsets.
+
+        Skip-don't-coerce throughout: a row without a 'Text: ' turn, or one whose answer turn does
+        not decode to a list of strings, yields ('', []) / an empty mention list so the caller emits
+        an empty example instead of crashing."""
+        turns = cls._decode_container(value)
+        if not isinstance(turns, list):
+            return ("", [])
+        pairs: list[tuple[str, str]] = []
+        for turn in turns:
+            if not isinstance(turn, dict):
+                continue
+            speaker, spoken = turn.get("from"), turn.get("value")
+            if isinstance(speaker, str) and isinstance(spoken, str):
+                pairs.append((speaker, spoken))
+        prefixed = (spoken for speaker, spoken in pairs if speaker == HUMAN_TURN and spoken.startswith(CONVERSATION_TEXT_PREFIX))
+        text: str = next((spoken[len(CONVERSATION_TEXT_PREFIX) :] for spoken in prefixed), "")
+        if not text:
+            return ("", [])
+        answered: list[tuple[str, list[str]]] = []
+        for (speaker, spoken), (next_speaker, next_spoken) in zip(pairs, pairs[1:], strict=False):
+            question = CONVERSATION_QUESTION.match(spoken) if speaker == HUMAN_TURN else None
+            if question is None or next_speaker != GPT_TURN:
+                continue
+            answered.append((question.group(1), cls.parse_mention_list(next_spoken)))
+        return (text, answered)
+
+    @classmethod
+    def parse_mention_list(cls, value: str) -> list[str]:
+        """decode one gpt answer turn: JSON first (the corpus writes JSON arrays), python-repr
+        second; non-list answers and non-string items are dropped rather than coerced"""
+        try:
+            decoded: Any = json.loads(value)
+        except (ValueError, RecursionError):
+            decoded = cls._decode_container(value)
+        if not isinstance(decoded, list):
+            return []
+        return [stripped for item in decoded if isinstance(item, str) and (stripped := item.strip())]
+
+    @staticmethod
+    def lowered_tokens(tokens: list[str]) -> list[str]:
+        """the case-folded haystack token_occurrences matches against, folded once per document"""
+        return [token.lower() for token in tokens]
+
+    @classmethod
+    def token_occurrences(cls, tokens: list[str], mention: str, lowered: list[str] | None = None) -> list[tuple[int, int]]:
+        """every (start, end_inclusive) token span whose surface matches the mention.
+
+        Pile-NER-type answers with surfaces rather than offsets, so mention spans are recovered by
+        matching the mention's whitespace-split token subsequence case-insensitively against the
+        document's whitespace tokens. An absent mention yields [] -- that is the hallucination guard
+        (gpt answers occasionally name surfaces the document never contains) and simultaneously the
+        tokenization guard, so entities and relation spans stay aligned on one rule.
+
+        `lowered` is lowered_tokens(tokens) for the SAME document, letting a caller fold the haystack
+        once instead of once per mention: a row carries dozens of answered mentions over hundreds of
+        tokens, and the corpus has ~46k rows, so folding per mention dominated the script."""
+        needle: list[str] = [token.lower() for token in mention.split()]
+        if not needle or len(needle) > len(tokens):
+            return []
+        haystack: list[str] = cls.lowered_tokens(tokens) if lowered is None else lowered
+        width: int = len(needle)
+        return [(start, start + width - 1) for start in range(len(haystack) - width + 1) if haystack[start : start + width] == needle]
 
     @staticmethod
     def iob_spans(tags: list[str]) -> list[tuple[int, int, str]]:
