@@ -13,11 +13,13 @@ workers:
   - host: 10.2.9.11 # wenceslaus — 60 CPU / 120 GB
     slots: 60
     memory: 110g
-    fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
-    outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
+    # merge-key fragment anchors the shared host path pair (fullmap + outputs); the hypatia
+    # block below joins by referencing <<: *wenceslaus-paths instead of restating both paths
+    <<: &wenceslaus-paths
+      fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
+      outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
   # hypatia — 4 CPU / 8 GB; needs docker-compose-v2 installed before it can join
   # - host: 10.2.9.19
   #   slots: 4
   #   memory: 6g
-  #   fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
-  #   outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
+  #   <<: *wenceslaus-paths
