@@ -8,6 +8,7 @@ import pytest
 from fastavro import parse_schema, writer
 from pydantic import ValidationError
 
+from relmedner.constants import CHARS_PER_TOKEN, MAX_TEXT_TOKENS
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.local import LocalAvroDataStream
 from relmedner.models import HuggingFaceDataset, LocalAvroDataset, RowFilters, ScriptTask, YamlIngests
@@ -101,14 +102,50 @@ def test_regexes_include_then_exclude() -> None:
 
 
 def test_the_first_reason_wins_in_the_fixed_order() -> None:
-    """drop_empty outranks the length rules, which outrank the regexes; US-009 counts drops per
-    reason, so the order is part of the contract"""
+    """drop_empty outranks the length rules, the platform token cap outranks the regexes, and
+    the regexes come last: drop_empty -> min_text_len -> max_text_len -> max_tokens ->
+    include_regex -> exclude_regex; US-009 counts drops per reason, so the order is part of
+    the contract"""
     Both: RowFilters = RowFilters(drop_empty=True, min_text_len=5, include_regex="x", exclude_regex="y")
 
     assert first_drop_reason(("",), Both) == "drop_empty"
     assert first_drop_reason(("ab",), Both) == "min_text_len"  # include/exclude would also fire; min wins
+    OverCap: RowFilters = RowFilters(min_text_len=5, include_regex="x", exclude_regex="y")
+    # cap outranks BOTH regexes even though include_regex "x" would also fail on this text
+    assert first_drop_reason(("a" * (MAX_TEXT_TOKENS * CHARS_PER_TOKEN + 1),), OverCap) == "max_tokens"
     Window: RowFilters = RowFilters(min_text_len=2, max_text_len=5)
     assert first_drop_reason(("abcdef",), Window) == "max_text_len"  # min passes first, max fires
+
+
+def test_the_token_cap_boundary_is_strict_over_max_text_tokens_times_chars_per_token() -> None:
+    """the cap converts with CHARS_PER_TOKEN: exactly MAX_TEXT_TOKENS * CHARS_PER_TOKEN chars
+    (32768, an estimated len // 4 == 8192 tokens) passes and ONE char more drops; strict > on
+    chars keeps the boundary exact -- floor-dividing to tokens first would round 32769 back to
+    8192 estimated tokens and silently keep the over-cap row"""
+    Boundary: str = "a" * (MAX_TEXT_TOKENS * CHARS_PER_TOKEN)
+    assert len(Boundary) // CHARS_PER_TOKEN == MAX_TEXT_TOKENS  # the estimate at the boundary
+    assert first_drop_reason((Boundary,), RowFilters()) is None
+    assert first_drop_reason((Boundary + "a",), RowFilters()) == "max_tokens"
+
+
+def test_the_cap_fires_with_no_declared_rules() -> None:
+    """always-on: default RowFilters() sets no rules at all, yet an over-cap row must attribute
+    to max_tokens -- the cap is a platform constant, so a per-dataset config cannot waive it
+    by simply not declaring any rule"""
+    assert first_drop_reason(("word " * 7000,), RowFilters()) == "max_tokens"  # 35000 chars
+    assert first_drop_reason(("word " * 6500,), RowFilters()) is None  # 32500 chars, under the cap
+
+
+def test_the_cap_sits_between_max_text_len_and_include_regex() -> None:
+    """attribution must stay stable for US-009's per-reason counts: a row failing both the
+    declared max_text_len and the cap attributes to max_text_len (existing behavior pinned),
+    while a row failing both include_regex and the cap attributes to max_tokens (cap precedes
+    the regexes)"""
+    Big: str = "aspirin" * 5000  # 35000 chars, over the cap
+    assert first_drop_reason((Big,), RowFilters(max_text_len=1000)) == "max_text_len"
+    assert first_drop_reason((Big,), RowFilters(include_regex="metformin")) == "max_tokens"
+    # the cap wins even when the include regex MATCHES: an over-cap row never streams
+    assert first_drop_reason((Big,), RowFilters(include_regex="aspirin")) == "max_tokens"
 
 
 # ------------------------------------------------------------------ stream application --
