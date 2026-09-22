@@ -8,7 +8,9 @@ from typing import Any, ClassVar, Self
 from fastavro import reader
 
 from relmedner.constants import DATA
-from relmedner.streams import DataStream, StreamedRow
+from relmedner.models import RowFilters
+from relmedner.row_filters import first_drop_reason
+from relmedner.streams import DataStream, StreamedRow, ZeroYieldError
 
 
 class LocalAvroDataStream(DataStream):
@@ -22,10 +24,11 @@ class LocalAvroDataStream(DataStream):
 
     SOURCE: ClassVar[str] = "local"
 
-    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str) -> None:
+    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str, *, filters: RowFilters | None = None) -> None:
         # parameter order must match DatasetBase.to_tuple's field order, because build_stream
-        # unpacks the declared payload positionally: task, weight, then the local-specific path
-        super().__init__(task, weight)
+        # unpacks the declared payload positionally: task, weight, then the local-specific path;
+        # filters is keyword-only and rides the shared base __init__ (US-008)
+        super().__init__(task, weight, filters=filters)
         # the pipeline stamps every row with weights[source], so this key is LocalAvroDataset.row_key
         # verbatim: the declared path, not its basename (two distinct files may share a name and
         # must still be able to declare different weights)
@@ -36,9 +39,25 @@ class LocalAvroDataStream(DataStream):
         # the whole record ships as a single value so the receiving script owns the shape;
         # avro's reader is already lazy, so a 1M-record container never lands in memory at once
         with Path(self.path).expanduser().open("rb") as handle:
-            for record in reader(handle):
-                yield (self.name, (self.task, (record,)))
+            # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
+            if self.filters is None:
+                for record in reader(handle):
+                    yield (self.name, (self.task, (record,)))
+                return
 
+            rows_in = 0
+            rows_out = 0
+            for record in reader(handle):
+                rows_in += 1
+                # the text rule applies over the record's own values (same rule as the hf projection)
+                if first_drop_reason(tuple(record.values()), self.filters) is not None:
+                    continue
+                rows_out += 1
+                yield (self.name, (self.task, (record,)))
+            # fail-loud zero-yield guard: a filter that drops every row of a non-empty source is
+            # the silent-empty-training-set bug; an empty file (rows_in == 0) is not an error
+            if rows_in > 0 and rows_out == 0:
+                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {rows_in} rows from {self.name}")
 
 class LocalDelimitedDataStream(DataStream):
     """streams rows from a header-delimited local file (TSV/CSV picked by suffix, tab default);
@@ -62,10 +81,13 @@ class LocalDelimitedDataStream(DataStream):
         path: str | Path,
         columns_out: tuple[str, ...],
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
+        *,
+        filters: RowFilters | None = None,
     ) -> None:
         # positional contract: the payload LocalDelimitedDataset.to_tuple produces (model field
-        # order minus source); registry.build_stream splats it into this __init__
-        super().__init__(task, weight)
+        # order minus source); registry.build_stream splats it into this __init__;
+        # filters is keyword-only and rides the shared base __init__ (US-008)
+        super().__init__(task, weight, filters=filters)
         # the DECLARED path, not the resolved one and not its stem: the pipeline stamps every row
         # with weights[source], so this key is LocalDelimitedDataset.row_key verbatim, and two
         # distinct files sharing a basename must still be able to declare different weights
@@ -93,6 +115,25 @@ class LocalDelimitedDataStream(DataStream):
             raise FileNotFoundError(f"local source file not found: {self.path}")
         delimiter: str = self.DELIMITERS.get(self.path.suffix, "\t")
         with self.path.open(newline="", encoding="utf-8") as handle:
+            # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
+            if self.filters is None:
+                for row in csv.DictReader(handle, delimiter=delimiter):
+                    if self.apply_match(row):
+                        yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))
+                return
+
+            rows_in = 0
+            rows_out = 0
             for row in csv.DictReader(handle, delimiter=delimiter):
-                if self.apply_match(row):
-                    yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))
+                if not self.apply_match(row):
+                    continue
+                rows_in += 1
+                values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
+                if first_drop_reason(values, self.filters) is not None:
+                    continue
+                rows_out += 1
+                yield (self.name, (self.task, values))
+            # fail-loud zero-yield guard: a filter that drops every row of a non-empty source is the
+            # silent-empty-training-set bug; a genuinely empty file (rows_in == 0) is not an error
+            if rows_in > 0 and rows_out == 0:
+                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {rows_in} rows from {self.name}")

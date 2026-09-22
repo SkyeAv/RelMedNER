@@ -301,7 +301,7 @@ def test_x_defaults_declared_after_datasets() -> None:
     """model_fields declaration order is the positional contract frozen by DatasetBase.to_tuple()
     and the EXPECTED locks; appending (never inserting or renaming) is the only safe model change,
     so a future reorder fails loudly here"""
-    assert tuple(YamlIngests.model_fields) == ("datasets", "x_defaults")
+    assert tuple(YamlIngests.model_fields) == ("datasets", "x_defaults", "gazetteer")
 
 
 @pytest.mark.parametrize(
@@ -354,7 +354,11 @@ def test_huggingface_json_dataset_pins_the_positional_payload_contract() -> None
         columns_out=["tokenized_text", "ner"],
     )
 
-    assert list(HuggingFaceJsonDataset.model_fields) == ["task", "weight", "source", "dataset", "file", "split", "match_on", "columns_out"]
+    # "filters" joined DatasetBase after this lock was written, and it sits in
+    # NON_PAYLOAD_FIELDS precisely so an appended field cannot shift a payload position:
+    # model_fields carries it, tuple_fields (the packing order asserted below) does not.
+    assert list(HuggingFaceJsonDataset.model_fields) == ["task", "weight", "filters", "source", "dataset", "file", "split", "match_on", "columns_out"]
+    assert HuggingFaceJsonDataset.tuple_fields == ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
     assert Entry.to_tuple() == (
         "hf_json",
         (
