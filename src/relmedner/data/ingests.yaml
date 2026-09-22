@@ -246,3 +246,36 @@ datasets:
     weight: *weight
     dataset: ruslan/bioleaflets-biomedical-ner
     columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
+  # agentlans/json-extraction: six per-source script ingests off one repo id (shared row key, all
+  # weight 1.0 via the shared anchor). The hub `all` config is the exact union of these six and
+  # is deliberately NOT declared: it would double-stream every row.
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: owkin-medical_knowledge_from_extracts
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, relations]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: ProfessorBob-relation_extraction
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: roborovski-dolly-entity-extraction
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: sandeeppanem-resume-json-extraction-5k
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: Jiraya-html_to_json_information_extraction_dataset
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: HenriqueGodoy-extract-0
+    columns_out: [text, json, source]
