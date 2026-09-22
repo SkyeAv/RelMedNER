@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from fastavro import parse_schema, writer
 
+from relmedner.constants import DATA
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
 from relmedner.models import RunConfig
 from relmedner.registry import SOURCE_REGISTRY, build_stream
@@ -25,6 +26,8 @@ SCHEMA: dict[str, Any] = {
 
 AVRO_TASK: tuple[Any, ...] = ("script", "CtkpInterventionsScript", ("entities",))
 WEIGHT: float = 1.0
+# the operator-built CTKP corpus declared in ingests.yaml; the container itself is gitignored
+PACKAGED_CORPUS: str = "interventions/interventions.avro"
 
 
 def write_avro(path: Path, records: list[dict[str, Any]]) -> Path:
@@ -72,6 +75,42 @@ def test_the_path_expands_a_user_relative_declaration(tmp_path: Path, monkeypatc
     assert [values[0]["name"] for _source, (_task, values) in Streamed] == ["metformin"]
 
 
+def test_cwd_relative_and_absolute_paths_that_exist_win_over_the_package_data_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """an existing file beats the package data dir however the path is spelled; the tilde spelling
+    is covered by test_the_path_expands_a_user_relative_declaration, so this pins the CWD-relative
+    winner (kept as declared, not absolutized) and the absolute winner"""
+    write_avro(tmp_path / "mine.avro", [{"name": "warfarin", "description": None}])
+    monkeypatch.chdir(tmp_path)
+
+    Relative = LocalAvroDataStream(AVRO_TASK, WEIGHT, "mine.avro")
+
+    assert Relative.path == Path("mine.avro")
+    assert [values[0]["name"] for _source, (_task, values) in Relative.rows()] == ["warfarin"]
+
+    Absolute: Path = write_avro(tmp_path / "absolute.avro", [{"name": "digoxin", "description": None}])
+    FromRoot = LocalAvroDataStream(AVRO_TASK, WEIGHT, str(Absolute))
+
+    assert FromRoot.path == Absolute
+    assert [values[0]["name"] for _source, (_task, values) in FromRoot.rows()] == ["digoxin"]
+
+
+def test_the_declared_relative_path_falls_back_to_the_package_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the resolution rule the delimited stream keeps: a declared relative path with no file under
+    the caller's CWD resolves against the package data dir, while the row key stays the DECLARED
+    string because that is what the weight lookup keys on"""
+    monkeypatch.chdir(tmp_path)
+    Corpus: Path = tmp_path / "packaged" / "corpora" / "thing.avro"
+    Corpus.parent.mkdir(parents=True)
+    write_avro(Corpus, [{"name": "ondansetron", "description": None}])
+    monkeypatch.setattr("relmedner.local.DATA", tmp_path / "packaged")
+
+    Stream = LocalAvroDataStream(AVRO_TASK, WEIGHT, "corpora/thing.avro")
+
+    assert Stream.name == "corpora/thing.avro"
+    assert Stream.path == Corpus
+    assert [source for source, _payload in Stream.rows()] == ["corpora/thing.avro"]
+
+
 def test_records_stream_lazily_rather_than_materializing_the_container(tmp_path: Path) -> None:
     """the declared avro is ~1M records, so rows() must stay a generator over the reader"""
     Target: Path = write_avro(tmp_path / "lazy.avro", [{"name": f"drug {index}", "description": None} for index in range(100)])
@@ -79,6 +118,67 @@ def test_records_stream_lazily_rather_than_materializing_the_container(tmp_path:
 
     assert isinstance(Rows, io.IOBase) is False
     assert next(iter(Rows))[1][1][0]["name"] == "drug 0"
+
+
+def test_missing_containers_raise_file_not_found() -> None:
+    """a fresh clone has no gitignored corpus blob, so a declaration resolving to nothing must
+    fail loud at stream time instead of silently yielding zero training rows"""
+    Missing = LocalAvroDataStream(AVRO_TASK, WEIGHT, "/nonexistent/definitely-missing.avro")
+
+    with pytest.raises(FileNotFoundError):
+        list(Missing.rows())
+
+
+def test_the_container_probe_survives_an_unreadable_parent_directory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """hermetic twin of test_missing_containers_raise_file_not_found: on the remote box
+    /nonexistent exists as an unsearchable directory, so python 3.13 pathlib raises
+    PermissionError from the is_file() probe instead of returning False, and the host
+    filesystem cannot be relied on to produce the failure. The probe is forced to raise
+    here so the OSError-guard in rows() stays pinned: an unreadable path is not a usable
+    file either way, and the declared error is FileNotFoundError naming the resolved path
+    (the same contract LocalDelimitedDataStream.rows keeps)"""
+    Missing = LocalAvroDataStream(AVRO_TASK, WEIGHT, "/nonexistent/definitely-missing.avro")
+
+    def raise_permission_denied(self: Path) -> bool:
+        raise PermissionError(f"parent directory not searchable: {self}")
+
+    monkeypatch.setattr(Path, "is_file", raise_permission_denied)
+
+    with pytest.raises(FileNotFoundError):
+        list(Missing.rows())
+
+
+def test_the_packaged_interventions_declaration_resolves_against_the_package_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """runs with or without the blob on disk: from a CWD that lacks the declared corpus the
+    packaged relative path must resolve into the package data dir under its declared name"""
+    monkeypatch.chdir(tmp_path)
+
+    Stream = LocalAvroDataStream(AVRO_TASK, WEIGHT, PACKAGED_CORPUS)
+
+    assert Stream.path == Path(str(DATA)) / PACKAGED_CORPUS
+    assert Stream.name == PACKAGED_CORPUS
+
+
+@pytest.mark.skipif(
+    not (Path(str(DATA)) / PACKAGED_CORPUS).is_file(),
+    reason="the interventions corpus is a gitignored out-of-band 92MB operator artifact",
+)
+def test_the_packaged_interventions_corpus_streams_its_first_record(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """pins the deployed corpus behind the declared ingest. Skips on a fresh clone: the container
+    is a gitignored out-of-band operator artifact (92MB, incompressible), the same convention as
+    the fullmap-dependent skips documented in README.md; the resolution half of the contract is
+    asserted unconditionally by
+    test_the_packaged_interventions_declaration_resolves_against_the_package_data_dir. Reads
+    exactly one record lazily -- list() over the ~1M-record container would be the
+    materialization bug test_records_stream_lazily_rather_than_materializing_the_container
+    guards against."""
+    monkeypatch.chdir(tmp_path)
+    Stream = LocalAvroDataStream(AVRO_TASK, WEIGHT, PACKAGED_CORPUS)
+
+    assert Stream.path == Path(str(DATA)) / PACKAGED_CORPUS
+    First: dict[str, Any] = next(iter(Stream.rows()))[1][1][0]
+
+    assert First["nct_id"] == "NCT04295564"
 
 
 # ------------------------------------------------------------------- local_delimited (tsv) --

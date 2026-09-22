@@ -185,7 +185,7 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `source` | yes | none | literal `local` | selects `LocalDataset` |
-| `path` | yes | none | filesystem path | avro container built out-of-band; `~` is expanded with `expanduser` at stream time. The whole record ships to the declared script; there is no `columns_out` projection because the file's own schema is the contract. Doubles as the row key for weight stamping |
+| `path` | yes | none | filesystem path | avro container built out-of-band. Used as declared when it names an existing file (absolute, `~`-expanded, or relative to the caller's CWD); otherwise resolved against the package data dir (`relmedner.constants.DATA`). The whole record ships to the declared script; there is no `columns_out` projection because the file's own schema is the contract. Doubles as the row key for weight stamping |
 
 ### `match_on` entries (`MatchOn`)
 
@@ -312,10 +312,14 @@ datasets:
 datasets:
   - task: {type: script, name: CtkpInterventionsScript, outputs: [entities]}
     source: local
-    path: ~/Desktop/interventions.avro
+    path: interventions/interventions.avro
 ```
 
-`path` keeps the `~`; expansion happens at stream time, not at parse time.
+`path` is used as declared when it names an existing file -- absolute, `~`-expanded via
+`expanduser`, or relative to the caller's CWD -- and resolves against the package data dir
+(`relmedner.constants.DATA`) otherwise; `local_delimited` follows the same rule. Resolution
+happens when the stream is built, not when the YAML is parsed, and a path that resolves to no
+existing file raises `FileNotFoundError` when its rows are read, never a silent empty stream.
 
 (d) hf_json preview. LANDS VIA THE pubmed-abstracts-ner PR -- NOT VALID UNTIL
 THEN: the current models have no `hf_json` source, and the `x-defaults` field

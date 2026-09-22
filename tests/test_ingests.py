@@ -125,12 +125,12 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
     # tuple is deliberately shorter than the hf ones above (it still carries the weight field, which
     # DatasetBase declares for every source)
-    "~/Desktop/interventions.avro": (
+    "interventions/interventions.avro": (
         "local",
         (
             ("script", "CtkpInterventionsScript", ("entities",)),
             1.0,
-            "~/Desktop/interventions.avro",
+            "interventions/interventions.avro",
         ),
     ),
     "knowledgator/sentence_rex": (

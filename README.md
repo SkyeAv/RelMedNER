@@ -48,7 +48,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `TrialPanorama/TrialPanorama-database` (`studies`) | `fullmap` (max_ngram=6, taxon=9606) | `abstract` | entities, relations | 1,332,141 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
-| `~/Desktop/interventions.avro` (local) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `interventions/interventions.avro` (local package data) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 | `qualifiers/qualifier_corpus.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
 | `aps/super_glue` (`multirc`) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 | `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
@@ -267,9 +267,21 @@ biolink classes (SmallMolecule, Procedure, Drug, Device, BehavioralFeature,
 ChemicalEntity, DiagnosticAid, Protein, BiologicalEntity, MolecularMixture, Food,
 GenomicEntity).
 
-The declared `path` is expanded with `expanduser` at stream time. To point at a different
-snapshot, edit `path` in `src/relmedner/data/ingests.yaml`; the rebuild scripts live on
-wenceslaus at `/users/sgoetz/ctkp-staging/`.
+The declared `path` is `interventions/interventions.avro`: used as declared when it names an
+existing file (absolute, `~`-expanded, or relative to the caller's CWD), otherwise resolved
+against the package data dir (`relmedner.constants.DATA`), the same rule `local_delimited`
+follows. The container itself is gitignored -- 92.6MB of already-compressed avro, past GitHub's
+50MB warning, rebuilt per AACT snapshot -- and is dropped at
+`src/relmedner/data/interventions/interventions.avro`. A fresh clone therefore has no blob, and
+the stream fails with `FileNotFoundError` rather than silently yielding nothing. `uv_build`
+ships every file under the package dir, so a built wheel (and the worker image built from
+`dist/`) carries the corpus -- that is what makes `source: local` runnable on the Flink
+cluster. Rebuilding: `build_ctkp2.sh` joins the AACT `interventions` and
+`intervention_other_names` tables against the KP's `interventions_mapped`,
+`interventions_unmapped`, `interventions_synonyms`, and `interventions_synonyms_restored` into
+`combined2.tsv`, then `tsv_to_avro2.py` converts `combined2.tsv` into `interventions.avro`;
+both scripts live on wenceslaus at `/users/sgoetz/ctkp-staging/`. To point at a different
+snapshot, edit `path` in `src/relmedner/data/ingests.yaml`.
 
 ## TrialPanorama database
 
