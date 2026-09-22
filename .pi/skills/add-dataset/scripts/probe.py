@@ -194,6 +194,9 @@ def project(row: Any, columns: tuple[str, ...]) -> tuple[Any, ...]:
     for a raw hub row"""
     record = as_dict(row)
     if record is not None:
+        if not columns:
+            # local sources (avro/whole-record) ship the record as a 1-tuple; there is no projection
+            return (record,)
         return tuple(record.get(name) for name in columns)
     return tuple(row)
 
@@ -350,7 +353,7 @@ def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outp
     relations = 0
     for row in rows:
         values = project(row, columns)
-        if len(values) != len(columns) and as_dict(row) is not None:
+        if len(values) != len(columns) and columns and as_dict(row) is not None:
             say("DISPATCH_ERROR", "--script over a raw hub row needs --columns matching the intended columns_out")
             return
         _, example = Script.dispatch(script, (outputs, values))

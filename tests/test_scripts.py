@@ -2090,3 +2090,21 @@ def test_the_bioleaflets_script_never_pairs_mentions_across_sections(monkeypatch
     assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
     assert Example.relations == []
     assert Example.populated() == frozenset({"entities"})
+
+
+def test_the_synthetic_ner_ade_tweets_script_registers_under_its_declared_name() -> None:
+    """self-registration via Script.__init_subclass__ is the dispatch contract; the ingest yaml
+    resolves scripts by NAME, so a mismatched key would silently break routing (US-001)"""
+    from relmedner.scripts import SyntheticNerAdeTweetsScript
+
+    assert isinstance(Script.REGISTRY["SyntheticNerAdeTweetsScript"], SyntheticNerAdeTweetsScript)
+    assert Script.REGISTRY["SyntheticNerAdeTweetsScript"].NAME == "SyntheticNerAdeTweetsScript"
+
+
+def test_the_scripts_package_exports_every_script_sorted_and_script_only() -> None:
+    """__all__ is the package's public surface: alphabetical so additions have one right place,
+    and Script instances only so a stray helper cannot leak into registry-driven dispatch (US-001)"""
+    import relmedner.scripts as scripts
+
+    assert scripts.__all__ == sorted(scripts.__all__)
+    assert all(issubclass(getattr(scripts, name), Script) for name in scripts.__all__)

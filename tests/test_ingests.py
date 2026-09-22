@@ -256,6 +256,18 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             None,
         ),
     ),
+    # local avro script ingest: same short-tuple shape as interventions above (no subset/split,
+    # no columns_out; DatasetBase still carries the weight)
+    "synthetic-ner-ade-tweets/ade_tweets.avro": (
+        "local",
+        (("script", "SyntheticNerAdeTweetsScript", ("entities",)), 1.0, "synthetic-ner-ade-tweets/ade_tweets.avro"),
+    ),
+    # local delimited fullmap ingest: same shape as qualifiers above (columns_out joins the tuple,
+    # match_on stays None)
+    "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv": (
+        "local_delimited",
+        (("fullmap", 6, "9606", True, ("entities", "relations")), 1.0, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
+    ),
     # nvidia/Nemotron-PII declares one ingest PER SPLIT off one repo id: entry_key qualifies on the
     # split when no subset is declared, so the two locks coexist instead of silently overwriting
     "nvidia/Nemotron-PII:train": (

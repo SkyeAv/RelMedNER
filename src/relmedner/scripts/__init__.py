@@ -11,6 +11,7 @@ from relmedner.scripts.pubmed_abstracts import PubmedAbstractsScript
 from relmedner.scripts.sentence_rex import SentenceRexScript
 from relmedner.scripts.super_glue_multirc import SuperGlueMultiRCScript
 from relmedner.scripts.super_glue_record import SuperGlueRecordScript
+from relmedner.scripts.synthetic_ner_ade_tweets import SyntheticNerAdeTweetsScript
 
 __all__ = [
     "BioleafletsScript",
@@ -26,4 +27,5 @@ __all__ = [
     "SentenceRexScript",
     "SuperGlueMultiRCScript",
     "SuperGlueRecordScript",
+    "SyntheticNerAdeTweetsScript",
 ]
