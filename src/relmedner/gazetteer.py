@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import logging
 import string
 from collections.abc import Mapping
 
+from pydantic import ValidationError
 from tablassert.biolink import Predicates, Qualifiers
 
 from relmedner.constants import JUNKY_CATEGORIES, NEGATIVE_NAME_PREFIX
-from relmedner.models import Relation, RelationField
+from relmedner.models import GazetteerSpec, Relation, RelationField
 from relmedner.utils import PredicateRangeGate, ScriptUtils
 
 SENTENCE_BREAKS: frozenset[str] = frozenset({".", ";"})
@@ -20,7 +22,10 @@ MAX_TRIGGER_DISTANCE: int = 15
 # puts the patient/condition head first. High-noise phrases ("in patients with", bare "during",
 # bare "before", "within the", "levels in", "related to") were dropped after sampling showed
 # they mostly emit co-occurrence rather than the predicate they claim.
-PREDICATE_TRIGGERS: Mapping[str, tuple[tuple[str, ...], ...]] = {
+# WHY a separate BUILTIN constant: configure_gazetteer rebuilds the mutable PREDICATE_TRIGGERS
+# table from this constant plus the YAML-declared predicates on every parse, so the builtin
+# arm must survive reconfiguration untouched (US-010)
+BUILTIN_PREDICATE_TRIGGERS: Mapping[str, tuple[tuple[str, ...], ...]] = {
     "treats": (
         ("treats",),
         ("to", "treat"),
@@ -197,6 +202,86 @@ PREDICATE_TRIGGERS: Mapping[str, tuple[tuple[str, ...], ...]] = {
         ("seen", "in"),
     ),
 }
+
+PREDICATE_TRIGGERS: dict[str, tuple[tuple[str, ...], ...]] = dict(BUILTIN_PREDICATE_TRIGGERS)
+"""the live trigger table find_triggers scans; rebuilt from BUILTIN_PREDICATE_TRIGGERS plus the
+last-parsed YAML section by configure_gazetteer (last-parse-wins), never mutated in place"""
+
+_EMISSIONS: dict[str, int] = {}
+"""per-YAML-declared-predicate emission counts, reset by every configure_gazetteer call; builtin
+predicates are not tracked (their yield is already pinned by test_gazetteer.py's phrase locks)"""
+
+_REPORTED_ZERO: set[str] = set()
+"""declared predicates already warned about, so a corpus emits ONE WARNING per zero-yielding key,
+not one per reporting call"""
+
+_GAZETTEER_LOG = logging.getLogger("relmedner.gazetteer")
+
+
+def configure_gazetteer(spec: GazetteerSpec | None) -> None:
+    """rebuild the module trigger tables from BUILTIN_PREDICATE_TRIGGERS plus the YAML-declared
+    predicates; called exactly once per parse from YamlIngestsParser.parse_ingests so the tables
+    always reflect the last parsed ingests.yaml. Pure rebuild and idempotent: spec=None (the
+    default when ingests.yaml declares no gazetteer section) leaves the tables equal to the
+    builtins. The merge is ADDITIVE -- YAML phrases join the predicate they name and new
+    predicate keys are added -- and every phrase claimed by two owners (builtin-vs-YAML or
+    YAML-vs-YAML) raises a ValidationError naming both owners. WHY module tables instead of an
+    injected parameter: find_triggers reads the module global, so a rebuild keeps every existing
+    call site (fullmap_mine, tests) correct without threading state through the pipeline.
+    Qualifiers and negation_cues are structurally validated by GazetteerSpec, but their scanner
+    machinery lands with PR #22 (add-qualifiers-to-relationship-pipelines): declaring them here
+    raises NotImplementedError naming that PR rather than silently accepting and ignoring them.
+    """
+    global PREDICATE_TRIGGERS, _EMISSIONS, _REPORTED_ZERO
+    if spec is not None and (spec.qualifiers or spec.negation_cues):
+        raise NotImplementedError(
+            "gazetteer qualifiers/negation_cues are declared but the qualifier/negation scanner "
+            "machinery is not in this tree -- it lands with PR #22 "
+            "(add-qualifiers-to-relationship-pipelines). Structural validation only until then."
+        )
+    merged: dict[str, tuple[tuple[str, ...], ...]] = {predicate: tuple(phrases) for predicate, phrases in BUILTIN_PREDICATE_TRIGGERS.items()}
+    declared: list[str] = []
+    if spec is not None and spec.predicates is not None:
+        owners: dict[tuple[str, ...], str] = {phrase: predicate for predicate, phrases in BUILTIN_PREDICATE_TRIGGERS.items() for phrase in phrases}
+        for entry in spec.predicates:
+            declared.append(entry.name)
+            existing: tuple[tuple[str, ...], ...] = merged.get(entry.name, ())
+            additions: list[tuple[str, ...]] = []
+            for phrase in entry.triggers:
+                key = tuple(phrase)
+                owner = owners.setdefault(key, entry.name)
+                if owner != entry.name:
+                    raise _spec_validation_error(
+                        f"phrase {key!r} is claimed by both {owner!r} (builtin or earlier YAML entry) and YAML predicate {entry.name!r}"
+                    )
+                if key not in existing and key not in additions:
+                    additions.append(key)
+            merged[entry.name] = existing + tuple(additions)
+    validate_trigger_table(merged)
+    PREDICATE_TRIGGERS = merged
+    _EMISSIONS = {name: 0 for name in declared}
+    _REPORTED_ZERO = set()
+
+
+def _spec_validation_error(message: str) -> ValidationError:
+    """configure-time ownership conflicts surface with the same pydantic ValidationError shape
+    model parsing raises, so callers catch one error type for every gazetteer-section bug"""
+    return ValidationError.from_exception_data(
+        "GazetteerSpec",
+        [{"type": "value_error", "loc": ("gazetteer", "predicates"), "input": None, "ctx": {"error": ValueError(message)}}],
+    )
+
+
+def report_zero_emission_triggers() -> None:
+    """log ONE WARNING per YAML-declared predicate that has emitted zero relations so far, on the
+    relmedner.gazetteer logger. Called from FullmapMiner.resolve_batch (fullmap mining's
+    completion point): batches report incrementally and _REPORTED_ZERO guarantees exactly one
+    WARNING per key per process, so a zero-yielding declared trigger can never ship a silent
+    empty relation arm (the US-009 zero-yield lesson applied to the gazetteer)"""
+    for name, count in _EMISSIONS.items():
+        if count == 0 and name not in _REPORTED_ZERO:
+            _REPORTED_ZERO.add(name)
+            _GAZETTEER_LOG.warning("gazetteer predicate %r declared in ingests.yaml emitted zero relations", name)
 
 
 def validate_trigger_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> None:
@@ -456,6 +541,8 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
                 evidence="asserted",
             )
         )
+        if predicate in _EMISSIONS:
+            _EMISSIONS[predicate] += 1
         endpoints.extend((head, tail))
         tails.add(tail)
     relations.extend(_qualifiers(tokens, mention_spans, endpoints, frozenset(tails)))

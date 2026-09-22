@@ -34,6 +34,7 @@ the loader does not accept it.
 | --- | --- | --- | --- | --- |
 | `datasets` | yes | none | non-empty list of dataset entries (discriminated on `source`) | the declared datasets, in pipeline order |
 | `x_defaults` (yaml key `x-defaults`) | no | absent | arbitrary map | anchor host only; validated but never semantically read (see below) |
+| `gazetteer` | no | absent | `GazetteerSpec` block (see below) | additive overlay over the builtin relation-gazetteer trigger tables; rebuilt from builtins + this section on every parse |
 
 ### The `x-defaults` convention
 
@@ -52,6 +53,70 @@ schema key.
   alias an alias); every entry still names its dataset id, its task (script name
   or `fullmap` type), and its `columns_out`; anything an entry merges
   (source/split/weight) stays visible under `x-defaults`.
+
+### The `gazetteer` section (`GazetteerSpec`)
+
+Optional top-level overlay on the relation gazetteer (`relmedner.gazetteer`) that fullmap mining
+scans for `evidence="distant"` relations. Parsed by `YamlIngestsParser.parse_ingests` and applied
+through `configure_gazetteer`, which REBUILDS the module trigger tables from the builtin
+constants plus this section on every parse (last-parse-wins, idempotent); omitting the section
+entirely leaves the builtin tables exactly as shipped. A section that declares none of its arms
+(`gazetteer: {}`) is a validation error, not a no-op.
+
+Merge rules (fail-loud, enforced at parse/configure time):
+
+- ADDITIVE only: YAML `triggers` join the builtin phrases of the predicate they name, and a
+  predicate name with no builtin entry is added outright. Nothing here can remove or shadow a
+  builtin phrase.
+- One phrase, one owner. A phrase claimed by two owners (YAML-vs-builtin or YAML-vs-YAML) fails
+  with a `ValidationError` naming both owners, because the longest-match scanner would otherwise
+  make the winner depend on table order.
+- `name` must be a member of `tablassert.biolink.Predicates`; phrases must be non-empty, with
+  non-empty, all-lowercase tokens (matching is against the lowercased token stream). An unknown
+  key anywhere in the section fails validation (`extra="forbid"`).
+- Zero-emission loudness: every YAML-declared predicate gets an emission counter, and a predicate
+  that emitted zero relations by the end of mining logs ONE WARNING on the stdlib logger
+  `relmedner.gazetteer`, so a mistyped trigger phrase can never silently ship an empty relation
+  arm. Builtin predicates are not tracked (their yield is pinned by `tests/test_gazetteer.py`).
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `predicates` | no | absent | list of `GazetteerPredicate` | additive predicate arms (the only arm wired to the scanner in this tree) |
+| `qualifiers` | no | absent | list of `GazetteerQualifier` | LANDS WITH PR #22: structurally validated only until then (see below) |
+| `negation_cues` | no | absent | list of phrase lists | LANDS WITH PR #22: structurally validated only until then (see below) |
+
+`GazetteerPredicate`:
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `name` | yes | none | must be a `tablassert.biolink.Predicates` member | the predicate the phrases trigger |
+| `triggers` | yes | none | non-empty list of phrase lists; phrases non-empty, tokens non-empty and all-lowercase | the gap n-grams (1-6 tokens, no sentence break) that fire this predicate |
+
+`GazetteerQualifier`:
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `slot` | yes | none | non-empty string | the biolink qualifier slot these triggers fill |
+| `range` | no | absent | string | optional value range for the slot |
+| `triggers` | no | empty | same phrase rules as `GazetteerPredicate.triggers` | the phrases that fill this qualifier |
+
+Qualifiers and negation: the qualifier/negation scanner machinery (`QUALIFIER_TRIGGERS`,
+`QUALIFIER_RANGES`, `DISABLED_QUALIFIERS`, the biolink `Qualifiers` membership and disabled-slot
+checks) lives on the `add-qualifiers-to-relationship-pipelines` branch and lands with PR #22.
+Until then, `qualifiers` and `negation_cues` are STRUCTURALLY validated at parse time (shape,
+phrase rules above) but `configure_gazetteer` raises a structured `NotImplementedError` naming
+PR #22 the moment either arm is declared: fail-loud, never silent accept-and-ignore. When PR #22
+merges, the same models extend to full validation without a YAML-format change.
+
+Copy-paste example (adds "cures" as a `treats` trigger):
+
+```yaml
+gazetteer:
+  predicates:
+    - name: treats
+      triggers:
+        - [cures]
+```
 
 ### Task blocks
 

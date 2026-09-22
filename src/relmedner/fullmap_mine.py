@@ -53,7 +53,7 @@ from relmedner.constants import (
     MIN_UNIGRAM_LENGTH,
     NONHUMAN_PREFIXES,
 )
-from relmedner.gazetteer import extract_relations
+from relmedner.gazetteer import extract_relations, report_zero_emission_triggers
 from relmedner.models import Entity, FullmapTask, Relation, TrainingExample
 from relmedner.utils import ResolvedMention, ScriptUtils
 
@@ -196,11 +196,13 @@ class FullmapMiner:
     def resolve_batch(cls, rows: list[tuple[str, FullmapTask]], db: Path | None = None) -> list[TrainingExample]:
         """rows of (text, task) -> one shared redb round trip -> one TrainingExample each"""
         if not rows:
+            report_zero_emission_triggers()
             return []
         db = db or cls.db()
         candidate_groups = [cls.ngram_candidates(doc, text, task.max_ngram) for doc, (text, task) in enumerate(rows)]
         flat = [candidate for group in candidate_groups for candidate in group]
         if not flat:
+            report_zero_emission_triggers()
             return [TrainingExample(text=text) for text, _task in rows]
         norm = rs.normalize_terms([candidate.key for candidate in flat])
         distinct = sorted({key for key in norm if key})
@@ -215,6 +217,7 @@ class FullmapMiner:
             entities = cls._entities(spans)
             relations = cls._relations(tokens, spans) if task.relations else []
             mined.append(TrainingExample(text=" ".join(tokens), entities=entities, relations=relations))
+        report_zero_emission_triggers()
         return mined
 
     @classmethod
