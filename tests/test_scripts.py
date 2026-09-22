@@ -530,6 +530,38 @@ def test_the_pubmed_script_emits_gazetteer_relations_over_resolved_categories(mo
     assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
 
 
+def test_pubmed_coverage_push_pins_the_measured_raw_headings() -> None:
+    """US-004 raw-origin coverage rule: with the US-002 seed map 51,684 of 383,721 full-corpus
+    spans land in raw origin over 1,637 headings, and every heading with >=30 raw-origin spans
+    whose actual mention surfaces fit one real biolink class is mapped (measured coverage 44.2%
+    after the US-004 expansion: the residual raw
+    tail is dominated by headings with NO faithful class -- 'Investigative Techniques' is 94%
+    the surfaces 'methods'/'METHODS', 'Group Processes' is 99.7% 'role' with no biolink Role
+    class, 'Chemical Phenomena'/'Genetic Phenomena' are mixed-category -- which stay unmapped
+    because a wrong bucket silently mislabels training data). Pins the top measured raw
+    headings to their chosen classes AND the monsters' absence, so a future edit can neither
+    silently gut the coverage rule nor force-fit an unfaithful mapping; pure-data, no DB
+    (import-time validate_label_map separately pins every value to a real biolink class)"""
+    from relmedner.scripts import PubmedAbstractsScript
+
+    label_map = PubmedAbstractsScript.LABEL_MAP
+    assert label_map["metabolism"] == "BiologicalProcess"
+    assert label_map["genetic variation"] == "SequenceVariant"
+    assert label_map["food and beverages"] == "Food"
+    assert label_map["vertebrates"] == "Vertebrate"
+    assert label_map["neoplasms, glandular and epithelial"] == "Disease"
+    assert label_map["body temperature changes"] == "PhenotypicFeature"
+    assert label_map["white people"] == "PopulationOfIndividualOrganisms"
+    assert label_map["drug resistance"] == "PhenotypicFeature"
+    assert label_map["brain"] == "AnatomicalEntity"
+    assert label_map["epithelial cells"] == "CellLine"
+    assert label_map["dna repair"] == "BiologicalProcess"
+    assert label_map["butyrates"] == "ChemicalEntity"
+    assert len(label_map) == 211
+    for unmapped in ("investigative techniques", "group processes", "chemical phenomena", "genetic phenomena"):
+        assert unmapped not in label_map, f"{unmapped!r} has no faithful class and must stay unmapped"
+
+
 def expected_relation(name: str, head: str, tail: str) -> Relation:
     """emitted relations carry their biolink slot description; build the matching expectation"""
     return Relation(
