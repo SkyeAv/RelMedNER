@@ -63,6 +63,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    "TrialPanorama/TrialPanorama-database": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            "TrialPanorama/TrialPanorama-database",
+            "studies",
+            "all",
+            None,
+            ("abstract",),
+        ),
+    ),
     # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
     # tuple is deliberately shorter than the hf ones above
     "~/Desktop/interventions.avro": (

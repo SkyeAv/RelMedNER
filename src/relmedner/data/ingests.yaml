@@ -64,3 +64,14 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: TrialPanorama/TrialPanorama-database
+    subset: studies
+    split: all
+    columns_out:
+      - abstract
