@@ -18,3 +18,4 @@ dist/
 # section of README.md.
 src/relmedner/data/interventions/*.avro
 src/relmedner/data/synthetic-ner-ade-tweets/*.avro
+src/relmedner/data/synthetic-ner-ade-tweets/*.tsv

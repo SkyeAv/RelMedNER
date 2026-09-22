@@ -2090,6 +2090,8 @@ def test_the_bioleaflets_script_never_pairs_mentions_across_sections(monkeypatch
     assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
     assert Example.relations == []
     assert Example.populated() == frozenset({"entities"})
+
+
 def test_the_synthetic_ner_ade_tweets_script_registers_under_its_declared_name() -> None:
     """self-registration via Script.__init_subclass__ is the dispatch contract; the ingest yaml
     resolves scripts by NAME, so a mismatched key would silently break routing (US-001)"""
