@@ -6,17 +6,14 @@ out-of-band (`source: local`, see [CTKP interventions](#ctkp-interventions)). Tw
 types share one declarative pipeline:
 
 - **script tasks** — datasets that already carry gold spans
-  (`anthonyyazdaniml/gliner-biomed-pre-training`, the IOB-formatted
-  `disi-unibo-nlp/Pile-NER-biomed-IOB`, the conversation-QA
-  `Universal-NER/Pile-NER-type`, the multi-task
-  `anthonyyazdaniml/gliner-biomed-post-training`, and the relation-tagged
-  `knowledgator/sentence_rex`); spans are relabeled to biolink classes
+  (every `script` row in the [ingest table](#ingests), which is the list that stays current as
+  corpora are added); spans are relabeled to biolink classes
   via tablassert `Categories` and local fullmap resolution, and relations are
   distant-supervised through a biolink-predicate gazetteer matched between mention surfaces.
-  The post-training corpus additionally carries native gold relations and sampled
-  negatives, and splits into per-row task families (below). `knowledgator/sentence_rex`
-  instead carries gold relations with both participant spans marked inline (`<e1>`/`<e2>`
-  tags) and labels kept native.
+  Two corpora deviate: the multi-task `anthonyyazdaniml/gliner-biomed-post-training`
+  additionally carries native gold relations and sampled negatives, and splits into per-row
+  task families (below), while `knowledgator/sentence_rex` carries gold relations with both
+  participant spans marked inline (`<e1>`/`<e2>` tags) and labels kept native.
 - **fullmap tasks** — unlabeled text (e.g.
   `anthonyyazdaniml/gliner-biomed-curated-corpus` and the downsampled, class-balanced
   `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus`, a strict 158,890-row subset of
@@ -33,6 +30,9 @@ types share one declarative pipeline:
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` -> `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
 | `Universal-NER/Pile-NER-type` | `script` -> `PileNerTypeScript` | `conversations` | entities | 45,889 |
 | `knowledgator/sentence_rex` | `script` -> `SentenceRexScript` | `sentences`, `labels` | relations | 44,115 |
+| `anthonyyazdaniml/gliner-biomed-pre-training` | `script` → `GlinerBiomedScript` | `tokenized_text`, `ner` | entities, relations | 98,659 |
+| `disi-unibo-nlp/Pile-NER-biomed-IOB` | `script` → `PileNerBiomedScript` | `tokens`, `ner_tags` | entities | 58,861 |
+| `knowledgator/biomed_NER` | `script` -> `KnowledgatorBiomedScript` | `text`, `entities` | entities | 4,840 |
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 418,381 |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 158,890 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | — |
@@ -86,6 +86,17 @@ while appearing once in the entity list. The type vocabulary is open-ended GPT o
 collapsing on the lowercased fallback lookup); head labels ride the dataset-local
 `LABEL_MAP` and the tail stays PascalCased raw. `Organization`, `Product` and `CreativeWork`
 are not biolink classes, so `organization` maps to `Agent` and `product` stays a raw tail.
+
+Dataset-format notes (`KnowledgatorBiomedScript`, dataset `knowledgator/biomed_NER`): rows are raw untokenized text plus
+character-offset entity structs (`{start, end, class}`, end exclusive); char spans bridge to token
+spans through `ScriptUtils.char_spans_to_token_spans` with drop-then-snap (measured: 0.04-0.24%
+out-of-bounds dropped, ~0.4% whitespace slop normalized, 3.43% mid-token snaps); emitted `text` is
+the re-joined token stream so every mention surface stays findable (26.7% of raw-text surfaces
+would fail gliner2's validator); the 29-entry `LABEL_MAP` covers the 35 distinct raw class strings
+measured on the full 4,840-row train split (21 canonical classes with an honest biolink target plus
+8 plural/legacy variants; LANGUAGE, REGULATION OR LAW, MONEY, Unlabelled,
+and the bare INTELLECTUAL variant stay unmapped -> raw PascalCase tails; gazetteer relations may
+still fire as free signal beyond the declared shapes).
 
 ## Output
 

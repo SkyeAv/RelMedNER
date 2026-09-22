@@ -512,6 +512,52 @@ class ScriptUtils:
         """slice mention text out of GLiNER token spans; bounds checks live in mention_spans"""
         return [(cls.join_tokens(tokens[start : end + 1]), label) for start, end, label in cls.mention_spans(tokens, ner)]
 
+    @staticmethod
+    def char_spans_to_token_spans(triples: list[tuple[str, int, int]], char_spans: list[tuple[int, int, str]]) -> list[tuple[int, int, str]]:
+        """bridge char-offset entity spans to the repo-wide (start_token, end_token_inclusive, label)
+        contract iob_spans/mention_spans emit; char ends are exclusive, token ends inclusive.
+
+        Per-span pipeline, in order: drop out-of-bounds (start < 0 or end past the text; 0.04-0.24%
+        measured), normalize boundary slop by advancing start past and retreating end across
+        whitespace (~0.4%), drop degenerate spans (start >= end: zero-length and inverted), snap
+        boundaries landing mid-token out to the full tokens they overlap (3.43% = 351/10,237), and
+        drop spans left with no overlapping token (whitespace-only). Order-preserving: spans are
+        never reordered, deduped, or merged (the dataset is measured overlap-free, 0/18,685).
+
+        The raw text is not a parameter: the triples carry the text extent as the largest token
+        end_char (the splitter's tokens tile the text), so the bounds check reads that maximum
+        instead of len(raw_text).
+        """
+        text_extent: int = max((token_end for _token, _start, token_end in triples), default=0)
+        token_spans: list[tuple[int, int, str]] = []
+        for start, end, label in char_spans:
+            if start < 0 or end > text_extent:
+                continue
+            # whitespace slop: chars outside the token tile sit exactly at whitespace runs, so clamp
+            # each boundary to the nearest token char the span reaches (tokens are offset-ordered)
+            for _token, token_start, token_end in triples:
+                if token_end > start:
+                    start = max(start, token_start)
+                    break
+            for _token, token_start, token_end in reversed(triples):
+                if token_start < end:
+                    end = min(end, token_end)
+                    break
+            if start >= end:
+                continue
+            first = last = -1
+            for index, (_token, token_start, token_end) in enumerate(triples):
+                if token_start >= end:
+                    break
+                if token_end > start:
+                    if first < 0:
+                        first = index
+                    last = index
+            if first < 0:
+                continue
+            token_spans.append((first, last, label))
+        return token_spans
+
     @classmethod
     @cache
     def biolink_categories(cls) -> frozenset[str]:

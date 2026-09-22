@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from typing import Any, ClassVar, Self
 
 import pytest
 
+from relmedner.fullmap_mine import FullmapMiner
 from relmedner.models import Entity, Relation, RelationField, TrainingExample
-from relmedner.scripts import GlinerBiomedScript, SentenceRexScript
+from relmedner.scripts import GlinerBiomedScript, KnowledgatorBiomedScript, SentenceRexScript
 from relmedner.scripts.sentence_rex import parse_tagged_sentence
 from relmedner.types import DispatchedExample, Script, ScriptValues
 from relmedner.utils import ResolvedMention, ScriptUtils, strip_biolink_prefix
@@ -719,6 +721,615 @@ def test_the_pile_ner_type_script_spans_every_occurrence_of_a_repeated_mention(m
 
     assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["Aspirin"], "Disease": ["migraine"]}
     assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
+
+
+# ---------------------------------------------------------------------------
+# char-span -> token-span bridge (knowledgator-biomed raw-text ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_char_spans_to_token_spans_maps_exclusive_char_ends_to_inclusive_token_ends() -> None:
+    """char ends are exclusive, token ends inclusive: end_char == a token's start_char excludes it,
+    while end_char == a token's end_char keeps that token"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 7, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 8, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 14, "Drug")]) == [(0, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 15, "Drug")]) == [(0, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(0, 23, "Drug")]) == [(0, 2, "Drug")]
+
+
+def test_char_spans_to_token_spans_drops_out_of_bounds_spans() -> None:
+    """OOB annotations are dataset defects (0.04-0.24% measured); negative starts and ends past the
+    text extent drop while in-bounds survivors keep their input order"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(-1, 5, "Drug"), (0, 7, "Drug"), (18, 30, "Disease"), (15, 23, "Disease")]) == [
+        (0, 0, "Drug"),
+        (2, 2, "Disease"),
+    ]
+
+
+def test_char_spans_to_token_spans_checks_bounds_before_normalizing_slop() -> None:
+    """drop-then-snap order: the bounds check runs on the raw span first, so a negative start drops
+    even though whitespace normalization would have clamped it back into the text"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(-1, 2, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_normalizes_whitespace_boundary_slop() -> None:
+    """~0.4% of spans carry boundary slop; start advances past and end retreats across the
+    whitespace runs the splitter leaves between tokens, and a whitespace-only span drops"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(7, 14, "Drug")]) == [(1, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(7, 15, "Drug")]) == [(1, 1, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(14, 15, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_snaps_mid_token_boundaries_to_full_tokens() -> None:
+    """3.43% of spans (351/10,237) land mid-token; the span widens to the full tokens it overlaps so
+    surfaces always rejoin from whole tokens"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(2, 5, "Drug")]) == [(0, 0, "Drug")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(16, 21, "Disease")]) == [(2, 2, "Disease")]
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(5, 16, "Drug")]) == [(0, 2, "Drug")]
+
+
+def test_char_spans_to_token_spans_drops_degenerate_spans() -> None:
+    """zero-length (start == end, even mid-token) and inverted (end < start) spans drop at the
+    degenerate check after normalization"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(3, 3, "Drug")]) == []
+    assert ScriptUtils.char_spans_to_token_spans(Triples, [(20, 5, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_returns_empty_for_empty_char_spans() -> None:
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, []) == []
+
+
+def test_char_spans_to_token_spans_returns_empty_for_empty_triples() -> None:
+    """empty text: the extent derives to 0 and no token can overlap, so every span drops"""
+    assert ScriptUtils.char_spans_to_token_spans([], [(0, 1, "Drug")]) == []
+
+
+def test_char_spans_to_token_spans_preserves_order_without_dedup_or_merge() -> None:
+    """the dataset is measured overlap-free (0/18,685) so the bridge carries no overlap policy:
+    duplicates and overlaps pass through in input order and downstream mention grouping absorbs them"""
+    Triples: list[tuple[str, int, int]] = [("Aspirin", 0, 7), ("treats", 8, 14), ("migraine", 15, 23)]
+    Spans: list[tuple[int, int, str]] = [(15, 23, "Disease"), (0, 7, "Drug"), (15, 23, "Disease"), (0, 14, "Drug")]
+
+    assert ScriptUtils.char_spans_to_token_spans(Triples, Spans) == [(2, 2, "Disease"), (0, 0, "Drug"), (2, 2, "Disease"), (0, 1, "Drug")]
+
+
+# ---------------------------------------------------------------------------
+# KnowledgatorBiomedScript + char-offset entity structs (knowledgator/biomed_NER ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_the_knowledgator_script_bridges_char_spans_through_the_real_splitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end-to-end happy path: raw text tokenized by the real gliner2 splitter (pure python, offline),
+    char offsets bridged to token spans, resolution via the dataset label_map, grouping, and a
+    gazetteer treats relation when a trigger phrase sits between the two mentions"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Aspirin", "CHEMICALS"), ("migraine", "DISORDERS")]
+        return [
+            ResolvedMention(mention="Aspirin", category="Drug", curie="CHEBI:15365", preferred_name="Acetylsalicylic acid", origin="fullmap"),
+            ResolvedMention(mention="migraine", category="Disease", curie="MONDO:0005002", preferred_name="migraine disorder", origin="fullmap"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "Aspirin is used to treat migraine"
+    Entities = [
+        {"start": Text.index("Aspirin"), "end": Text.index("Aspirin") + len("Aspirin"), "class": "CHEMICALS"},
+        {"start": Text.index("migraine"), "end": Text.index("migraine") + len("migraine"), "class": "DISORDERS"},
+    ]
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, Entities)))
+
+    Tokens: list[str] = FullmapMiner.tokenize(Text)
+    assert Example.text == ScriptUtils.join_tokens(Tokens)
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Drug": ["Aspirin"],
+        "Disease": ["migraine"],
+    }
+    assert Example.entities[0].description is not None and "[fullmap: CHEBI:15365 | Acetylsalicylic acid]" in Example.entities[0].description
+    assert Example.relations == [expected_relation("treats", "Aspirin", "migraine")]
+    assert Example.populated() == frozenset({"entities", "relations"})
+
+
+def test_the_knowledgator_script_rejoins_tokens_not_raw_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the splitter detaches punctuation (26.7% of char-slice surfaces are absent from raw text), so
+    TrainingExample.text must be the whitespace-joined token stream -- here the trailing comma
+    detaches and the surface stays a substring of the emitted text"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [ResolvedMention(mention="seeds", category="Gene", origin="fallback")]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "seeds, the plant's gene products, accumulate oil"
+    Entities = [{"start": 0, "end": 5, "class": "GENES"}]
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, Entities)))
+
+    assert Example.text.startswith("seeds ") and "," in Example.text
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Gene": ["seeds"]}
+
+
+def test_the_knowledgator_script_skips_malformed_text_and_entities(monkeypatch: pytest.MonkeyPatch) -> None:
+    """skip-don't-coerce: non-str text yields an empty example, a non-list entities column yields a
+    text-only row, and malformed entries (not dicts, missing or mistyped start/end/class) drop while
+    surviving entries keep their alignment -- mirrors mention_spans' defense"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Aspirin", "CHEMICALS")]
+        return [ResolvedMention(mention="Aspirin", category="ChemicalEntity", origin="fallback")]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+
+    _, Blank = Script.dispatch("KnowledgatorBiomedScript", (("entities",), ("", [])))
+    assert Blank.text == ""
+    assert Blank.populated() == frozenset()
+    _, NotText = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (None, [{"start": 0, "end": 7, "class": "CHEMICALS"}])))
+    assert NotText.text == ""
+    assert NotText.populated() == frozenset()
+    _, NotList = Script.dispatch("KnowledgatorBiomedScript", (("entities",), ("Aspirin helps.", "not a list")))
+    assert NotList.text == ""
+    assert NotList.populated() == frozenset()
+    _, EmptyList = Script.dispatch("KnowledgatorBiomedScript", (("entities",), ("Aspirin helps.", [])))
+    assert EmptyList.text == ""
+    assert EmptyList.populated() == frozenset()
+
+    Text = "Aspirin helps."
+    Malformed: list[Any] = [
+        {"start": 0, "end": 7, "class": "CHEMICALS"},  # the survivor
+        "not a dict",
+        None,
+        3,
+        [],
+        {"start": 0, "end": 7},
+        {"start": 0, "class": "CHEMICALS"},
+        {"end": 7, "class": "CHEMICALS"},
+        {"start": True, "end": 7, "class": "CHEMICALS"},
+        {"start": 0, "end": 7.0, "class": "CHEMICALS"},
+        {"start": "0", "end": 7, "class": "CHEMICALS"},
+        {"start": 0, "end": 7, "class": None},
+        {"start": 0, "end": 7, "class": 3},
+    ]
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, Malformed)))
+
+    assert Example.text == ScriptUtils.join_tokens(FullmapMiner.tokenize(Text))
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"ChemicalEntity": ["Aspirin"]}
+
+
+def test_the_knowledgator_script_emits_text_only_row_when_no_spans_survive() -> None:
+    """all spans dropped (here: end overshoots the text extent, the measured OOB defect) leaves the
+    row text-only, matching the sibling scripts' empty-out contract"""
+    Text = "Aspirin helps."
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, [{"start": 0, "end": 10_000, "class": "CHEMICALS"}])))
+
+    assert Example.text == ScriptUtils.join_tokens(FullmapMiner.tokenize(Text))
+    assert Example.populated() == frozenset()
+
+
+def test_the_knowledgator_script_pascalcases_unmapped_labels_as_raw_tails(monkeypatch: pytest.MonkeyPatch) -> None:
+    """classes with no honest biolink target (LANGUAGE, REGULATION OR LAW) stay unmapped and surface
+    as PascalCased raw tails, the Pile-NER zero-shot convention"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="English", category="LANGUAGE", origin="raw"),
+            ResolvedMention(mention="HIPAA", category="REGULATION OR LAW", origin="raw"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "English privacy law HIPAA"
+    Entities = [
+        {"start": Text.index("English"), "end": Text.index("English") + len("English"), "class": "LANGUAGE"},
+        {"start": Text.index("HIPAA"), "end": Text.index("HIPAA") + len("HIPAA"), "class": "REGULATION OR LAW"},
+    ]
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, Entities)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Language": ["English"],
+        "RegulationOrLaw": ["HIPAA"],
+    }
+
+
+def test_the_knowledgator_script_resolves_plural_variants_through_the_label_map(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the data's 35 distinct raw class strings include plural/legacy variants the HF card never
+    documents; the run() call must hand resolve_mentions the dataset map so PRODUCTS/ORGANISMS resolve"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is KnowledgatorBiomedScript.LABEL_MAP
+        return [
+            ResolvedMention(mention="ventilator", category=label_map["products"], origin="fallback"),
+            ResolvedMention(mention="mice", category=label_map["organisms"], origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "ventilator tested in mice"
+    Entities = [
+        {"start": 0, "end": 10, "class": "PRODUCTS"},
+        {"start": 18, "end": 22, "class": "ORGANISMS"},
+    ]
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (Text, Entities)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Device": ["ventilator"],
+        "OrganismTaxon": ["mice"],
+    }
+
+
+def test_every_knowledgator_label_map_value_is_a_biolink_category() -> None:
+    """dataset-local vocabulary values stay real biolink classes (import-time validate_label_map
+    already raises; this pins the invariant for the whole 29-entry map)"""
+    for raw_label, category in KnowledgatorBiomedScript.LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
+
+
+def test_every_knowledgator_label_map_entry_is_measured_vocabulary() -> None:
+    """the map is exactly the measured vocabulary: the 21 canonical classes that have an honest biolink
+    target (LANGUAGE, REGULATION OR LAW and MONEY have none) plus the 8 plural/legacy variants counted
+    on the full 4,840-row train split (GENES, LOCATIONS, ORGANISMS, ORGANIZATIONS, PRODUCTS,
+    FINDINGS/PHENOTYPES, DISORDERS, EVENTS); the catch-alls stay deliberately absent so they fall
+    through to raw PascalCase tails"""
+    assert sorted(KnowledgatorBiomedScript.LABEL_MAP) == [
+        "activity",
+        "anatomical structure",
+        "body substance",
+        "cells and their components",
+        "chemicals",
+        "clinical drug",
+        "disorder",
+        "disorders",
+        "event",
+        "events",
+        "findings/phenotypes",
+        "function",
+        "gene and gene products",
+        "genes",
+        "geographical areas",
+        "group",
+        "intellectual property",
+        "location",
+        "locations",
+        "medical procedure",
+        "organism",
+        "organisms",
+        "organization",
+        "organizations",
+        "person",
+        "phenotype",
+        "product",
+        "products",
+        "signaling molecules",
+    ]
+    assert len(KnowledgatorBiomedScript.LABEL_MAP) == 29
+    for raw_label in ("language", "regulation or law", "money", "unlabelled", "intellectual"):
+        assert raw_label not in KnowledgatorBiomedScript.LABEL_MAP
+
+
+def test_the_measured_whitespace_variant_needs_no_map_entry() -> None:
+    """the full train split carries 'ORGANISMS ' with a trailing space (253 spans) alongside the clean
+    'ORGANISMS' (502). It resolves without its own entry because the shared fallback lookup retries
+    through normalize_iob_label, which strips and case-folds -- pinning that here is what keeps the map
+    free of whitespace-padded keys, and EVENTS is the contrast: a variant with no normalizing rule that
+    saves it, so it does need an entry (23 spans would otherwise ship as a raw 'Events' tail)."""
+    LabelMap: dict[str, str] = KnowledgatorBiomedScript.LABEL_MAP
+
+    assert "organisms " not in LabelMap
+    assert LabelMap.get(ScriptUtils.normalize_iob_label("ORGANISMS ")) == "OrganismTaxon"
+    assert ScriptUtils.normalize_iob_label("EVENTS") == "events"
+    assert LabelMap["events"] == "Event"
+
+
+# ---------------------------------------------------------------------------
+# US-004 verbatim row-0 offline smoke: the real dataset row embedded VERBATIM (no file IO, no
+# network) locks the whole chain -- dispatch -> tokenize -> bridge -> resolve -> group -- against
+# format drift of the real dataset
+# ---------------------------------------------------------------------------
+
+ROW0_TEXT: str = (
+    "Weed seed inactivation in soil mesocosms via biosolarization with mature compost and tomato processing waste amendments Biosolariz"
+    "ation is a fumigation alternative that combines passive solar heating with amendment-driven soil microbial activity to temporarily"
+    " create antagonistic soil conditions, such as elevated temperature and acidity, that can inactivate weed seeds and other pest prop"
+    "agules. The aim of this study was to use a mesocosm -based field trial to assess soil heating, pH, volatile fatty acid accumulatio"
+    "n and weed seed inactivation during biosolarization. Biosolarization for 8 days using 2% mature green waste compost and 2 or 5% to"
+    "mato processing residues in the soil resulted in accumulation of volatile fatty acids in the soil, particularly acetic acid, and> "
+    "95% inactivation of Brassica nigra and Solanum nigrum seeds. Inactivation kinetics data showed that near complete weed seed inacti"
+    "vation in soil was achieved within the first 5 days of biosolarization. This was significantly greater than the inactivation achie"
+    "ved in control soils that were solar heated without amendment or were amended but not solar heated. The composition and concentrat"
+    "ion of organic matter amendments in soil significantly affected volatile fatty acid accumulation at various soil depths during bio"
+    "solarization. Combining solar heating with organic matter amendment resulted in accelerated weed seed inactivation compared with e"
+    "ither approach alone. © 2016 Society of Chemical Industry. "
+)
+
+ROW0_ENTITIES_JSON: str = """[
+ {
+  "start": 0,
+  "end": 4,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 5,
+  "end": 9,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 26,
+  "end": 30,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 31,
+  "end": 40,
+  "class": "LOCATION"
+ },
+ {
+  "start": 45,
+  "end": 60,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 66,
+  "end": 80,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 85,
+  "end": 91,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 103,
+  "end": 119,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 120,
+  "end": 135,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 141,
+  "end": 151,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 222,
+  "end": 226,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 227,
+  "end": 245,
+  "class": "FUNCTION"
+ },
+ {
+  "start": 281,
+  "end": 285,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 360,
+  "end": 364,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 365,
+  "end": 370,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 433,
+  "end": 441,
+  "class": "LOCATION"
+ },
+ {
+  "start": 449,
+  "end": 454,
+  "class": "LOCATION"
+ },
+ {
+  "start": 471,
+  "end": 475,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 487,
+  "end": 488,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 489,
+  "end": 508,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 526,
+  "end": 530,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 531,
+  "end": 535,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 556,
+  "end": 572,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 573,
+  "end": 588,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 622,
+  "end": 635,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 648,
+  "end": 654,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 666,
+  "end": 674,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 682,
+  "end": 686,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 715,
+  "end": 735,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 743,
+  "end": 748,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 762,
+  "end": 774,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 800,
+  "end": 814,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 819,
+  "end": 833,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 834,
+  "end": 840,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 863,
+  "end": 867,
+  "class": "INTELLECTUAL PROPERTY"
+ },
+ {
+  "start": 894,
+  "end": 898,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 899,
+  "end": 903,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 920,
+  "end": 924,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 965,
+  "end": 981,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1055,
+  "end": 1060,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1177,
+  "end": 1202,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1206,
+  "end": 1210,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1234,
+  "end": 1253,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1278,
+  "end": 1282,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1297,
+  "end": 1313,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1343,
+  "end": 1357,
+  "class": "CHEMICALS"
+ },
+ {
+  "start": 1358,
+  "end": 1367,
+  "class": "ACTIVITY"
+ },
+ {
+  "start": 1392,
+  "end": 1396,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 1397,
+  "end": 1401,
+  "class": "ORGANISM"
+ },
+ {
+  "start": 1459,
+  "end": 1488,
+  "class": "ORGANIZATION"
+ }
+]
+"""
+
+ROW0_ENTITIES: list[Any] = json.loads(ROW0_ENTITIES_JSON)
+
+
+def test_the_knowledgator_script_survives_verbatim_row0_offline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """US-004 smoke: the verbatim real row locks the whole chain (dispatch -> tokenize -> bridge ->
+    resolve -> group) against format drift of the real dataset; the fixtures are embedded constants
+    and resolve_mentions is faked, so the test runs with no file IO, no fullmap mount, no network"""
+
+    def fake_resolve(spans: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is KnowledgatorBiomedScript.LABEL_MAP
+        assert len(spans) == 50 == len(ROW0_ENTITIES)  # every char span of row 0 survives the bridge
+        return [
+            ResolvedMention(mention=mention, category="OrganismTaxon", origin="fallback")
+            if mention == "Weed"
+            else ResolvedMention(mention=mention, category=raw_label, origin="raw")
+            for mention, raw_label in spans
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    _, Example = Script.dispatch("KnowledgatorBiomedScript", (("entities",), (ROW0_TEXT, ROW0_ENTITIES)))
+
+    Tokens: list[str] = [token for token, _start, _end in FullmapMiner.splitter()(ROW0_TEXT, lower=False)]
+    assert Example.text == ScriptUtils.join_tokens(Tokens)
+    by_label = {entity.label: entity for entity in Example.entities}
+    assert "Weed" in by_label["OrganismTaxon"].mentions  # ORGANISM -> OrganismTaxon via the label map
+    assert {"entities"} <= Example.populated() <= {"entities", "relations"}
 
 
 def expected_relation(name: str, head: str, tail: str) -> Relation:
