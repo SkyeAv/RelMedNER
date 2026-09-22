@@ -17,3 +17,4 @@ dist/
 # fullmap bundle is handled the same out-of-band way. Rebuild steps: the "CTKP interventions"
 # section of README.md.
 src/relmedner/data/interventions/*.avro
+src/relmedner/data/synthetic-ner-ade-tweets/*.avro
