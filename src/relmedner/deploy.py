@@ -72,14 +72,26 @@ def compose_vars(worker: WorkerNode, flink_image: str, worker_image: str, data_p
 
 def compose_command(user: str, worker: WorkerNode) -> list[str]:
     """`docker compose` plugin when the host has one, else a standalone docker-compose binary
-    (hypatia gets v2 through the nix profile — no sudo for a system plugin install)"""
+    (hypatia gets v2 through the nix profile — no sudo for a system plugin install). the standalone
+    probe falls back to the profile path explicitly: `command -v` has been seen to return success
+    with empty output under ssh when the remote is under heavy load"""
     prefix: list[str] = ssh_to(user, worker.host)
     if run([*prefix, "docker", "compose", "version"], capture_output=True, check=False).returncode == 0:
         return [*prefix, *COMPOSE]
-    probe = run([*prefix, "sh", "-c", "command -v docker-compose"], capture_output=True, check=False)
-    if probe.returncode != 0:
+    probe = run(
+        [
+            *prefix,
+            "sh",
+            "-c",
+            'command -v docker-compose || { test -x "$HOME/.nix-profile/bin/docker-compose" && echo "$HOME/.nix-profile/bin/docker-compose"; }',
+        ],
+        capture_output=True,
+        check=False,
+    )
+    compose_binary: str = probe.stdout.decode().strip()
+    if probe.returncode != 0 or not compose_binary:
         raise SystemExit(f"no docker compose plugin and no docker-compose binary on {worker.host}")
-    return [*prefix, probe.stdout.decode().strip(), "-p", PROJECT]
+    return [*prefix, compose_binary, "-p", PROJECT]
 
 
 def image_id(prefix: list[str], image: str) -> str:

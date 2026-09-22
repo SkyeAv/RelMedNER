@@ -78,3 +78,36 @@ def test_tunnel_plan_single_node_needs_no_tunnels() -> None:
     workers: list[WorkerNode] = [WorkerNode(host="10.2.9.11", slots=64, memory="112g", fullmap="/f", outputs="/o")]
 
     assert tunnel_plan(workers, "10.2.9.11") == {}
+
+
+def test_compose_command_falls_back_to_the_nix_profile_standalone(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[Sequence[str]] = []
+
+    def fake_run(cmd, capture_output=False, check=False, env=None):  # noqa: ANN001, ANN202, FBT002
+        calls.append(cmd)
+        if cmd[-2:] == ["compose", "version"]:
+            return FakeCompleted(1, b"")
+        return FakeCompleted(0, b"/users/sgoetz/.nix-profile/bin/docker-compose\n")
+
+    monkeypatch.setattr(deploy, "run", fake_run)
+    Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=16, memory="40g", fullmap="/f", outputs="/o")
+
+    command: list[str] = deploy.compose_command("sgoetz", Worker)
+
+    assert command[-3:] == ["/users/sgoetz/.nix-profile/bin/docker-compose", "-p", "relmedner"]
+    assert command[:3] == ["ssh", "-o", "BatchMode=yes"]
+    assert "sgoetz@10.2.9.19" in command
+    assert "sgoetz@10.2.9.19" in calls[0]
+
+
+def test_compose_command_fails_loud_on_an_empty_standalone_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(cmd, capture_output=False, check=False, env=None):  # noqa: ANN001, ANN202, FBT002
+        if cmd[-2:] == ["compose", "version"]:
+            return FakeCompleted(1, b"")
+        return FakeCompleted(0, b"")
+
+    monkeypatch.setattr(deploy, "run", fake_run)
+    Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=16, memory="40g", fullmap="/f", outputs="/o")
+
+    with pytest.raises(SystemExit, match="no docker compose plugin"):
+        deploy.compose_command("sgoetz", Worker)
