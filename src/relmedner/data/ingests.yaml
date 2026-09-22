@@ -43,6 +43,10 @@ datasets:
     source: local
     weight: *weight
     path: interventions/interventions.avro
+  - task: {type: script, name: SyntheticNerAdeTweetsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: synthetic-ner-ade-tweets/ade_tweets.avro
   - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-post-training
@@ -83,6 +87,11 @@ datasets:
     source: local_delimited
     weight: *weight
     path: qualifiers/qualifier_corpus.tsv
+    columns_out: [text]
+  - task: *fullmap-task
+    source: local_delimited
+    weight: *weight
+    path: synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv
     columns_out: [text]
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     <<: *hf-train
