@@ -11,6 +11,7 @@ from huggingface_hub.errors import OfflineModeIsEnabled
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 
+from relmedner.constants import TEST_ROW_LIMIT
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample
 from relmedner.pipeline import BeamPipeline
@@ -52,9 +53,9 @@ def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_p
     run_smoke_pipeline(Output)
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
-    # every declared ingest, each sampling up to five rows; empty/malformed rows may shrink the count
+    # every declared ingest, each sampling up to the test row limit; empty/malformed rows may shrink the count
     Datasets: int = len(YamlIngestsParser().generate_tuples())
-    assert 1 <= len(Records) <= Datasets * 5
+    assert 1 <= len(Records) <= Datasets * TEST_ROW_LIMIT
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:
