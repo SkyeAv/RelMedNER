@@ -21,6 +21,7 @@ from relmedner.dedup import (
     band_keys,
     base_hash,
     exact_key,
+    format_dedup_summary,
     normalize_text,
     priority,
     shingles,
@@ -360,3 +361,70 @@ def test_apply_dedup_near_runs_exact_then_near() -> None:
     assert near["near_dropped"] == 1
     assert near["near_kept"] == 3
     assert near["near_in"] == near["near_dropped"] + near["near_kept"]
+
+
+# ---------------------------------------------------------------- summary line (REQ-INT-4) --
+
+
+def test_summary_line_reports_counts() -> None:
+    """REQ-INT-4: a finished NEAR run renders exactly the spec's line from the retained
+    PipelineResult metrics: one exact drop, one near drop, and total = exact_in (the count
+    entering dedup -- near_in is deliberately NOT the total because the near stage only sees
+    the exact stage's survivors). The same figures the counter readers above report, so the
+    line cannot drift from the counters"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+    base_low = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant_high = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+    unrelated = a_distinguishable_example(UNRELATED_TEXT, weight=2.0)
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create([light, heavy, base_low, variant_high, unrelated])
+    survivors = apply_dedup(created, DedupMode.NEAR)
+    assert_that(survivors | beam.Map(normalized_text), equal_to(["aspirin", NEAR_VARIANT_TEXT, UNRELATED_TEXT]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    assert format_dedup_summary(result) == "dedup: exact -1 near -1 of 5 records"
+
+
+def test_summary_line_total_is_exact_in_not_near_in() -> None:
+    """REQ-INT-4: the `of <total>` figure must be the count entering dedup, not the near
+    stage's own input -- otherwise an input where the exact stage already dropped something
+    would report a total smaller than the record count. EXACT mode here drops one dup before
+    near ever runs, so exact_in == 4 while near_in == 3, and the line must say 4"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+    base_low = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant_high = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+    unrelated = a_distinguishable_example(UNRELATED_TEXT, weight=2.0)
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create([light, heavy, base_low, variant_high, unrelated])
+    survivors = apply_dedup(created, DedupMode.NEAR)
+    assert_that(survivors | beam.Map(normalized_text), equal_to(["aspirin", NEAR_VARIANT_TEXT, UNRELATED_TEXT]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    assert dedup_counters(result)["exact_in"] == 5
+    assert near_counters(result)["near_in"] == 4  # one exact dup already gone
+    assert format_dedup_summary(result) == "dedup: exact -1 near -1 of 5 records"
+
+
+def test_summary_line_absent_when_dedup_off() -> None:
+    """REQ-INT-4: OFF mode puts no dedup stage in the graph, so no relmedner.dedup counter
+    exists in the finished run's metrics and the helper returns None -- the caller then logs
+    no line at all (no zeros line), matching the spec's 'zeros or no line' allowance. A
+    missing result (None) reports the same way"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create([light, heavy])
+    deduped = apply_dedup(created, DedupMode.OFF)
+    assert_that(deduped, equal_to([light, heavy]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    assert format_dedup_summary(result) is None
+    assert format_dedup_summary(None) is None

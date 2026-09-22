@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Self
@@ -10,13 +11,15 @@ from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.runners.runner import PipelineResult
 
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
-from relmedner.dedup import apply_dedup
+from relmedner.dedup import apply_dedup, format_dedup_summary
 from relmedner.fullmap_mine import FullmapMiner
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample, YamlIngests
 from relmedner.registry import build_stream
 from relmedner.streams import DataStream, StreamedRow, rebuild_task
 from relmedner.types import DispatchedExample, Script
+
+logger = logging.getLogger(__name__)
 
 FULLMAP_TYPE: str = "fullmap"
 
@@ -118,3 +121,11 @@ class BeamPipeline:
         # the with-block runs the pipeline on exit and stashes the result on the Pipeline
         # object; retaining it here is what lets US-005 query metrics after the block closes
         self.result = new_pipeline.result
+        # REQ-INT-4: report what dedup rejected on a local run only (the Flink runner keeps
+        # the same counters in the job UI/REST instead). The `options is None` check mirrors
+        # the output-path branch above, so a cluster run never reaches metrics() here and an
+        # absent result/counters just skips the line, never crashing the run
+        if self.options is None:
+            summary = format_dedup_summary(self.result)
+            if summary is not None:
+                logger.info(summary)

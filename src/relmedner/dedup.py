@@ -7,7 +7,8 @@ import uuid
 from collections.abc import Iterable, Iterator
 
 import apache_beam as beam
-from apache_beam.metrics.metric import Metrics
+from apache_beam.metrics.metric import Metrics, MetricsFilter
+from apache_beam.runners.runner import PipelineResult
 
 from relmedner.constants import (
     DEDUP_BANDS,
@@ -246,6 +247,31 @@ class NearDeduplicate(beam.PTransform):
         )
         merged = (collapsed, emitted.bypass) | "near: merge survivors" >> beam.Flatten()
         return merged | "near: count kept survivors" >> beam.ParDo(_CountNearKept())
+
+
+def format_dedup_summary(result: PipelineResult | None) -> str | None:
+    """DirectRunner-only reporting (REQ-INT-4): read the relmedner.dedup counters out of a
+    finished run and render the one summary line `dedup: exact -<n> near -<n> of <total>
+    records`. exact/near report each stage's dropped counts; total is exact_in, the count
+    entering the exact stage -- which is the full record count, because near_in only sees the
+    exact stage's survivors and summing them would double-count. Returns None when there is
+    nothing to report (OFF mode ran no dedup stage, so no counters exist) so the caller
+    simply skips the log line instead of printing zeros"""
+    if result is None:
+        return None
+    query = result.metrics().query(MetricsFilter().with_namespace(DEDUP_METRICS_NAMESPACE))
+    totals: dict[str, int] = {}
+    for counter in query["counters"]:
+        # Beam keys counters by (step, namespace, name): one name incremented in several steps
+        # comes back once per step, so a by-name dict must sum across steps
+        name = counter.key.metric.name
+        totals[name] = totals.get(name, 0) + counter.committed
+    if not totals:
+        return None
+    exact_dropped = totals.get("exact_dropped", 0)
+    near_dropped = totals.get("near_dropped", 0)
+    total = totals.get("exact_in", 0)
+    return f"dedup: exact -{exact_dropped} near -{near_dropped} of {total} records"
 
 
 def apply_dedup(examples: beam.PCollection[TrainingExample], mode: DedupMode) -> beam.PCollection[TrainingExample]:
