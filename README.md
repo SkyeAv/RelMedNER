@@ -54,6 +54,13 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
 | `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
 | `nvidia/Nemotron-PII` (train + test) | `script` -> `NemotronPiiScript` | `text`, `spans` | entities | 200,000 |
+| `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
+| `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
+| `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
+| `tensorshield/reddit_dataset_171` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 744,263 |
+| `tensorshield/reddit_dataset_85` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 150,311 |
+| `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
+| `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
 
 All script tasks except the multilingual ingest (which labels directly, see its
 notes below) share one resolution chain -- fullmap first, a shared lowercased
@@ -411,6 +418,52 @@ the only and sufficient lever (~11.5 us/key lookup).
 
 A future teacher-distillation pass (gliner-biomed-large agreeing with mined spans) is
 deliberately deferred; `fullmap_mine.resolve_batch` is the interception point.
+
+## Reddit corpora
+
+Seven general-Reddit dumps from the `tensorshield` hub org, all MIT-licensed. The
+inclusion bar is corpus-wide `total_rows >= 100,000` in the org's stats.json: the kept
+seven span 121,584 to 7,114,560 rows. `tensorshield/reddit_dataset_226` (22,572 rows)
+carries the same license but fails the bar: after the health-community filter its
+projected yield is noise, so it stays out of the pipeline.
+
+None of these corpora are biomedical on their own, so every entry filters rows
+client-side post-stream with `match_on`: exact-value membership on `communityName`
+against a single yaml anchor `&biomed_communities` holding 42 provisional health
+subreddits (`r/AskDocs`, `r/diabetes`, `r/CrohnsDisease`, ...; the full list lives in
+`src/relmedner/data/ingests.yaml` and all seven entries alias the one anchor, so the
+allowlists cannot drift apart). Casing must be the Reddit canonical form: `r/askdocs`
+does not match, and neither does a non-health community like `r/madmen`. `columns_out`
+is `text` alone.
+
+The table's rows-in are stats.json `total_rows` for the whole corpus, before the
+community filter. Mining runs the unchanged fullmap path of the previous section;
+informal reddit prose (slang, misspellings, first-person narratives) is expected to
+mine at lower unigram precision than the curated corpus, and the measured gates in
+`relmedner/constants.py` are deliberately not loosened for it.
+
+## Reddit corpora
+
+Seven general-Reddit dumps from the `tensorshield` hub org, all MIT-licensed. The
+inclusion bar is corpus-wide `total_rows >= 100,000` in the org's stats.json: the kept
+seven span 121,584 to 7,114,560 rows. `tensorshield/reddit_dataset_226` (22,572 rows)
+carries the same license but fails the bar: after the health-community filter its
+projected yield is noise, so it stays out of the pipeline.
+
+None of these corpora are biomedical on their own, so every entry filters rows
+client-side post-stream with `match_on`: exact-value membership on `communityName`
+against a single yaml anchor `&biomed_communities` holding 42 provisional health
+subreddits (`r/AskDocs`, `r/diabetes`, `r/CrohnsDisease`, ...; the full list lives in
+`src/relmedner/data/ingests.yaml` and all seven entries alias the one anchor, so the
+allowlists cannot drift apart). Casing must be the Reddit canonical form: `r/askdocs`
+does not match, and neither does a non-health community like `r/madmen`. `columns_out`
+is `text` alone.
+
+The table's rows-in are stats.json `total_rows` for the whole corpus, before the
+community filter. Mining runs the unchanged fullmap path of the previous section;
+informal reddit prose (slang, misspellings, first-person narratives) is expected to
+mine at lower unigram precision than the curated corpus, and the measured gates in
+`relmedner/constants.py` are deliberately not loosened for it.
 
 ## Install
 
