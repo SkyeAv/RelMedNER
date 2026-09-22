@@ -238,6 +238,29 @@ def test_examples_round_trip_through_avro(example: TrainingExample) -> None:
     assert TrainingExample(**Restored[0]) == example
 
 
+def test_weight_rides_avro_but_stays_out_of_the_gliner_projection() -> None:
+    """the mixing weight is avro provenance: stock gliner2 has no per-example weight channel
+    (InputExample.from_dict reads input/output only), so to_output() must not emit it -- the
+    actual consumption is weighted duplication at the avro->JSONL export step"""
+    Weighted: TrainingExample = TrainingExample(
+        text="Alice manages the team.",
+        weight=2.5,
+        entities=[Entity(label="person", mentions=["Alice"])],
+    )
+    Schema: dict[str, Any] = TrainingExample.avro_schema_to_python()
+    Buffer: io.BytesIO = io.BytesIO()
+    writer(Buffer, Schema, [Weighted.asdict()])
+    Buffer.seek(0)
+    Restored: TrainingExample = TrainingExample(**next(iter(reader(Buffer))))
+
+    assert Restored == Weighted and Restored.weight == 2.5
+
+    Output: dict[str, Any] = Weighted.to_output()
+    assert set(Output) == {"input", "output"}
+    GlinerData: ModuleType = load_gliner_data()
+    assert GlinerData.InputExample.from_dict(Output).validate() == []
+
+
 def test_the_structure_union_survives_avro_for_every_arm() -> None:
     Example: TrainingExample = TrainingExample(
         text="iPhone 15 costs $999 in blue, black and white.",
@@ -269,7 +292,7 @@ def test_the_generated_schema_matches_its_snapshot() -> None:
     assert Schema["type"] == "record"
     assert Schema["name"] == "TrainingExample"
     assert Schema["namespace"] == "relmedner.ingests"
-    assert Fields == ["text", "entities", "classifications", "structures", "relations"]
+    assert Fields == ["text", "weight", "entities", "classifications", "structures", "relations"]
 
 
 def test_relation_descriptions_are_emitted_and_accepted_by_the_real_gliner_types() -> None:

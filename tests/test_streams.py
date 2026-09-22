@@ -53,6 +53,27 @@ def test_build_stream_constructs_from_declared_ingests() -> None:
     assert Stream.dataset == "anthonyyazdaniml/gliner-biomed-pre-training"
     assert Stream.split == "train"
     assert Stream.columns_out == ("tokenized_text", "ner")
+    assert Stream.weight == 1.0
+
+
+def test_build_stream_carries_the_declared_weight() -> None:
+    """the weight rides the frozen payload tuple (DatasetBase field order) positionally into
+    the stream ctor, so a nondefault declaration must land on the stream untouched"""
+    Stream: DataStream = build_stream(
+        "hf",
+        (
+            ("script", "GlinerBiomedScript", ("entities",)),
+            0.25,
+            "some/dataset",
+            None,
+            "train",
+            None,
+            ("text",),
+        ),
+    )
+
+    assert isinstance(Stream, HuggingFaceDataStream)
+    assert Stream.weight == 0.25
 
 
 def test_rebuild_task_round_trips_every_declared_task_type() -> None:
@@ -76,6 +97,7 @@ def test_registry_keys_on_the_source_discriminator() -> None:
 def test_apply_match_keeps_only_declared_values() -> None:
     Stream: HuggingFaceDataStream = HuggingFaceDataStream(
         task=("script", "GlinerBiomedScript", ("entities",)),
+        weight=1.0,
         dataset="anthonyyazdaniml/gliner-biomed-pre-training",
         subset=None,
         split="train",

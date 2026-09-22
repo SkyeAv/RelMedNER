@@ -3,20 +3,25 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 
 from relmedner.models import (
     ChoiceField,
     Classification,
     Description,
     Entity,
+    HuggingFaceDataset,
     Relation,
     RelationField,
+    ScriptTask,
     StrictBase,
     Structure,
     StructureField,
     TrainingExample,
+    YamlIngests,
 )
-from relmedner.pipeline import matches_declared_outputs
+from relmedner.pipeline import dispatch_row, matches_declared_outputs
+from relmedner.streams import StreamedRow
 from relmedner.utils import ScriptUtils
 
 
@@ -183,6 +188,76 @@ def test_relations_carry_provenance_defaults() -> None:
     )
 
     assert Relation_.negated is False and Relation_.evidence == "asserted"
+
+
+# ---------------------------------------------------------------- mixing weights --
+
+
+def test_weight_defaults_to_neutral_and_rejects_nonpositive() -> None:
+    """1.0 keeps every existing producer honest (scripts and the miner build weightless examples);
+    a nonpositive weight would be a silent no-op at duplication time, so it is a model error"""
+    assert TrainingExample(text="Alice").weight == 1.0
+    with pytest.raises(ValidationError):
+        TrainingExample(text="Alice", weight=0.0)
+    with pytest.raises(ValidationError):
+        TrainingExample(text="Alice", weight=-1.5)
+    with pytest.raises(ValidationError):
+        HuggingFaceDataset(
+            task=ScriptTask(type="script", name="GlinerBiomedScript", outputs=["entities"]),
+            weight=0.0,
+            source="hf",
+            dataset="a/b",
+            columns_out=["text"],
+        )
+
+
+def _dataset(source: str, weight: float) -> HuggingFaceDataset:
+    return HuggingFaceDataset(
+        task=ScriptTask(type="script", name="GlinerBiomedScript", outputs=["entities"]),
+        weight=weight,
+        source="hf",
+        dataset=source,
+        columns_out=["text"],
+    )
+
+
+def test_weights_by_source_maps_every_declared_source() -> None:
+    Ingests: YamlIngests = YamlIngests(datasets=[_dataset("a/b", 1.0), _dataset("c/d", 2.5)])
+
+    assert Ingests.weights_by_source() == {"a/b": 1.0, "c/d": 2.5}
+
+
+def test_weights_by_source_rejects_conflicting_duplicate_sources() -> None:
+    """rows key on the source name, so two entries sharing a source with different weights would
+    make the stamp ambiguous -- fail loudly instead of silently picking one"""
+    Ingests: YamlIngests = YamlIngests(datasets=[_dataset("a/b", 1.0), _dataset("a/b", 2.0)])
+
+    with pytest.raises(ValueError, match="conflicting weights"):
+        Ingests.weights_by_source()
+
+
+def test_weights_by_source_accepts_duplicate_sources_with_equal_weights() -> None:
+    Ingests: YamlIngests = YamlIngests(datasets=[_dataset("a/b", 1.5), _dataset("a/b", 1.5)])
+
+    assert Ingests.weights_by_source() == {"a/b": 1.5}
+
+
+def test_dispatch_row_stamps_the_declared_source_weight() -> None:
+    """the source key rides the streamed row until dispatch; the stamped example keeps its
+    content and the declared weight becomes avro provenance"""
+    Row: StreamedRow = ("some/source", (("script", "GlinerBiomedScript", ("entities",)), ([], [])))
+    Outputs, Example = dispatch_row(Row, weights={"some/source": 2.5})
+
+    assert Outputs == ("entities",)
+    assert Example.weight == 2.5
+    assert Example.text == ""
+
+
+def test_dispatch_row_keeps_the_neutral_weight_when_none_is_declared() -> None:
+    Row: StreamedRow = ("some/source", (("script", "GlinerBiomedScript", ("entities",)), ([], [])))
+    _Outputs, Example = dispatch_row(Row, weights={"some/source": 1.0})
+
+    assert Example.weight == 1.0
 
 
 def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projection() -> None:

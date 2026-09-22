@@ -12,6 +12,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "GlinerBiomedScript", ("entities", "relations")),
+            1.0,
             "anthonyyazdaniml/gliner-biomed-pre-training",
             None,
             "train",
@@ -23,6 +24,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
             "anthonyyazdaniml/gliner-biomed-curated-corpus",
             None,
             "train",
@@ -34,6 +36,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
             "anthonyyazdaniml/gliner-biomed-balanced-curated-corpus",
             None,
             "train",
@@ -45,6 +48,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "GlinerBiomedPostScript", ("entities", "classifications", "structures", "relations")),
+            1.0,
             "anthonyyazdaniml/gliner-biomed-post-training",
             None,
             "train",
@@ -56,6 +60,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "PileNerBiomedScript", ("entities",)),
+            1.0,
             "disi-unibo-nlp/Pile-NER-biomed-IOB",
             None,
             "train",
@@ -67,7 +72,8 @@ EXPECTED: dict[str, tuple[object, ...]] = {
 
 
 def tuples_by_dataset() -> dict[str, tuple[object, ...]]:
-    return {entry[1][1]: entry for entry in YamlIngestsParser().generate_tuples()}
+    # the repo id moved to payload position 2 when the weight field joined DatasetBase
+    return {entry[1][2]: entry for entry in YamlIngestsParser().generate_tuples()}
 
 
 @pytest.mark.parametrize("dataset", sorted(EXPECTED))
