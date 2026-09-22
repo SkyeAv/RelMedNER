@@ -120,7 +120,9 @@ def test_compose_command_fails_loud_on_an_empty_standalone_probe(monkeypatch: py
 def test_dyn_forwarder_script_relays_new_pool_endpoints_to_the_head() -> None:
     script: str = deploy.dyn_forwarder_script("10.2.9.11", "sgoetz")
 
-    assert "docker logs -f --tail 0 relmedner-sdkworker-1" in script
+    # polling, not streaming: each tick rebuilds the pipeline so no long-lived member can die
+    # silently mid-job (observed with docker logs -f | grep)
+    assert "docker logs --since 2m relmedner-sdkworker-1" in script
     assert "endpoint localhost:[0-9]+" in script
     # forwards detach from any supervising terminal so a tmux server death cannot take them down
     assert "setsid nohup ssh" in script

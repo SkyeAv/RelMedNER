@@ -167,15 +167,18 @@ pids={DYN_PIDS_REMOTE}
 : > "$seen"
 if [ -f "$pids" ]; then xargs -r kill 2>/dev/null < "$pids"; fi
 : > "$pids"
-# docker logs -f dies when the container is recreated; reattach so a deploy mid-run keeps watching
-while true; do docker logs -f --tail 0 relmedner-sdkworker-1 2>/dev/null; sleep 2; done \\
-| grep --line-buffered -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+' \\
-| while read p; do
-  grep -qx "$p" "$seen" 2>/dev/null && continue
-  echo "$p" >> "$seen"
-  setsid nohup ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
-    -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host} </dev/null >/dev/null 2>&1 &
-  echo $! >> "$pids"
+# POLL, don't stream: a long-lived `docker logs -f | grep | grep` pipeline dies silently when any
+# member exits (observed mid-job), while a fresh pipeline per tick is self-healing by construction
+while true; do
+  for p in $(docker logs --since 2m relmedner-sdkworker-1 2>/dev/null \\
+      | grep -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+'); do
+    grep -qx "$p" "$seen" 2>/dev/null && continue
+    echo "$p" >> "$seen"
+    setsid nohup ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
+      -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host} </dev/null >/dev/null 2>&1 &
+    echo $! >> "$pids"
+  done
+  sleep 2
 done
 """
 
