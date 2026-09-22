@@ -44,6 +44,13 @@ datasets:
       - text
   - task:
       type: script
+      name: CtkpInterventionsScript
+      outputs:
+        - entities
+    source: local
+    path: ~/Desktop/interventions.avro
+  - task:
+      type: script
       name: GlinerBiomedPostScript
       outputs:
         - entities
