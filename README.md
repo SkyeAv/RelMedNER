@@ -32,6 +32,7 @@ types share one declarative pipeline:
 ## Ingests
 
 Field-by-field schema, discriminator rules, and copy-paste templates for `ingests.yaml`: [docs/yaml-config.md](docs/yaml-config.md).
+Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schemas/ingests.schema.json](schemas/ingests.schema.json) (+ `schemas/cluster.schema.json`), regenerated with `uv run relmedner schema`.
 
 | dataset | task | inputs | outputs | rows in |
 | --- | --- | --- | --- | --- |
