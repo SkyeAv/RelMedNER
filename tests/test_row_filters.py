@@ -177,6 +177,20 @@ def test_filters_none_is_byte_identical_to_the_unfiltered_path(tmp_path: Path) -
     assert list(Defaulted.rows()) == list(Plain.rows())
 
 
+def test_a_cap_only_emptying_source_raises_even_without_declared_filters(tmp_path: Path) -> None:
+    """the zero-yield guard now covers the ALWAYS-ON cap: a source whose every record exceeds
+    MAX_TEXT_TOKENS * CHARS_PER_TOKEN empties silently under the old guard (it only armed when
+    filters were declared), so the raise must fire with filters=None too, same message shape"""
+    Target: Path = write_avro(tmp_path / "cap-guard.avro", [{"name": "word " * 7000}, {"name": "word " * 7001}])
+    Stream: LocalAvroDataStream = local_stream(Target)
+
+    assert Stream.filters is None
+    with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+        list(Stream.rows())
+    # and the drops are attributed, not silent
+    assert Stream.stats.dropped_by == {"max_tokens": 2}
+
+
 def test_a_partial_filter_keeps_the_surviving_rows(tmp_path: Path) -> None:
     Target: Path = write_avro(tmp_path / "partial.avro", [{"name": "aspirin trial"}, {"name": "x"}])
 
