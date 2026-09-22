@@ -164,7 +164,9 @@ def dyn_forwarder_script(jobmanager_host: str, user: str) -> str:
     return f"""#!/bin/bash
 seen=/tmp/relmedner-dyn-ports
 : > "$seen"
-docker logs -f --tail 0 relmedner-sdkworker-1 2>&1 \\
+tmux list-sessions 2>/dev/null | grep -oE '^relmedner-dyn-[0-9]+' | xargs -r -n1 tmux kill-session -t
+# docker logs -f dies when the container is recreated; reattach so a deploy mid-run keeps watching
+while true; do docker logs -f --tail 0 relmedner-sdkworker-1 2>/dev/null; sleep 2; done \\
 | grep --line-buffered -oE 'endpoint localhost:[0-9]+' | grep -oE '[0-9]+' \\
 | while read p; do
   grep -qx "$p" "$seen" 2>/dev/null && continue
