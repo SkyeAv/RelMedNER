@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 
 import pytest
 
@@ -259,4 +260,6 @@ _DOC_FIELD_NAMES: tuple[str, ...] = tuple(sorted({name for model in _DOC_MODELS 
 @pytest.mark.parametrize("field_name", _DOC_FIELD_NAMES)
 def test_every_yaml_model_field_is_named_in_docs_yaml_config(field_name: str) -> None:
     text = pathlib.Path("docs/yaml-config.md").read_text(encoding="utf-8")
-    assert field_name in text, f"field {field_name!r} is missing from docs/yaml-config.md"
+    # backtick-anchored match, not a bare substring: prose words like "name" or "range" must
+    # not satisfy the guard -- only a code span (table cell or inline) naming the field counts
+    assert re.search(rf"`{re.escape(field_name)}`", text), f"field {field_name!r} is missing from docs/yaml-config.md"

@@ -13,8 +13,9 @@ from apache_beam.runners.runner import PipelineResult
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
 from relmedner.dedup import apply_dedup, format_dedup_summary
 from relmedner.fullmap_mine import FullmapMiner
+from relmedner.gazetteer import configure_gazetteer
 from relmedner.ingests import YamlIngestsParser
-from relmedner.models import RunConfig, TrainingExample, YamlIngests
+from relmedner.models import GazetteerSpec, RunConfig, TrainingExample, YamlIngests
 from relmedner.registry import build_stream
 from relmedner.streams import DataStream, StreamedRow, rebuild_task
 from relmedner.types import DispatchedExample, Script
@@ -49,6 +50,35 @@ def resolve_rows(rows: list[StreamedRow], weights: dict[str, float]) -> Iterator
     pairs = [(values[0], task) for (_source, (_task, values)), task in zip(rows, tasks, strict=True)]
     for source, task, example in zip(sources, tasks, FullmapMiner.resolve_batch(pairs), strict=True):
         yield (tuple(task.outputs), weighted(example, weights[source]))
+
+
+class ResolveMinedBatches(beam.DoFn):
+    """fullmap batch-resolution DoFn that CARRIES the parsed GazetteerSpec as instance data.
+
+    WHY a DoFn and not the module-level resolve_rows function: Beam serializes the transform
+    graph by pickling DoFn instances, but a module-level function pickles by reference and the
+    driver's post-import module mutations do not survive serialization. Flink sdkworkers
+    (the production path) re-import relmedner.gazetteer fresh, so a driver-side
+    configure_gazetteer call would never reach them and a declared `gazetteer:` section would
+    silently produce builtin-only relations on cluster runs. This DoFn instead stores the
+    spec on the pickled instance (StrictBase models are frozen and pickle by value) and
+    re-runs configure_gazetteer in setup(), which Beam calls on the worker after unpickling,
+    so every worker rebuilds its trigger tables from builtins + this spec before its first
+    batch. The rebuild is idempotent, so this plus the driver-side parse_ingests() configure
+    are harmless double configuration."""
+
+    def __init__(self: Self, gazetteer: GazetteerSpec | None, weights: dict[str, float]) -> None:
+        self.gazetteer: GazetteerSpec | None = gazetteer
+        self.weights: dict[str, float] = weights
+        configure_gazetteer(gazetteer)
+
+    def setup(self: Self) -> None:
+        # runs worker-side after unpickle (and once on DirectRunner); the driver-time module
+        # state never crossed the wire, so the spec is re-applied here as data
+        configure_gazetteer(self.gazetteer)
+
+    def process(self, batch: list[StreamedRow]) -> Iterator[DispatchedExample]:
+        yield from resolve_rows(batch, self.weights)
 
 
 def matches_declared_outputs(dispatched: DispatchedExample) -> bool:
@@ -99,7 +129,7 @@ class BeamPipeline:
             mined = (
                 fullmap_rows
                 | "buffer fullmap rows into batches" >> beam.BatchElements(min_batch_size=MIN_BATCH_ROWS, max_batch_size=MAX_BATCH_ROWS)
-                | "resolve mined batches" >> beam.FlatMap(resolve_rows, weights=Weights)
+                | "resolve mined batches" >> beam.ParDo(ResolveMinedBatches(Ingests.gazetteer, Weights))
                 | "keep mined examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
             merged = (dispatched, mined) | "merge task branches" >> beam.Flatten() | "drop the declared output key" >> beam.Values()

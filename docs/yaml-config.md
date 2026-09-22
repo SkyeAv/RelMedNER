@@ -63,6 +63,13 @@ constants plus this section on every parse (last-parse-wins, idempotent); omitti
 entirely leaves the builtin tables exactly as shipped. A section that declares none of its arms
 (`gazetteer: {}`) is a validation error, not a no-op.
 
+Worker re-application: Beam serializes DoFn instances, not post-import module state, so the
+parsed spec is additionally carried through the pipeline as data on the fullmap mining DoFn
+(`ResolveMinedBatches` in `src/relmedner/pipeline.py`), which re-runs `configure_gazetteer`
+on every worker at `setup()` time. A Flink sdkworker therefore rebuilds its trigger tables
+from the builtins plus this section before its first batch, exactly like the driver; the
+driver-side configure inside `parse_ingests` stays as the idempotent double-configuration.
+
 Merge rules (fail-loud, enforced at parse/configure time):
 
 - ADDITIVE only: YAML `triggers` join the builtin phrases of the predicate they name, and a
@@ -105,8 +112,11 @@ Qualifiers and negation: the qualifier/negation scanner machinery (`QUALIFIER_TR
 checks) lives on the `add-qualifiers-to-relationship-pipelines` branch and lands with PR #22.
 Until then, `qualifiers` and `negation_cues` are STRUCTURALLY validated at parse time (shape,
 phrase rules above) but `configure_gazetteer` raises a structured `NotImplementedError` naming
-PR #22 the moment either arm is declared: fail-loud, never silent accept-and-ignore. When PR #22
-merges, the same models extend to full validation without a YAML-format change.
+PR #22 the moment either arm is declared: fail-loud, never silent accept-and-ignore. The same
+deferral applies to `GazetteerQualifier.slot`: only structural (non-empty string) validation
+runs now; the biolink `Qualifiers`-membership validator for the slot lands WITH PR #22's
+substrate (the scanner machinery above), not before it. When PR #22 merges, the same models
+extend to full validation without a YAML-format change.
 
 Copy-paste example (adds "cures" as a `treats` trigger):
 
