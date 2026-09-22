@@ -1,3 +1,4 @@
+from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
@@ -12,6 +13,7 @@ from relmedner.scripts.super_glue_multirc import SuperGlueMultiRCScript
 from relmedner.scripts.super_glue_record import SuperGlueRecordScript
 
 __all__ = [
+    "BioleafletsScript",
     "CtkpInterventionsScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",

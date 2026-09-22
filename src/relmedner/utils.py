@@ -401,6 +401,15 @@ class ScriptUtils:
             return []
         return decoded
 
+    @classmethod
+    def parse_literal_dict(cls, value: Any) -> dict[str, Any]:
+        """safely decode python-repr string columns that carry a dict (ast.literal_eval, no code
+        execution); real dicts pass through and anything else (None, junk strings, lists, quoted
+        strings, malformed reprs) yields {} so callers skip the section instead of crashing or
+        coercing (skip-don't-coerce, mirroring parse_literal_list)"""
+        decoded: Any = cls._decode_container(value)
+        return decoded if isinstance(decoded, dict) else {}
+
     @staticmethod
     def _decode_container(value: Any) -> Any:
         """one decode posture for every external column: real containers pass through, python-repr
