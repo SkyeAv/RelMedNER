@@ -72,6 +72,17 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "~/Desktop/interventions.avro",
         ),
     ),
+    "knowledgator/PubMedAbstractsNER": (
+        "hf_json",
+        (
+            ("script", "PubmedAbstractsScript", ("entities", "relations")),
+            "knowledgator/PubMedAbstractsNER",
+            "train.json",
+            "train",
+            None,
+            ("tokenized_text", "ner"),
+        ),
+    ),
 }
 
 

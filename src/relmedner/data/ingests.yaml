@@ -64,3 +64,16 @@ datasets:
       - tokenized_text
       - ner
       - negatives
+  - task:
+      type: script
+      name: PubmedAbstractsScript
+      outputs:
+        - entities
+        - relations
+    source: hf_json
+    dataset: knowledgator/PubMedAbstractsNER
+    file: train.json
+    split: train
+    columns_out:
+      - tokenized_text
+      - ner
