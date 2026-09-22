@@ -7,8 +7,10 @@ from typing import Any, Self
 import apache_beam as beam
 from apache_beam.io.avroio import WriteToAvro
 from apache_beam.options.pipeline_options import PipelineOptions
+from apache_beam.runners.runner import PipelineResult
 
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
+from relmedner.dedup import apply_dedup
 from relmedner.fullmap_mine import FullmapMiner
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample, YamlIngests
@@ -63,6 +65,9 @@ def to_record(example: TrainingExample) -> dict[str, Any]:
 class BeamPipeline:
     def __init__(self: Self, options: PipelineOptions | None = None) -> None:
         self.options: PipelineOptions | None = options
+        self.result: PipelineResult | None = None
+        """the finished run's result, set after the pipeline context closes; US-005 reads the
+        dedup counters from it for the DirectRunner summary line"""
 
     def run(self: Self, config: RunConfig) -> None:
         Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
@@ -94,10 +99,12 @@ class BeamPipeline:
                 | "resolve mined batches" >> beam.FlatMap(resolve_rows, weights=Weights)
                 | "keep mined examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
+            merged = (dispatched, mined) | "merge task branches" >> beam.Flatten() | "drop the declared output key" >> beam.Values()
+            # dedup sits between the merge and the avro write; OFF returns `merged` unchanged,
+            # so the graph reproduces the pre-dedup pipeline exactly
+            deduped = apply_dedup(merged, config.dedup_mode)
             (
-                (dispatched, mined)
-                | "merge task branches" >> beam.Flatten()
-                | "drop the declared output key" >> beam.Values()
+                deduped
                 | "shape examples into avro records" >> beam.Map(to_record)
                 | "write training data to avro"
                 >> WriteToAvro(
@@ -108,3 +115,6 @@ class BeamPipeline:
                     schema=TrainingExample.avro_schema_to_python(),
                 )
             )
+        # the with-block runs the pipeline on exit and stashes the result on the Pipeline
+        # object; retaining it here is what lets US-005 query metrics after the block closes
+        self.result = new_pipeline.result

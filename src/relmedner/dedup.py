@@ -16,6 +16,7 @@ from relmedner.constants import (
     DEDUP_SEED,
     MIN_NEAR_TOKENS,
 )
+from relmedner.enums import DedupMode
 from relmedner.models import TrainingExample
 
 DEDUP_METRICS_NAMESPACE = "relmedner.dedup"
@@ -245,3 +246,17 @@ class NearDeduplicate(beam.PTransform):
         )
         merged = (collapsed, emitted.bypass) | "near: merge survivors" >> beam.Flatten()
         return merged | "near: count kept survivors" >> beam.ParDo(_CountNearKept())
+
+
+def apply_dedup(examples: beam.PCollection[TrainingExample], mode: DedupMode) -> beam.PCollection[TrainingExample]:
+    """switch the dedup stage chain per mode (REQ-INT-2): OFF returns the pcollection
+    UNCHANGED so no dedup transform enters the graph at all; EXACT adds the exact stage
+    only; NEAR chains exact then near. mode is normalized through DedupMode() so the string
+    stored by RunConfig's use_enum_values validates loudly instead of silently skipping"""
+    selected: DedupMode = DedupMode(mode)
+    if selected is DedupMode.OFF:
+        return examples
+    exacted = examples | "exact dedup" >> KeepPriorityWinnerByKey()
+    if selected is DedupMode.EXACT:
+        return exacted
+    return exacted | "near dedup" >> NearDeduplicate()

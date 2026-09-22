@@ -17,6 +17,7 @@ from relmedner.dedup import (
     DEDUP_METRICS_NAMESPACE,
     KeepPriorityWinnerByKey,
     NearDeduplicate,
+    apply_dedup,
     band_keys,
     base_hash,
     exact_key,
@@ -25,6 +26,7 @@ from relmedner.dedup import (
     shingles,
     signature,
 )
+from relmedner.enums import DedupMode
 from relmedner.models import Entity, TrainingExample
 
 # ~100-word toy abstract and a same-length unrelated abstract with zero shared 5-gram shingles.
@@ -287,3 +289,74 @@ def test_near_stage_winner_that_loses_another_band_does_not_resurrect() -> None:
     counters = near_counters(result)
     assert counters == {"near_in": 2, "near_dropped": 1, "near_kept": 1, "near_buckets_nontrivial": 5}
     assert counters["near_in"] == counters["near_dropped"] + counters["near_kept"]
+
+
+# ---------------------------------------------------------------- mode switch (REQ-INT-2) --
+
+
+def test_apply_dedup_off_is_identity() -> None:
+    """REQ-INT-2: OFF returns the pcollection UNCHANGED, so no dedup transform enters the
+    graph at all: exact dups AND the Jaccard-0.979 near-pair all survive, and every dedup
+    counter stays at zero (absent from the finished run's metrics)"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+    base = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+    examples = [heavy, light, base, variant]
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create(examples)
+    deduped = apply_dedup(created, DedupMode.OFF)
+    assert deduped is created  # identity: the same PCollection object, no stage applied
+    assert_that(deduped, equal_to(examples))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    assert dedup_counters(result) == {"exact_in": 0, "exact_dropped": 0, "exact_kept": 0}
+    assert near_counters(result)["near_in"] == 0
+
+
+def test_apply_dedup_exact_runs_exact_stage_only() -> None:
+    """REQ-INT-2: EXACT adds the exact stage only: the whitespace dup collapses to its
+    priority winner, while the near-pair survives as TWO records and near_in stays 0 (the
+    near stage never entered the graph)"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+    base = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create([light, heavy, base, variant])
+    survivors = apply_dedup(created, DedupMode.EXACT)
+    assert_that(survivors | beam.Map(normalized_text), equal_to(["aspirin", NEAR_BASE_TEXT, NEAR_VARIANT_TEXT]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    assert dedup_counters(result) == {"exact_in": 4, "exact_dropped": 1, "exact_kept": 3}
+    assert near_counters(result)["near_in"] == 0
+
+
+def test_apply_dedup_near_runs_exact_then_near() -> None:
+    """REQ-INT-2: NEAR chains exact then near end-to-end: the whitespace dup collapses in the
+    exact stage, then the near-pair collapses to its higher-weight winner, and the dissimilar
+    record survives untouched; every counter reconciles (in == dropped + kept)"""
+    heavy = a_distinguishable_example("aspirin", weight=3.0)
+    light = a_distinguishable_example("  aspirin ", weight=1.0)
+    base_low = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    variant_high = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=3.0)
+    unrelated = a_distinguishable_example(UNRELATED_TEXT, weight=2.0)
+
+    pipeline = TestPipeline()
+    created = pipeline | beam.Create([light, heavy, base_low, variant_high, unrelated])
+    survivors = apply_dedup(created, DedupMode.NEAR)
+    assert_that(survivors | beam.Map(normalized_text), equal_to(["aspirin", NEAR_VARIANT_TEXT, UNRELATED_TEXT]))
+
+    result = pipeline.run()
+    result.wait_until_finish()
+    exact = dedup_counters(result)
+    assert exact == {"exact_in": 5, "exact_dropped": 1, "exact_kept": 4}
+    near = near_counters(result)
+    assert near["near_in"] == 4
+    assert near["near_dropped"] == 1
+    assert near["near_kept"] == 3
+    assert near["near_in"] == near["near_dropped"] + near["near_kept"]
