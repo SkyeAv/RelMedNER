@@ -511,7 +511,8 @@ def test_the_pubmed_script_pascalcases_raw_headings_but_keeps_mapped_categories(
 def test_the_pubmed_script_emits_gazetteer_relations_over_resolved_categories(monkeypatch: pytest.MonkeyPatch) -> None:
     """a trigger phrase between two resolved mentions emits an edge; the ingest declares
     outputs: [entities, relations] (US-003) so both shapes must come off one row (measured
-    500-row sample: 14.0% of rows carry >=1 relation across 15 predicates)"""
+    on a 5,000-row sample through the production run() path with the expanded map: 18.4% of
+    rows carry >=1 relation, 1,107 relations across 22 distinct predicates)"""
 
     def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         return [
