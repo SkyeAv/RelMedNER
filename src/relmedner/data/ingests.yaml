@@ -47,6 +47,30 @@ datasets:
     source: local
     weight: *weight
     path: synthetic-ner-ade-tweets/ade_tweets.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/train_wiki.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_wiki.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_nyt.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_semeval.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_pubmed.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/pubmed_unsupervised.avro
   - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-post-training

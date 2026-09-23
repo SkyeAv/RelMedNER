@@ -175,9 +175,10 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("paragraph", "question", "answer", "label"),
         ),
     ),
-    # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
-    # tuple is deliberately shorter than the hf ones above (it still carries the weight field, which
-    # DatasetBase declares for every source)
+    # the local-source entries: no subset/split/match_on/columns_out, just the avro path, so their
+    # tuples are deliberately shorter than the hf ones above (each still carries the weight field,
+    # which DatasetBase declares for every source). The interventions block and the six fewrel
+    # blocks were printed by probe.py --freeze (generated, never hand-written) and pasted verbatim.
     "interventions/interventions.avro": (
         "local",
         (
@@ -185,6 +186,30 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             1.0,
             "interventions/interventions.avro",
         ),
+    ),
+    "fewrel/train_wiki.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/train_wiki.avro"),
+    ),
+    "fewrel/val_wiki.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_wiki.avro"),
+    ),
+    "fewrel/val_nyt.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_nyt.avro"),
+    ),
+    "fewrel/val_semeval.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_semeval.avro"),
+    ),
+    "fewrel/val_pubmed.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_pubmed.avro"),
+    ),
+    "fewrel/pubmed_unsupervised.avro": (
+        "local",
+        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro"),
     ),
     "knowledgator/sentence_rex": (
         "hf",

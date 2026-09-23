@@ -19,3 +19,6 @@ dist/
 src/relmedner/data/interventions/*.avro
 src/relmedner/data/synthetic-ner-ade-tweets/*.avro
 src/relmedner/data/synthetic-ner-ade-tweets/*.tsv
+# FewRel containers: rebuilt out-of-band on wenceslaus by scripts/build_fewrel_avro.py
+# (raw GitHub JSON -> six per-split avro files; rebuild steps: the FewRel section of README.md).
+src/relmedner/data/fewrel/*.avro
