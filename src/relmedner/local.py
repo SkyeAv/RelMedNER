@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self
 
 from fastavro import reader
 
-from relmedner.constants import DATA
+from relmedner.constants import DATA, FULLMAP_DIR
 from relmedner.streams import DataStream, StreamedRow
 
 
@@ -33,10 +33,20 @@ class LocalAvroDataStream(DataStream):
         self.name: str = path
         self.path: str = path
 
+    def resolve(self: Self) -> Path:
+        """the declared path when it exists (laptop / driver), else the same basename staged beside
+        the fullmap bundle: inside the sdkworker `~` is /root and only the fullmap dir is mounted
+        (at RELMEDNER_FULLMAP_DIR=/opt/fullmap), so cluster hosts stage the file there"""
+        declared: Path = Path(self.path).expanduser()
+        if declared.is_file():
+            return declared
+        staged: Path = FULLMAP_DIR / declared.name
+        return staged if staged.is_file() else declared
+
     def rows(self: Self) -> Iterator[StreamedRow]:
         # the whole record ships as a single value so the receiving script owns the shape;
         # avro's reader is already lazy, so a 1M-record container never lands in memory at once
-        with Path(self.path).expanduser().open("rb") as handle:
+        with self.resolve().open("rb") as handle:
             for record in reader(handle):
                 yield (self.name, (self.task, (record,)))
 
