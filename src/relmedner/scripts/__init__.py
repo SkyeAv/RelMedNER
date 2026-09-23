@@ -1,5 +1,6 @@
 from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
+from relmedner.scripts.docred import DocredScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
@@ -17,6 +18,7 @@ from relmedner.scripts.synthetic_ner_ade_tweets import SyntheticNerAdeTweetsScri
 __all__ = [
     "BioleafletsScript",
     "CtkpInterventionsScript",
+    "DocredScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
     "GlinerMultilingualScript",
