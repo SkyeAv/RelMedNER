@@ -23,6 +23,16 @@
         "outputs": {
           "title": "Outputs",
           "type": "string"
+        },
+        "polars_runtime": {
+          "default": "32",
+          "enum": [
+            "32",
+            "64",
+            "compat"
+          ],
+          "title": "Polars Runtime",
+          "type": "string"
         }
       },
       "required": [
@@ -42,6 +52,10 @@
       "title": "Ssh User",
       "type": "string"
     },
+    "jobmanager": {
+      "title": "Jobmanager",
+      "type": "string"
+    },
     "workers": {
       "items": {
         "$ref": "#/$defs/WorkerNode"
@@ -52,6 +66,7 @@
   },
   "required": [
     "ssh_user",
+    "jobmanager",
     "workers"
   ],
   "title": "Cluster",

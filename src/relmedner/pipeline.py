@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any, Self
 
 import apache_beam as beam
-from apache_beam.io.avroio import WriteToAvro
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.runners.runner import PipelineResult
 
+from relmedner.avro_shards import ShardWriter, merge_shards
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
 from relmedner.dedup import apply_dedup, format_dedup_summary
 from relmedner.fullmap_mine import FullmapMiner
@@ -137,6 +137,7 @@ class BeamPipeline:
         # DoFns as pickled instance data exactly like Weights
         EdgeTrusts: dict[str, dict[str, float]] = Ingests.trust_edges_by_source()
         Output: Path = output_path(self.options, config)
+        Schema: dict[str, Any] = TrainingExample.avro_schema_to_python()
 
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (
@@ -166,18 +167,18 @@ class BeamPipeline:
             (
                 deduped
                 | "shape examples into avro records" >> beam.Map(to_record)
-                | "write training data to avro"
-                >> WriteToAvro(
-                    file_path_prefix=str(Output.with_suffix("")),
-                    file_name_suffix=Output.suffix,
-                    num_shards=1,
-                    shard_name_template="",
-                    schema=TrainingExample.avro_schema_to_python(),
-                )
+                # WriteFiles' streaming finalization stamps TIMESTAMP_MAX_VALUE and trips flink's
+                # watermark hold ("TimestampCombiner moved element"), so records go to per-bundle
+                # avro shards that collection merges instead (see relmedner.avro_shards)
+                | "write training data to avro" >> beam.ParDo(ShardWriter(str(Output), Schema))
             )
         # the with-block runs the pipeline on exit and stashes the result on the Pipeline
         # object; retaining it here is what lets US-005 query metrics after the block closes
         self.result = new_pipeline.result
+        if Output.parent != Path(OUTPUTS_MOUNT):
+            # the shard writer only produces parts; assemble the final avro file for local-style
+            # runs (flink runs assemble during collection instead, see relmedner.collect)
+            merge_shards(Output, Schema)
         # REQ-INT-4: report what dedup rejected on a local run only (the Flink runner keeps
         # the same counters in the job UI/REST instead). The `options is None` check mirrors
         # the output-path branch above, so a cluster run never reaches metrics() here and an

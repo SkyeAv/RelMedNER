@@ -591,10 +591,23 @@ class WorkerNode(StrictBase):
     outputs: str = Field(...)
     """host directory the sdkworker writes avro shards into; collected back to the laptop after a run"""
 
+    polars_runtime: Literal["32", "64", "compat"] = Field("32")
+    """POLARS_FORCE_PKG for this host's sdkworker: "compat" on CPUs without AVX2/FMA/BMI2, where the
+    default runtime dies with SIGILL; the image ships both via tablassert[rt]"""
+
 
 class Cluster(StrictBase):
     ssh_user: str = Field(...)
+    jobmanager: str = Field(...)
+    """head host running the jobmanager stack; deploy, the beam driver, and shard collection all
+    run from this host's checkout, and it also carries a taskmanager + sdkworker of its own"""
     workers: list[WorkerNode] = Field(...)
+
+    @model_validator(mode="after")
+    def _jobmanager_is_a_worker(self: Self) -> Self:
+        if self.jobmanager not in {worker.host for worker in self.workers}:
+            raise ValueError(f"jobmanager host {self.jobmanager!r} is not a declared worker")
+        return self
 
 
 class FlinkJob(BaseModel):

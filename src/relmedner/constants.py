@@ -23,7 +23,6 @@ OUTPUTS_MOUNT: str = "/opt/outputs"  # in-container mount target the sdkworker w
 
 WORKER_IMAGE_NAME: str = "localhost/relmedner-worker"
 FLINK_IMAGE_NAME: str = "localhost/relmedner-flink"
-LOCAL_HOST: str = "local"
 
 PROJECT: str = "relmedner"
 JOBMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.jobmanager.yml"
@@ -31,9 +30,9 @@ TASKMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.taskmanager.yml
 WORKER_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.worker"
 FLINK_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.flink"
 
-# Local fullmap database directory for resolution on the driver (no cluster mount).
-# RELMEDNER_FULLMAP_DIR lets the beam sdkworker container point at its own mount
-# (/opt/fullmap); hosts resolve the literal Desktop path by default.
+# Local fullmap database directory for resolution on the driver (no cluster mount). Workers always
+# read the mounted bundle instead: the sdkworker containers get RELMEDNER_FULLMAP_DIR=/opt/fullmap
+# from the compose files, and the driver on the head host exports RELMEDNER_FULLMAP_DIR itself.
 FULLMAP_DIR: Path = Path(environ.get("RELMEDNER_FULLMAP_DIR") or "/home/skyeav/Desktop/fullmap")
 
 # ---------------------------------------------------------------- fullmap mining knobs ----

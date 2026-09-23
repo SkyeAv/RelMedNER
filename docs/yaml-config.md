@@ -433,21 +433,19 @@ cold-cache streaming corruption).
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `ssh_user` | yes | none | login name | ssh user on every worker |
-| `workers` | yes | none | non-empty list of `WorkerNode` | the Flink worker nodes; the laptop entry hosts the jobmanager |
+| `jobmanager` | yes | none | hostname or IP | head host: runs the jobmanager stack AND its own worker duty; deploy, `build-dataset`, and shard collection all run from this host |
+| `workers` | yes | none | non-empty list of `WorkerNode` | the Flink worker nodes; the head-host model gives every listed host worker duty |
 
 ### Worker entries (`WorkerNode`)
 
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
-| `host` | yes | none | hostname or IP; `local` means the laptop | worker address (taskmanagers connect back to the laptop's jobmanager ports, so every worker needs a VPN route to it) |
+| `host` | yes | none | hostname or IP | worker address; all inter-host flink traffic rides ssh tunnels, so only :22 must be reachable |
 | `slots` | yes | none | >= 1 | Beam SDK worker slots on this node |
 | `memory` | yes | none | string like `16g` | memory given to the worker container |
 | `fullmap` | yes | none | host directory | directory holding the fullmap redb bundle (primary redb plus `<stem>.s<N>.redb` shards); bind-mounted read-only into the sdkworker at `/opt/fullmap` |
-| `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards on remotes are collected back to the laptop when the job finishes |
-
-The shared path pair (`fullmap` + `outputs`) can be anchored once and merged
-into sibling workers, as the wenceslaus/hypatia blocks in `cluster.yaml` do
-with `<<: &wenceslaus-paths ...`.
+| `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards are collected onto the head host when the job finishes |
+| `polars_runtime` | no | `"32"` | `"32"`, `"64"`, or `"compat"` | `POLARS_FORCE_PKG` for this host's sdkworker: `"compat"` on CPUs without AVX2/FMA/BMI2, where the default runtime dies with SIGILL (the image ships both via `tablassert[rt]`) |
 
 ## How the loader reads these files
 
