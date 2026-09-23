@@ -72,7 +72,10 @@ if [ ! -f "$ROOT/$SKILL_REL/remote-runner.sh" ]; then
 fi
 
 # 1. push the tree. --exclude='.venv' is load-bearing: shipping a laptop-platform venv makes uv
-#    rebuild the remote environment. --delete keeps the copy honest.
+#    rebuild the remote environment. --delete keeps the copy honest. --exclude='*.avro' keeps
+#    operator-built containers off the wire, and the sentinel file keeps --delete from wiping the
+#    whole package-data dir on a box where the containers have not been built yet (the runner
+#    syncs real containers from a sibling tree before the suite runs).
 if [ "$DO_SYNC" -eq 1 ]; then
     echo "== rsync push"
     remote "mkdir -p '$REMOTE_REL'" || exit 1
@@ -80,7 +83,9 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.git' --exclude='.venv' --exclude='.ralph' \
         --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.ruff_cache' \
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
+        --exclude='.rsync-dir-sentinel' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
+    remote "mkdir -p '$REMOTE_REL/src/relmedner/data/bc5cdr' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets' '$REMOTE_REL/src/relmedner/data/interventions' && touch '$REMOTE_REL/src/relmedner/data/bc5cdr/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/interventions/.rsync-dir-sentinel'" || exit 1
 fi
 
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
