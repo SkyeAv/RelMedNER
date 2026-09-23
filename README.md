@@ -145,15 +145,15 @@ remote):
 
 Suggest a `trust:` value per source from literature evidence. No cluster and no VPN, but it
 does need network egress: records stream through the same dispatch path as `build-dataset`,
-and every emitted entity or relation becomes a PubMed E-utilities query (or a query against a
-self-hosted Firecrawl with `--backend firecrawl`). One source, two records:
+and every emitted entity or relation becomes a PubMed E-utilities query. One source, two
+records:
 
     uv run relmedner validate-trust --source Pennlaine/Medical-Entity-JSON-Extraction -t --sample-size 2 -o ./trust-report.jsonl
 
 Nothing is written back to `ingests.yaml`. The command prints a suggested `trust:` snippet per
 source and writes the per-record JSONL report for review. Defaults come from the optional
-`x-trust:` section of `ingests.yaml` (50 records per source, `pubmed` backend,
-`trust-report.jsonl`), overridden flag-by-flag; an optional `NCBI_API_KEY` in the environment
+`x-trust:` section of `ingests.yaml` (50 records per source, `trust-report.jsonl`), overridden
+flag-by-flag; an optional `NCBI_API_KEY` in the environment
 lifts the client's own throttle from 3.4 to about 9 req/s (NCBI allows 3 unauthenticated, 10
 authenticated). A key that is malformed or expired makes every query fail, and the printed
 snippet says so rather than blaming the corpus. Reading the report and turning it into a
