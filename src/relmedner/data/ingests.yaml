@@ -13,6 +13,7 @@
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+  hf-parquet: &hf-parquet {source: hf_parquet, weight: *weight}
 
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
@@ -225,3 +226,21 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    <<: *hf-parquet
+    dataset: bigbio/gad
+    subset: gad_blurb_bigbio_text
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    <<: *hf-parquet
+    dataset: bigbio/gad
+    subset: gad_blurb_bigbio_text
+    split: validation
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    <<: *hf-parquet
+    dataset: bigbio/gad
+    subset: gad_blurb_bigbio_text
+    split: test
+    columns_out: [text, labels]

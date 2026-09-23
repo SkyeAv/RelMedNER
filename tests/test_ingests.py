@@ -369,33 +369,81 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    "bigbio/gad:gad_blurb_bigbio_text:train": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text",
+            "train",
+            None,
+            ("text", "labels"),
+        ),
+    ),
+    "bigbio/gad:gad_blurb_bigbio_text:validation": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text",
+            "validation",
+            None,
+            ("text", "labels"),
+        ),
+    ),
+    "bigbio/gad:gad_blurb_bigbio_text:test": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text",
+            "test",
+            None,
+            ("text", "labels"),
+        ),
+    ),
 }
 
 
 def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str:
     """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
-    "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
-    different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    the loser would vanish from both locks and the failure would be silent"""
+    "hf"/"hf_parquet", file for "hf_json") joins the key whenever one is declared, because two
+    ingests read different subsets of aps/super_glue and a bare repo id would collide in the
+    EXPECTED literal -- the loser would vanish from both locks and the failure would be silent.
+    A declared subset repeated over MULTIPLE SPLITS of one repo (bigbio/gad declares
+    gad_blurb_bigbio_text train/validation/test) still collides on the subset alone, so a
+    split-qualifying pair appends the split: bigbio/gad:gad_blurb_bigbio_text:train."""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
     # columns_out (a tuple), and there the declared path is already unique per file. A repo id
     # declared once PER SPLIT (nvidia/Nemotron-PII) has no subset, so the split qualifies instead
     # or the train and test locks would collide and one would silently vanish
-    if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
-        discriminator = payload[4]
+    if split_qualified and len(payload) > 4 and isinstance(payload[4], str):
+        split = payload[4]
+        if isinstance(discriminator, str):
+            return f"{dataset}:{discriminator}:{split}"
+        discriminator = split
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
 
 
 def tuples_by_ingest() -> dict[str, tuple[object, ...]]:
-    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a repo id
-    # appearing on more than one declared ingest gets split-qualified keys (see entry_key)
+    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a
+    # (repo id, discriminator) pair appearing on more than one declared ingest gets
+    # split-qualified keys (see entry_key); pairing on the discriminator keeps aps/super_glue's
+    # two distinct subsets single-qualified as before
     entries: list[tuple[str, tuple[object, ...]]] = list(YamlIngestsParser().generate_tuples())
-    declared: dict[str, int] = {}
+    declared: dict[tuple[object, object], int] = {}
     for _, payload in entries:
-        declared[str(payload[2])] = declared.get(str(payload[2]), 0) + 1
-    return {entry_key(payload, split_qualified=declared[str(payload[2])] > 1): (source, payload) for source, payload in entries}
+        pair: tuple[object, object] = (str(payload[2]), payload[3] if len(payload) > 3 else None)
+        declared[pair] = declared.get(pair, 0) + 1
+    return {
+        entry_key(payload, split_qualified=declared[(str(payload[2]), payload[3] if len(payload) > 3 else None)] > 1): (source, payload)
+        for source, payload in entries
+    }
 
 
 @pytest.mark.parametrize("ingest", sorted(EXPECTED))

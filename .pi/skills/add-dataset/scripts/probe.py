@@ -68,6 +68,32 @@ def hub_size(dataset: str) -> dict[str, Any]:
     return hub_json(f"https://datasets-server.huggingface.co/size?dataset={dataset}")
 
 
+def entry_keys(datasets: list[Any]) -> list[str]:
+    """tests/test_ingests.py entry_key + tuples_by_ingest, mirrored: the discriminator after the
+    repo id (subset for hf/hf_parquet, file for hf_json) qualifies the key, and a (repo,
+    discriminator) pair repeated over multiple splits appends the split (bigbio/gad declares
+    gad_blurb_bigbio_text train/validation/test). Freeze and --declared keys must equal the
+    EXPECTED lock keys byte for byte."""
+    payloads = [dataset.to_tuple()[1] for dataset in datasets]
+    declared: dict[tuple[object, object], int] = {}
+    for payload in payloads:
+        pair = (str(payload[2]), payload[3] if len(payload) > 3 else None)
+        declared[pair] = declared.get(pair, 0) + 1
+    keys: list[str] = []
+    for payload in payloads:
+        dataset = str(payload[2])
+        discriminator = payload[3] if len(payload) > 3 else None
+        split_qualified = declared[(str(payload[2]), payload[3] if len(payload) > 3 else None)] > 1
+        if split_qualified and len(payload) > 4 and isinstance(payload[4], str):
+            split = payload[4]
+            if isinstance(discriminator, str):
+                keys.append(f"{dataset}:{discriminator}:{split}")
+                continue
+            discriminator = split
+        keys.append(f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset)
+    return keys
+
+
 def report_freeze(entry_key: str | None) -> None:
     """print the tests/test_ingests.py EXPECTED block for one declared ingest (or all of them),
     generated from the live generate_tuples() output rather than hand-written. Paste it into the
@@ -81,10 +107,8 @@ def report_freeze(entry_key: str | None) -> None:
 
     ingests = YamlIngestsParser().parse_ingests()
     printed = 0
-    for dataset in ingests.datasets:
+    for dataset, key in zip(ingests.datasets, entry_keys(ingests.datasets), strict=True):
         source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
         if entry_key is not None and key != entry_key:
             continue
         printed += 1
@@ -133,10 +157,8 @@ def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any
     ingests = YamlIngestsParser().parse_ingests()
     match = None
     columns: tuple[str, ...] = ()
-    for dataset in ingests.datasets:
+    for dataset, key in zip(ingests.datasets, entry_keys(ingests.datasets), strict=True):
         source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
         if key == entry_key:
             match = dataset.to_stream_args()
             # read the projection off the model, never off a payload position: local_delimited packs
@@ -417,7 +439,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--taxon", default="9606", help="fullmap taxon (default: 9606, human)")
     parser.add_argument("--info", action="store_true", help="hub row counts only, no download")
     parser.add_argument(
-        "--freeze", nargs="?", const="", default=None, metavar="ENTRY_KEY",
+        "--freeze",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="ENTRY_KEY",
         help="print the tests/test_ingests.py EXPECTED block for one entry_key (all ingests when no key is given); no download",
     )
     parser.add_argument("--sample", type=int, default=2, help="rows to pretty-print verbatim (default: 2)")

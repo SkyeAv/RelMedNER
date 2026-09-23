@@ -73,6 +73,7 @@ def test_build_stream_constructs_every_declared_ingest() -> None:
     assert {type(stream) for stream in Built} == {
         HuggingFaceDataStream,
         HuggingFaceJsonDataStream,
+        HuggingFaceParquetDataStream,
         LocalAvroDataStream,
         LocalDelimitedDataStream,
     }
