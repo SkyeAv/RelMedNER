@@ -20,7 +20,7 @@ def live_example(marker: str) -> TrainingExample:
     -> hf_parquet streaming -> Script.REGISTRY dispatch. The five chia entries share one task name,
     so selection pins the declared parquet `file` (the entry key discriminator)."""
     from relmedner.ingests import YamlIngestsParser
-    from relmedner.pipeline import dispatch_row
+    from relmedner.pipeline import dispatch_args, dispatch_row
     from relmedner.registry import build_stream
 
     Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
@@ -37,7 +37,7 @@ def live_example(marker: str) -> TrainingExample:
     Outputs, Example = Script.dispatch("ChiaScript", (tuple(Task[2]), Values))
     assert Outputs == ("entities", "relations")
     # the pipeline's own dispatch wrapper must agree with the direct registry call above
-    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Ingests.weights_by_source())
+    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
     assert PipelineOutputs == Outputs
     assert PipelineExample == Example
     return Example
