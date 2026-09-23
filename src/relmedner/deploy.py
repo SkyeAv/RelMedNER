@@ -62,6 +62,7 @@ def compose_vars(worker: WorkerNode, flink_image: str, worker_image: str, data_p
         "MEMORY": worker.memory,
         "FULLMAP_DIR": worker.fullmap,
         "FULLMAP_MOUNT": FULLMAP_MOUNT,
+        "POLARS_RUNTIME": worker.polars_runtime,
         "OUTPUTS_DIR": worker.outputs,
         "OUTPUTS_MOUNT": OUTPUTS_MOUNT,
         "TASKMANAGER_HOST": "127.0.0.1",

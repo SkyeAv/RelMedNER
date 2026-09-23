@@ -14,14 +14,16 @@ def test_cluster_shape() -> None:
     assert ClusterSpec.ssh_user == "sgoetz"
     assert ClusterSpec.jobmanager == "10.2.9.11"
     assert tuple(worker.to_tuple() for worker in ClusterSpec.workers) == (
-        ("10.2.9.11", 64, "112g", "/local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap", "/local_raid1/sgoetz/DBSTORE/FULLMAP/outputs"),
-        ("10.2.9.19", 16, "40g", "/ssd2/sgoetz/fullmap", "/ssd2/sgoetz/outputs"),
+        ("10.2.9.11", 64, "112g", "/local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap", "/local_raid1/sgoetz/DBSTORE/FULLMAP/outputs", "32"),
+        # hypatia's pre-AVX2 xeons need polars' compat runtime
+        ("10.2.9.19", 16, "40g", "/ssd2/sgoetz/fullmap", "/ssd2/sgoetz/outputs", "compat"),
     )
 
 
 def test_worker_node_tuple_without_an_override() -> None:
     Worker: WorkerNode = WorkerNode(host="10.2.9.19", slots=4, memory="6g", fullmap="/data/fullmap", outputs="/data/outputs")
-    assert Worker.to_tuple() == ("10.2.9.19", 4, "6g", "/data/fullmap", "/data/outputs")
+    # polars_runtime defaults to the fast "32" runtime
+    assert Worker.to_tuple() == ("10.2.9.19", 4, "6g", "/data/fullmap", "/data/outputs", "32")
 
 
 def test_cluster_endpoints() -> None:

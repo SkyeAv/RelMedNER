@@ -335,6 +335,10 @@ class WorkerNode(StrictBase):
     outputs: str = Field(...)
     """host directory the sdkworker writes avro shards into; collected back to the laptop after a run"""
 
+    polars_runtime: Literal["32", "64", "compat"] = Field("32")
+    """POLARS_FORCE_PKG for this host's sdkworker: "compat" on CPUs without AVX2/FMA/BMI2, where the
+    default runtime dies with SIGILL; the image ships both via tablassert[rt]"""
+
 
 class Cluster(StrictBase):
     ssh_user: str = Field(...)

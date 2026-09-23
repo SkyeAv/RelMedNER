@@ -52,6 +52,8 @@ services:
       # pipeline code resolves the redb through relmedner.constants.FULLMAP_DIR, which honors this
       # override — point it at the read-only bundle mount, not the host path (invisible in here)
       RELMEDNER_FULLMAP_DIR: ${FULLMAP_MOUNT}
+      # which polars runtime to load: "compat" on CPUs without AVX2 (hypatia), else the fast default
+      POLARS_FORCE_PKG: "${POLARS_RUNTIME}"
     volumes:
       - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
       # avro shards land here; the host side is collected onto the head host when the job finishes

@@ -35,6 +35,24 @@ def test_image_id_is_empty_when_the_image_is_missing(monkeypatch: pytest.MonkeyP
     assert image_id(["ssh", "host", "docker"], "img:1") == ""
 
 
+def test_each_host_gets_its_own_polars_runtime_in_the_compose_vars() -> None:
+    """hypatia's pre-AVX2 xeons SIGILL on the default polars runtime, so its sdkworker must be told
+    to load the compat one while AVX2 hosts keep the default"""
+    Old: WorkerNode = WorkerNode(host="10.2.9.19", slots=16, memory="40g", fullmap="/f", outputs="/o", polars_runtime="compat")
+    New: WorkerNode = WorkerNode(host="10.2.9.11", slots=64, memory="112g", fullmap="/f", outputs="/o")
+
+    assert deploy.compose_vars(Old, "flink:x", "worker:x", 16126)["POLARS_RUNTIME"] == "compat"
+    assert deploy.compose_vars(New, "flink:x", "worker:x", 16125)["POLARS_RUNTIME"] == "32"
+
+
+def test_the_bundled_cluster_marks_hypatia_for_the_compat_polars_runtime() -> None:
+    from relmedner.clusters import YamlClusterParser
+
+    Runtimes: dict[str, str] = {worker.host: worker.polars_runtime for worker in YamlClusterParser().remotes()}
+
+    assert Runtimes["10.2.9.19"] == "compat"
+
+
 def test_data_port_stems_from_the_canonical_port_by_worker_index() -> None:
     assert data_port(0) == TASKMANAGER_DATA_PORT
     assert data_port(1) == TASKMANAGER_DATA_PORT + 1

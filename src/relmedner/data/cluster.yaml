@@ -24,3 +24,5 @@ workers:
     memory: 40g
     fullmap: /ssd2/sgoetz/fullmap
     outputs: /ssd2/sgoetz/outputs
+    # Xeon E5-2690 v2 (Ivy Bridge): no AVX2/FMA/BMI2 — the default polars runtime dies with SIGILL
+    polars_runtime: compat
