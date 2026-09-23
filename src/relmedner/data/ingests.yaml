@@ -300,27 +300,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
-  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
-    source: hf_parquet
-    weight: *weight
-    dataset: bigbio/gad
-    file: gad_blurb_bigbio_text/train/0000.parquet
-    split: train
-    columns_out: [text, labels]
-  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
-    source: hf_parquet
-    weight: *weight
-    dataset: bigbio/gad
-    file: gad_blurb_bigbio_text/validation/0000.parquet
-    split: train
-    columns_out: [text, labels]
-  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
-    source: hf_parquet
-    weight: *weight
-    dataset: bigbio/gad
-    file: gad_blurb_bigbio_text/test/0000.parquet
-    split: train
-    columns_out: [text, labels]
+    filters: *reddit-quality
   # bigbio/ehr_rel: EHR concept relatedness (Schulz et al., COLING 2020, apache-2.0). A script-era
   # hub repo: main carries only loading-script files, so each entry reads its config's parquet file
   # from the auto-convert refs/convert/parquet branch (hf_parquet source kind). The four subsets
@@ -384,7 +364,6 @@ datasets:
     split: test
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
-    filters: *reddit-quality
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner
@@ -450,3 +429,24 @@ datasets:
     source: local
     weight: *weight
     path: bc5cdr/test.avro
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/train/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/validation/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/test/0000.parquet
+    split: train
+    columns_out: [text, labels]
