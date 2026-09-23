@@ -306,25 +306,60 @@ def validate_trigger_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> 
                 raise ValueError(f"phrase {phrase!r} is claimed by both {owner!r} and {predicate!r}")
 
 
+PhraseIndex = dict[str, tuple[tuple[tuple[str, ...], str], ...]]
+"""first token -> (phrase, key) candidates ordered longest first, then by table order"""
+
+_PHRASE_INDEXES: dict[int, tuple[Mapping[str, tuple[tuple[str, ...], ...]], PhraseIndex]] = {}
+"""id(table) -> (table, its index). The table object is held alongside its index so an id can
+never be recycled onto a different table while cached; configure_gazetteer swaps the global
+for a NEW dict rather than mutating one, so identity is the right cache key"""
+
+
+def _phrase_index(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> PhraseIndex:
+    """bucket every phrase under its first token, longest first and table order within a length,
+    so the first bucket entry that matches is exactly the phrase the full scan would pick"""
+    cached = _PHRASE_INDEXES.get(id(table))
+    if cached is not None and cached[0] is table:
+        return cached[1]
+    ordered: list[tuple[int, int, tuple[str, ...], str]] = []
+    for key, phrases in table.items():
+        for phrase in phrases:
+            if phrase:
+                ordered.append((-len(phrase), len(ordered), tuple(phrase), key))
+    buckets: dict[str, list[tuple[tuple[str, ...], str]]] = {}
+    for _length, _order, phrase, key in sorted(ordered):
+        buckets.setdefault(phrase[0], []).append((phrase, key))
+    index: PhraseIndex = {token: tuple(entries) for token, entries in buckets.items()}
+    _PHRASE_INDEXES[id(table)] = (table, index)
+    return index
+
+
 def _scan(table: Mapping[str, tuple[tuple[str, ...], ...]], tokens: list[str]) -> list[tuple[int, int, str]]:
     """left-to-right greedy scan over a phrase table; the longest phrase matching at a start
-    position wins and consumes its span (empty phrase tuples attach by type and never match)"""
+    position wins and consumes its span (empty phrase tuples attach by type and never match);
+    between equal-length matches the one earlier in table order wins.
+
+    Only phrases whose first token equals the token at the start position are tried (first-token
+    index), instead of every phrase in the table at every position: same result, and the
+    per-token cost drops from O(total phrases) to one dict probe for the vast majority of tokens
+    that begin no phrase at all."""
+    index: PhraseIndex = _phrase_index(table)
     lowered: list[str] = [token.lower() for token in tokens]
     triggers: list[tuple[int, int, str]] = []
     start = 0
-    while start < len(lowered):
-        best_length: int = 0
-        best_key: str | None = None
-        for key, phrases in table.items():
-            for phrase in phrases:
-                length = len(phrase)
-                if length > best_length and lowered[start : start + length] == list(phrase):
-                    best_length, best_key = length, key
-        if best_key is None:
+    total: int = len(lowered)
+    while start < total:
+        match: tuple[tuple[str, ...], str] | None = None
+        for phrase, key in index.get(lowered[start], ()):
+            length = len(phrase)
+            if start + length <= total and tuple(lowered[start : start + length]) == phrase:
+                match = (phrase, key)
+                break
+        if match is None:
             start += 1
             continue
-        triggers.append((start, start + best_length - 1, best_key))
-        start += best_length
+        triggers.append((start, start + len(match[0]) - 1, match[1]))
+        start += len(match[0])
     return triggers
 
 
