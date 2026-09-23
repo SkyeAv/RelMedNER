@@ -246,3 +246,8 @@ datasets:
     weight: *weight
     dataset: ruslan/bioleaflets-biomedical-ner
     columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
+  - task: {type: script, name: MedicalEntityJsonScript, outputs: [entities]}
+    <<: *hf-train
+    split: test
+    dataset: Pennlaine/Medical-Entity-JSON-Extraction
+    columns_out: [text]

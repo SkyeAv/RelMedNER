@@ -4,6 +4,7 @@ from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
 from relmedner.scripts.knowledgator_biomed import KnowledgatorBiomedScript
+from relmedner.scripts.medical_entity_json import MedicalEntityJsonScript
 from relmedner.scripts.nemotron_pii import NemotronPiiScript
 from relmedner.scripts.pile_ner_biomed import PileNerBiomedScript
 from relmedner.scripts.pile_ner_type import PileNerTypeScript
@@ -20,6 +21,7 @@ __all__ = [
     "GlinerBiomedScript",
     "GlinerMultilingualScript",
     "KnowledgatorBiomedScript",
+    "MedicalEntityJsonScript",
     "NemotronPiiScript",
     "PileNerBiomedScript",
     "PileNerTypeScript",
