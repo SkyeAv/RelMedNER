@@ -68,6 +68,41 @@ def hub_size(dataset: str) -> dict[str, Any]:
     return hub_json(f"https://datasets-server.huggingface.co/size?dataset={dataset}")
 
 
+def entry_base_key(payload: tuple[object, ...]) -> str:
+    """repo id plus a scalar discriminator (subset for "hf", file for "hf_json"). Kept identical
+    to tests/test_ingests.py entry_key, which locks and asserts on these keys"""
+    dataset = str(payload[2])
+    discriminator = payload[3] if len(payload) > 3 else None
+    # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
+    # columns_out (a tuple), and there the declared path is already unique per file
+    return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
+
+
+def declared_entry_keys(ingests: Any) -> list[tuple[Any, str, tuple[object, ...], str, str]]:
+    """(dataset, source, payload, key, base) per declared ingest under the tests/test_ingests.py
+    entry_key rule, kept identical: a base key declared on more than one ingest gets the split
+    appended, and a key that still collides after that is a hard error, never a silent dict
+    overwrite (the loser would vanish from both the freeze blocks and the locks)"""
+    tuples: list[tuple[Any, str, tuple[object, ...]]] = []
+    for dataset in ingests.datasets:
+        source, payload = dataset.to_tuple()
+        tuples.append((dataset, source, payload))
+    base_counts: Counter[str] = Counter(entry_base_key(payload) for _dataset, _source, payload in tuples)
+    keyed: dict[str, tuple[Any, str, tuple[object, ...], str, str]] = {}
+    for dataset, source, payload in tuples:
+        base = entry_base_key(payload)
+        key = base
+        if base_counts[base] > 1:
+            split = payload[4] if len(payload) > 4 else None
+            if not isinstance(split, str):
+                raise ValueError(f"entry base {base!r} is declared on more than one ingest but its split {split!r} is not a str")
+            key = f"{base}:{split}"
+        if key in keyed:
+            raise ValueError(f"entry key {key!r} is produced by more than one declared ingest")
+        keyed[key] = (dataset, source, payload, key, base)
+    return list(keyed.values())
+
+
 def report_freeze(entry_key: str | None) -> None:
     """print the tests/test_ingests.py EXPECTED block for one declared ingest (or all of them),
     generated from the live generate_tuples() output rather than hand-written. Paste it into the
@@ -81,10 +116,7 @@ def report_freeze(entry_key: str | None) -> None:
 
     ingests = YamlIngestsParser().parse_ingests()
     printed = 0
-    for dataset in ingests.datasets:
-        source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
+    for _dataset, source, payload, key, _base in declared_entry_keys(ingests):
         if entry_key is not None and key != entry_key:
             continue
         printed += 1
