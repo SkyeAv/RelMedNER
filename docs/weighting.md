@@ -184,6 +184,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` | silver | 0.7 | 0.8 | same tweet texts with no gold spans, fullmap-mined, so distant labels |
 | `ruslan/bioleaflets-biomedical-ner` (train + test, one row key) | silver | 0.7 | 0.8 | EMA regulatory leaflets; the card does not state annotation provenance |
 | `Pennlaine/Medical-Entity-JSON-Extraction` | silver | 0.7 | 0.8 | 50 instruction-tuned vignettes, hub card body empty |
+| `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
 | `nvidia/Nemotron-PII` (train + test, one row key -- weights must stay equal) | general | 0.4 | 0.6 | PII not biomedical, synthetic; kept for span diversity |

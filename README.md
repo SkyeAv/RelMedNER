@@ -72,6 +72,12 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
 | `ruslan/bioleaflets-biomedical-ner` (`train`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 1,068 |
 | `ruslan/bioleaflets-biomedical-ner` (`test`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 134 |
+| `agentlans/json-extraction` (`owkin-medical_knowledge_from_extracts`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 1,383 |
+| `agentlans/json-extraction` (`ProfessorBob-relation_extraction`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, relations | 6,920 |
+| `agentlans/json-extraction` (`roborovski-dolly-entity-extraction`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 5,945 |
+| `agentlans/json-extraction` (`sandeeppanem-resume-json-extraction-5k`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 4,879 |
+| `agentlans/json-extraction` (`Jiraya-html_to_json_information_extraction_dataset`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 3,035 |
+| `agentlans/json-extraction` (`HenriqueGodoy-extract-0`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures | 2,606 |
 | `Pennlaine/Medical-Entity-JSON-Extraction` (test) | `script` -> `MedicalEntityJsonScript` | `text` | entities | 50 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
@@ -92,6 +98,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/nemotron-pii.md](docs/nemotron-pii.md) -- the NVIDIA Nemotron-PII corpus, the one general-domain ingest.
 - [docs/bioleaflets.md](docs/bioleaflets.md) -- the EMA package-leaflet corpus and its measured ResolutionGate drugname bucket.
 - [docs/synthetic-ner-ade-tweets.md](docs/synthetic-ner-ade-tweets.md) -- the synthetic ADE-tweets corpus, its BRAT-standoff decode, and its gold-plus-unannotated ingest pair.
+- [docs/json-extraction.md](docs/json-extraction.md) -- the structured-extraction corpus, its six per-source ingests, and the honest-biolink label maps behind its structures-plus-entities shapes.
 - [docs/weighting.md](docs/weighting.md) -- how to pick ingest weights, the `trust` band, and the offline `validate-trust` literature check.
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
 - [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
