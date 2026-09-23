@@ -278,6 +278,27 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+  # BioRED gold (wcole3/biored-parquet): the verified parquet conversion of bigbio/biored, whose
+  # script-only hub loading is unsupported on datasets 5.x. The hub config is biored_bigbio_kb and
+  # the config-less default load streams it, so no subset is declared: entry_key then split-qualifies
+  # the three locks (wcole3/biored-parquet:train/:validation/:test) because one repo id carries one
+  # ingest per split and a declared subset would collide them.
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: test
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
     filters: *reddit-quality
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train

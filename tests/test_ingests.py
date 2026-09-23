@@ -367,6 +367,45 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text", "spans"),
         ),
     ),
+    # wcole3/biored-parquet declares one ingest PER SPLIT off one repo id with no subset (the
+    # config-less load streams the default biored_bigbio_kb config), so entry_key split-qualifies
+    # the three locks exactly like nvidia/Nemotron-PII above
+    "wcole3/biored-parquet:train": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "train",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:validation": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "validation",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:test": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "test",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (
