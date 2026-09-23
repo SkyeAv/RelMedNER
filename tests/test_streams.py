@@ -569,3 +569,79 @@ def test_local_unfiltered_pass_counts_without_dropping(tmp_path: Path) -> None:
     assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["a", "b"]
     assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 2
     assert Stream.stats.dropped_by == {}
+
+
+# ------------------------------------------------- US-002 always-on cap on every source --
+
+_OVER_CAP: str = "word " * 7000  # 35000 joined chars > MAX_TEXT_TOKENS * CHARS_PER_TOKEN (32768)
+
+
+def test_hf_filters_none_source_still_drops_over_cap_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the cap is ALWAYS-ON: with no declared filters the stream must still drop an over-cap row
+    and attribute it to max_tokens, while a short row yields unchanged -- before effective_filters
+    the evaluator only ran when filters were declared, so unfiltered sources leaked over-cap rows"""
+    Rows: list[dict[str, Any]] = [{"text": "aspirin trial"}, {"text": _OVER_CAP}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows)
+
+    Yielded: list[StreamedRow] = list(Stream.rows())
+
+    assert Yielded == [("fake/quality", (_QUALITY_TASK, ("aspirin trial",)))]
+    assert Stream.filters is None and Stream.effective_filters == RowFilters()
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
+
+
+def test_hf_json_filters_none_pass_is_counted_and_drops_over_cap_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the removed fast path: a filters-None hf_json pass must populate stats and apply the cap
+    exactly like the other three sources. Before, None skipped the evaluator AND the counters AND
+    the quality line, so an over-cap row streamed through with no accounting anywhere"""
+    monkeypatch.setattr(hf_json, "load_dataset", lambda *args, **kwargs: [{"text": "aspirin trial"}, {"text": _OVER_CAP}])
+    Stream: HuggingFaceJsonDataStream = HuggingFaceJsonDataStream(
+        _QUALITY_TASK, 1.0, "knowledgator/PubMedAbstractsNER", "train.json", "train", None, ("text",)
+    )
+
+    Yielded: list[StreamedRow] = list(Stream.rows())
+
+    assert Yielded == [("knowledgator/PubMedAbstractsNER", (_QUALITY_TASK, ("aspirin trial",)))]
+    assert Stream.filters is None and Stream.effective_filters == RowFilters()
+    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 1
+    assert Stream.stats.dropped_by == {"max_tokens": 1}
+
+
+def test_local_avro_filters_none_source_still_drops_over_cap_records(tmp_path: Path) -> None:
+    """same always-on guarantee for the local avro source: the unfiltered path attributes an
+    over-cap record to max_tokens while short records stay byte-identical"""
+    Target: Path = _write_avro(tmp_path / "cap.avro", [{"name": "aspirin trial"}, {"name": _OVER_CAP}])
+    Stream: LocalAvroDataStream = LocalAvroDataStream(_QUALITY_TASK, 1.0, str(Target))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["aspirin trial"]
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
+
+
+def test_quality_line_counts_max_tokens_when_the_cap_empties_a_source(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the cap's drops are first-class US-009 counters: a source emptied ONLY by the cap (filters
+    None) must report dropped={max_tokens: N} on the quality line, and the guard raise must not
+    swallow it (stream()'s finally lands the line first)"""
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, [{"text": _OVER_CAP}, {"text": _OVER_CAP + "a"}])
+
+    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
+        with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+            list(Stream.stream(RunConfig()))
+
+    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
+    assert len(Quality) == 1
+    assert Quality[0].getMessage() == "ingest quality fake/quality: rows_in=2 rows_out=0 dropped={max_tokens:2}"
+
+
+def test_a_match_on_emptied_source_stays_recorded_not_guarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """negative test for the now-unconditional guard: it arms on the post-match_on candidate
+    count, so a source emptied only by match_on is a recorded drop, never a ZeroYieldError,
+    even though the guard no longer checks whether filters were declared"""
+    Rows: list[dict[str, Any]] = [{"domain": "Finance", "text": "aspirin trial"}, {"domain": "Finance", "text": "metformin study"}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows, match_on=(("domain", ("ok",)),))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert Yielded == []
+    assert Stream.stats.dropped_by == {"match_on": 2}

@@ -68,7 +68,42 @@ def hub_size(dataset: str) -> dict[str, Any]:
     return hub_json(f"https://datasets-server.huggingface.co/size?dataset={dataset}")
 
 
-def report_freeze(entry_key: str | None) -> None:
+def entry_base_key(payload: tuple[object, ...]) -> str:
+    """repo id plus a scalar discriminator (subset for "hf", file for "hf_json"). Kept identical
+    to tests/test_ingests.py entry_base_key, which locks and asserts on these keys"""
+    dataset = str(payload[2])
+    discriminator = payload[3] if len(payload) > 3 else None
+    # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
+    # columns_out (a tuple), and there the declared path is already unique per file
+    return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
+
+
+def declared_entry_keys(ingests: Any) -> list[tuple[Any, str, tuple[object, ...], str, str]]:
+    """(dataset, source, payload, key, base) per declared ingest under the tests/test_ingests.py
+    entry_key rule, kept identical: a base key declared on more than one ingest gets the split
+    appended, and a key that still collides after that is a hard error, never a silent dict
+    overwrite (the loser would vanish from both the freeze blocks and the locks)"""
+    tuples: list[tuple[Any, str, tuple[object, ...]]] = []
+    for dataset in ingests.datasets:
+        source, payload = dataset.to_tuple()
+        tuples.append((dataset, source, payload))
+    base_counts: Counter[str] = Counter(entry_base_key(payload) for _dataset, _source, payload in tuples)
+    keyed: dict[str, tuple[Any, str, tuple[object, ...], str, str]] = {}
+    for dataset, source, payload in tuples:
+        base = entry_base_key(payload)
+        key = base
+        if base_counts[base] > 1:
+            split = payload[4] if len(payload) > 4 else None
+            if not isinstance(split, str):
+                raise ValueError(f"entry base {base!r} is declared on more than one ingest but its split {split!r} is not a str")
+            key = f"{base}:{split}"
+        if key in keyed:
+            raise ValueError(f"entry key {key!r} is produced by more than one declared ingest")
+        keyed[key] = (dataset, source, payload, key, base)
+    return list(keyed.values())
+
+
+def report_freeze(requested_key: str | None) -> None:
     """print the tests/test_ingests.py EXPECTED block for one declared ingest (or all of them),
     generated from the live generate_tuples() output rather than hand-written. Paste it into the
     local test file, then let `ruff format` normalize the layout.
@@ -81,11 +116,10 @@ def report_freeze(entry_key: str | None) -> None:
 
     ingests = YamlIngestsParser().parse_ingests()
     printed = 0
-    for dataset in ingests.datasets:
-        source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
-        if entry_key is not None and key != entry_key:
+    # match on the entry key OR its base: a fully qualified key prints one block, a colliding
+    # base (bigbio/chemprot:chemprot_full_source) prints every split sharing it
+    for _dataset, source, payload, key, base in declared_entry_keys(ingests):
+        if requested_key is not None and key != requested_key and base != requested_key:
             continue
         printed += 1
         print(f'    "{key}": (', flush=True)
@@ -93,7 +127,7 @@ def report_freeze(entry_key: str | None) -> None:
         print(pprint.pformat(payload, width=110, indent=8, sort_dicts=False).rstrip() + ",", flush=True)
         print("    ),", flush=True)
     if printed == 0:
-        say("FREEZE_ERROR", f"no declared ingest matches {entry_key!r}")
+        say("FREEZE_ERROR", f"no declared ingest matches {requested_key!r}")
         raise SystemExit(1)
     say("FREEZE_BLOCKS", printed)
 
@@ -124,7 +158,7 @@ def report_info(dataset: str) -> None:
 # ------------------------------------------------------------------------------- row scanning --
 
 
-def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any], Any]:
+def iter_declared(requested_key: str, limit: int) -> tuple[tuple[str, ...], list[Any], Any]:
     """rows through the repo's own production path: declared tuple -> build_stream -> rows().
     Proves the declaration itself, not just the hub schema."""
     from relmedner.ingests import YamlIngestsParser
@@ -133,18 +167,15 @@ def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any
     ingests = YamlIngestsParser().parse_ingests()
     match = None
     columns: tuple[str, ...] = ()
-    for dataset in ingests.datasets:
-        source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
-        if key == entry_key:
+    for dataset, _source, _payload, key, base in declared_entry_keys(ingests):
+        if key == requested_key or base == requested_key:
             match = dataset.to_stream_args()
             # read the projection off the model, never off a payload position: local_delimited packs
             # match_on last, and a local avro source has no projection at all (the whole record ships)
             columns = tuple(getattr(dataset, "columns_out", ()) or ())
             break
     if match is None:
-        raise SystemExit(f"no declared ingest matches entry_key {entry_key!r}")
+        raise SystemExit(f"no declared ingest matches entry_key {requested_key!r}")
     source, payload, filters = match
     stream = build_stream(source, payload, filters=filters)
     rows: list[Any] = []
@@ -417,7 +448,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--taxon", default="9606", help="fullmap taxon (default: 9606, human)")
     parser.add_argument("--info", action="store_true", help="hub row counts only, no download")
     parser.add_argument(
-        "--freeze", nargs="?", const="", default=None, metavar="ENTRY_KEY",
+        "--freeze",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="ENTRY_KEY",
         help="print the tests/test_ingests.py EXPECTED block for one entry_key (all ingests when no key is given); no download",
     )
     parser.add_argument("--sample", type=int, default=2, help="rows to pretty-print verbatim (default: 2)")

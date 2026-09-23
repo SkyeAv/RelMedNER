@@ -20,9 +20,10 @@ _QUALITY_LOG = logging.getLogger("relmedner.quality")
 
 
 class ZeroYieldError(RuntimeError):
-    """a filtered source dropped 100% of its rows: the historical silent zero-yield ingest bug
+    """a source dropped 100% of its candidate rows: the historical silent zero-yield ingest bug
     (a declaration typo quietly shipping an empty training set) made impossible to recreate
-    through filters. Only raised when filters are declared AND the source was non-empty"""
+    through filters OR the ALWAYS-ON token cap. Raised only when the source had candidate rows
+    (post-match_on) and none survived; match_on-only emptiness is recorded, not guarded"""
 
 
 @dataclass
@@ -91,8 +92,14 @@ class DataStream(ABC):
     """the declared per-source mixing weight, carried positionally in the frozen payload tuple"""
 
     filters: RowFilters | None
-    """declarative row filters (models.RowFilters), applied in rows() after match_on; None means
-    the unfiltered path, which stays byte-identical"""
+    """the DECLARED declarative row filters (models.RowFilters); None stays None, so this slot
+    keeps answering "what did the dataset declare" -- the evaluator reads effective_filters"""
+
+    effective_filters: RowFilters
+    """the filters rows() actually applies: the declared value, else a default RowFilters()
+    computed once in __init__, so the ALWAYS-ON max_tokens cap (row_filters.first_drop_reason)
+    reaches even unfiltered sources; rows under the cap stay byte-identical, only over-cap rows
+    are new drops on the declared-None path"""
 
     def __init__(self, task: tuple[Any, ...] = (), weight: float = 1.0, *, filters: RowFilters | None = None) -> None:
         """the single shared entry point every DataStream subclass builds on: it owns the
@@ -108,6 +115,9 @@ class DataStream(ABC):
         self.task: tuple[Any, ...] = tuple(task)
         self.weight: float = weight
         self.filters: RowFilters | None = filters
+        # computed ONCE: the evaluator always gets a RowFilters, so the ALWAYS-ON token cap
+        # applies even when the dataset declared none; self.filters keeps the DECLARED value
+        self.effective_filters: RowFilters = filters if filters is not None else RowFilters()
         # US-009 quality counters; rows() resets them at the start of every pass so a direct
         # rows() call and one going through stream() report identically
         self.stats: StreamStats = StreamStats()

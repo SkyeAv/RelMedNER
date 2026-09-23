@@ -72,7 +72,8 @@ def test_datasets_carries_source_discriminator() -> None:
 def test_cluster_root_is_cluster_and_worker_slots_minimum_one() -> None:
     schema: dict = load_cluster()
     assert schema["title"] == "Cluster"
-    assert set(schema["properties"]) == {"ssh_user", "workers"}
+    # jobmanager: the head host (runs the jobmanager stack AND its own worker duty, see cluster.yaml)
+    assert set(schema["properties"]) == {"ssh_user", "jobmanager", "workers"}
     assert "WorkerNode" in schema["$defs"]
     assert schema["$defs"]["WorkerNode"]["properties"]["slots"]["minimum"] == 1
 
