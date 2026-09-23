@@ -478,7 +478,7 @@ def test_a_dangling_arg_id_drops_only_that_relation() -> None:
 
 def test_a_self_loop_relation_drops() -> None:
     """the corpus's direction is always chemical -> gene, so a relation whose head and tail resolve
-    to the same surface (here via the duplicated PKI166 spans T10/T12) carries no signal and drops
+    to the same surface (here via the duplicated PKI166 span T10) carries no signal and drops
     under the sentence_rex case-insensitive self-loop rule; the 16 siblings ship"""
     Arg2: list[Any] = list(ROW_14967461["relations"]["arg2"])
     Arg2[0] = "T10"  # arg1[0] is also T10 (CI-1033), so both fields resolve to the same surface
@@ -513,7 +513,7 @@ def test_a_cpr0_relation_drops_but_the_row_entities_still_ship() -> None:
 
 
 def test_a_cpr10_relation_drops_because_the_pipeline_never_asserts_negations() -> None:
-    """CPR:10 is the corpus's asserted no-interaction label (753 measured relations); models.py
+    """CPR:10 is the corpus's asserted no-interaction label (683 measured relations); models.py
     pins negated=False on every emitted relation, so shipping CPR:10 would break that landed
     invariant. The relation drops, the entities still ship"""
     Types: list[Any] = list(ROW_14967461["relations"]["type"])

@@ -26,7 +26,7 @@ class ChemprotScript(Script):
     "tumor necrosis factor") that name gene families/classes, and mislabeling them Gene would
     train "kinase" as a specific gene. Relations: arg1 is CHEMICAL in 100% of 15,739 relations
     and arg2 never is, so direction is always chemical -> gene; 0 self-loops, 0 dangling args.
-    CPR:0 (Undefined, 3 relations) and CPR:10 ("Not", the corpus's 753 asserted negatives) drop
+    CPR:0 (Undefined, 3 relations) and CPR:10 ("Not", the corpus's 683 asserted negatives) drop
     because this pipeline never asserts negations (Relation.negated is always False by landed
     decision); the rows' entities still ship. CPR:7 (73 relations) and CPR:8 (61) keep native
     snake_case modulator/cofactor because biolink has no slot and regulates/has_catalyst would

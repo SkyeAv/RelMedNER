@@ -320,6 +320,23 @@ def test_every_declared_ingest_is_accounted_for() -> None:
     assert set(tuples_by_ingest()) == set(EXPECTED)
 
 
+def test_entry_key_fails_loudly_for_a_colliding_non_string_split() -> None:
+    """The fail-loud guard that keeps a colliding base key from silently overwriting its locks
+    when the split slot is malformed; this branch is the entire point of the rule, so it must be
+    exercised directly rather than only ever firing on real declarations."""
+    payload = (
+        ("script", "SyntheticScript", ("entities",)),
+        1.0,
+        "synthetic/dataset",
+        "synthetic_subset",
+        123,
+        None,
+        ("text", "ner"),
+    )
+    with pytest.raises(ValueError, match="split 123 is not a str"):
+        entry_key(payload, {"synthetic/dataset:synthetic_subset"})
+
+
 # doc drift guard: docs/yaml-config.md is the agent-facing schema reference, and it rots silently
 # when a model field is added or renamed; parametrizing over the live model_fields (not a copied
 # list) means the guard itself cannot go stale. Every name below must appear in the doc.
