@@ -70,7 +70,7 @@ def hub_size(dataset: str) -> dict[str, Any]:
 
 def entry_base_key(payload: tuple[object, ...]) -> str:
     """repo id plus a scalar discriminator (subset for "hf", file for "hf_json"). Kept identical
-    to tests/test_ingests.py entry_key, which locks and asserts on these keys"""
+    to tests/test_ingests.py entry_base_key, which locks and asserts on these keys"""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
@@ -103,7 +103,7 @@ def declared_entry_keys(ingests: Any) -> list[tuple[Any, str, tuple[object, ...]
     return list(keyed.values())
 
 
-def report_freeze(entry_key: str | None) -> None:
+def report_freeze(requested_key: str | None) -> None:
     """print the tests/test_ingests.py EXPECTED block for one declared ingest (or all of them),
     generated from the live generate_tuples() output rather than hand-written. Paste it into the
     local test file, then let `ruff format` normalize the layout.
@@ -116,8 +116,10 @@ def report_freeze(entry_key: str | None) -> None:
 
     ingests = YamlIngestsParser().parse_ingests()
     printed = 0
-    for _dataset, source, payload, key, _base in declared_entry_keys(ingests):
-        if entry_key is not None and key != entry_key:
+    # match on the entry key OR its base: a fully qualified key prints one block, a colliding
+    # base (bigbio/chemprot:chemprot_full_source) prints every split sharing it
+    for _dataset, source, payload, key, base in declared_entry_keys(ingests):
+        if requested_key is not None and key != requested_key and base != requested_key:
             continue
         printed += 1
         print(f'    "{key}": (', flush=True)
@@ -125,7 +127,7 @@ def report_freeze(entry_key: str | None) -> None:
         print(pprint.pformat(payload, width=110, indent=8, sort_dicts=False).rstrip() + ",", flush=True)
         print("    ),", flush=True)
     if printed == 0:
-        say("FREEZE_ERROR", f"no declared ingest matches {entry_key!r}")
+        say("FREEZE_ERROR", f"no declared ingest matches {requested_key!r}")
         raise SystemExit(1)
     say("FREEZE_BLOCKS", printed)
 
@@ -156,7 +158,7 @@ def report_info(dataset: str) -> None:
 # ------------------------------------------------------------------------------- row scanning --
 
 
-def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any], Any]:
+def iter_declared(requested_key: str, limit: int) -> tuple[tuple[str, ...], list[Any], Any]:
     """rows through the repo's own production path: declared tuple -> build_stream -> rows().
     Proves the declaration itself, not just the hub schema."""
     from relmedner.ingests import YamlIngestsParser
@@ -165,15 +167,15 @@ def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any
     ingests = YamlIngestsParser().parse_ingests()
     match = None
     columns: tuple[str, ...] = ()
-    for dataset, _source, _payload, key, _base in declared_entry_keys(ingests):
-        if key == entry_key:
+    for dataset, _source, _payload, key, base in declared_entry_keys(ingests):
+        if key == requested_key or base == requested_key:
             match = dataset.to_stream_args()
             # read the projection off the model, never off a payload position: local_delimited packs
             # match_on last, and a local avro source has no projection at all (the whole record ships)
             columns = tuple(getattr(dataset, "columns_out", ()) or ())
             break
     if match is None:
-        raise SystemExit(f"no declared ingest matches entry_key {entry_key!r}")
+        raise SystemExit(f"no declared ingest matches entry_key {requested_key!r}")
     source, payload, filters = match
     stream = build_stream(source, payload, filters=filters)
     rows: list[Any] = []
@@ -223,9 +225,6 @@ def project(row: Any, columns: tuple[str, ...]) -> tuple[Any, ...]:
     for a raw hub row"""
     record = as_dict(row)
     if record is not None:
-        if not columns:
-            # local sources (avro/whole-record) ship the record as a 1-tuple; there is no projection
-            return (record,)
         return tuple(record.get(name) for name in columns)
     return tuple(row)
 
@@ -371,7 +370,7 @@ def report_spans(rows: list[Any], columns: tuple[str, ...], span_column: str, te
     say("SPAN_OUT_OF_BOUNDS", out_of_bounds)
 
 
-def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outputs: tuple[str, ...], declared: bool = False) -> None:
+def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outputs: tuple[str, ...]) -> None:
     heading(f"dispatch yield ({script}, outputs={list(outputs)})")
     from relmedner.models import TrainingExample
     from relmedner.types import Script
@@ -381,15 +380,10 @@ def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outp
     mentions = 0
     relations = 0
     for row in rows:
-        if declared:
-            # declared rows ARE the values tuples the script will receive; re-projecting them
-            # would destroy whole-record local avro rows (columns is empty there)
-            values = tuple(row)
-        else:
-            values = project(row, columns)
-            if len(values) != len(columns) and columns and as_dict(row) is not None:
-                say("DISPATCH_ERROR", "--script over a raw hub row needs --columns matching the intended columns_out")
-                return
+        values = project(row, columns)
+        if len(values) != len(columns) and as_dict(row) is not None:
+            say("DISPATCH_ERROR", "--script over a raw hub row needs --columns matching the intended columns_out")
+            return
         _, example = Script.dispatch(script, (outputs, values))
         assert isinstance(example, TrainingExample)
         populated = example.populated()
@@ -454,7 +448,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--taxon", default="9606", help="fullmap taxon (default: 9606, human)")
     parser.add_argument("--info", action="store_true", help="hub row counts only, no download")
     parser.add_argument(
-        "--freeze", nargs="?", const="", default=None, metavar="ENTRY_KEY",
+        "--freeze",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="ENTRY_KEY",
         help="print the tests/test_ingests.py EXPECTED block for one entry_key (all ingests when no key is given); no download",
     )
     parser.add_argument("--sample", type=int, default=2, help="rows to pretty-print verbatim (default: 2)")
@@ -503,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.span_column:
         report_spans(rows, columns, args.span_column, args.text_column, args.label_index)
     if args.script:
-        report_dispatch(rows, columns, args.script, tuple(part.strip() for part in args.outputs.split(",") if part.strip()), declared=stream is not None)
+        report_dispatch(rows, columns, args.script, tuple(part.strip() for part in args.outputs.split(",") if part.strip()))
     if args.fullmap:
         if not args.text_column:
             say("ERROR", "--fullmap needs --text-column")

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+from collections import Counter
 
 import pytest
 
@@ -596,33 +597,85 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
     ),
+    "bigbio/chemprot:chemprot_full_source:train": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chemprot:chemprot_full_source:validation": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "validation",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chemprot:chemprot_full_source:test": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "test",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
 }
 
 
-def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str:
-    """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
-    "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
-    different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    split qualifies instead -- or the train and test locks would collide and one would silently
-    vanish. A repo id declared once per split (nvidia/Nemotron-PII, ruslan/bioleaflets-biomedical-ner)
-    therefore carries the split on BOTH keys, ':train' and ':test'."""
+def entry_base_key(payload: tuple[object, ...]) -> str:
+    """repo id plus a scalar discriminator (subset for "hf", file for "hf_json"): two ingests
+    reading different subsets of aps/super_glue already collide at this base, and a bare repo id
+    would silently lose one lock in the EXPECTED literal"""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
     # columns_out (a tuple), and there the declared path is already unique per file
-    if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
-        discriminator = payload[4]
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
 
 
+def entry_key(payload: tuple[object, ...], colliding_bases: set[str]) -> str:
+    """one key per DECLARED INGEST, not per repo: a base key declared on more than one ingest
+    (nvidia/Nemotron-PII once PER SPLIT, bigbio/chemprot sharing dataset AND subset) gets the
+    split appended, so the locks coexist instead of one silently overwriting the other in
+    tuples_by_ingest -- the loser would vanish from both locks and the failure would be silent.
+    Kept identical to .pi/skills/add-dataset/scripts/probe.py (report_freeze, iter_declared),
+    which freezes and matches on these keys"""
+    base = entry_base_key(payload)
+    if base not in colliding_bases:
+        return base
+    split = payload[4] if len(payload) > 4 else None
+    if not isinstance(split, str):
+        raise ValueError(f"entry base {base!r} is declared on more than one ingest but its split {split!r} is not a str")
+    return f"{base}:{split}"
+
+
 def tuples_by_ingest() -> dict[str, tuple[object, ...]]:
-    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a repo id
-    # appearing on more than one declared ingest gets split-qualified keys (see entry_key)
+    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a base
+    # key appearing on more than one declared ingest gets split-qualified keys (see entry_key)
     entries: list[tuple[str, tuple[object, ...]]] = list(YamlIngestsParser().generate_tuples())
-    declared: dict[str, int] = {}
-    for _, payload in entries:
-        declared[str(payload[2])] = declared.get(str(payload[2]), 0) + 1
-    return {entry_key(payload, split_qualified=declared[str(payload[2])] > 1): (source, payload) for source, payload in entries}
+    base_counts: Counter[str] = Counter(entry_base_key(payload) for _, payload in entries)
+    colliding: set[str] = {base for base, count in base_counts.items() if count > 1}
+    keyed: dict[str, tuple[object, ...]] = {}
+    for source, payload in entries:
+        key = entry_key(payload, colliding)
+        if key in keyed:
+            raise ValueError(f"entry key {key!r} is produced by more than one declared ingest")
+        keyed[key] = (source, payload)
+    return keyed
 
 
 @pytest.mark.parametrize("ingest", sorted(EXPECTED))

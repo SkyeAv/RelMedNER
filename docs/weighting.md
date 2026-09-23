@@ -187,6 +187,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `bc5cdr/train.avro` | gold | 1.0 | 1.0 | BioCreative V CDR, human-annotated gold chemical and disease spans |
 | `bc5cdr/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
 | `bc5cdr/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
+| `bigbio/chemprot` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioCreative VI ChemProt, expert-annotated chemical-protein relations |
 | `wcole3/biored-parquet` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioRED, expert-annotated biomedical relations |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |

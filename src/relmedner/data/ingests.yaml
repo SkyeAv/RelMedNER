@@ -137,6 +137,25 @@ datasets:
     split: test
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: test
+    dataset: bigbio/chemprot
+    subset: chemprot_full_source
+    columns_out: [text, entities, relations]
   # tensorshield reddit corpora: general Reddit, MIT, all >= 100k rows (226 at 22,572 rows is
   # excluded -- projected yield after the health filter is noise). match_on keeps only
   # biomedical/health communities; values match the corpus EXACTLY (apply_match is exact
