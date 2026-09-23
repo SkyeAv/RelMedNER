@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any, Self
 
 import apache_beam as beam
-from apache_beam.io.avroio import WriteToAvro
 from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.runners.runner import PipelineResult
 
+from relmedner.avro_shards import ShardWriter, merge_shards
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
 from relmedner.dedup import apply_dedup, format_dedup_summary
 from relmedner.fullmap_mine import FullmapMiner
@@ -80,6 +80,7 @@ class BeamPipeline:
         # Flink user code runs in the sdkworker, so external runs write to its durable output mount.
         # DirectRunner keeps honoring the caller's ordinary local path for development and unit tests.
         Output: Path = Path(config.output) if self.options is None else Path(OUTPUTS_MOUNT) / config.artifact_name()
+        Schema: dict[str, Any] = TrainingExample.avro_schema_to_python()
 
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (
@@ -109,14 +110,7 @@ class BeamPipeline:
             (
                 deduped
                 | "shape examples into avro records" >> beam.Map(to_record)
-                | "write training data to avro"
-                >> WriteToAvro(
-                    file_path_prefix=str(Output.with_suffix("")),
-                    file_name_suffix=Output.suffix,
-                    num_shards=1,
-                    shard_name_template="",
-                    schema=TrainingExample.avro_schema_to_python(),
-                )
+                | "write training data to avro" >> beam.ParDo(ShardWriter(str(Output), Schema))
             )
         # the with-block runs the pipeline on exit and stashes the result on the Pipeline
         # object; retaining it here is what lets US-005 query metrics after the block closes
@@ -126,6 +120,9 @@ class BeamPipeline:
         # the output-path branch above, so a cluster run never reaches metrics() here and an
         # absent result/counters just skips the line, never crashing the run
         if self.options is None:
+            # the shard writer only produces parts; assemble the final avro file for local runs
+            # (cluster runs assemble during collection instead — see relmedner.collect)
+            merge_shards(Output, Schema)
             summary = format_dedup_summary(self.result)
             if summary is not None:
                 logger.info(summary)
