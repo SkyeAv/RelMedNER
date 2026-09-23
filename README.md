@@ -137,6 +137,22 @@ remote):
 
     uv run relmedner build-dataset -o ./relmedner.avro
 
+## Validate trust
+
+Suggest a `trust:` value per source from literature evidence. No cluster and no VPN, but it
+does need network egress: records stream through the same dispatch path as `build-dataset`,
+and every emitted entity or relation becomes a PubMed E-utilities query (or a query against a
+self-hosted Firecrawl with `--backend firecrawl`). One source, two records:
+
+    uv run relmedner validate-trust --source Pennlaine/Medical-Entity-JSON-Extraction -t --sample-size 2 -o ./trust-report.jsonl
+
+Nothing is written back to `ingests.yaml`. The command prints a suggested `trust:` snippet per
+source and writes the per-record JSONL report for review. Defaults come from the optional
+`x-trust:` section of `ingests.yaml` (50 records per source, `pubmed` backend,
+`trust-report.jsonl`), overridden flag-by-flag; an optional `NCBI_API_KEY` in the environment
+raises the PubMed rate limit from 3 to 10 req/s. Reading the report and turning it into a
+committed weight: [docs/weighting.md](docs/weighting.md).
+
 ## Testing
 
     make test        # full gate: every test, measured, 90% coverage floor

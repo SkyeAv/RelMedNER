@@ -116,6 +116,17 @@ Notes:
 - Backend: PubMed E-utilities (default; free, 3 req/s, 10 with a free `NCBI_API_KEY`).
   For non-biomedical sources use `--backend firecrawl` against your self-hosted
   instance (`FIRECRAWL_BASE_URL`, optional `FIRECRAWL_API_KEY`).
+- Unauthenticated PubMed rate-limits at 3 req/s, and a small sample hits it: a 2-record run
+  over `Pennlaine/Medical-Entity-JSON-Extraction` recorded `HTTP Error 429: Too Many
+  Requests` on three of its queries (wenceslaus, 2026-09-23). Set `NCBI_API_KEY`, or lower
+  `--sample-size`, before believing a score built on that many silent no-verdicts.
+- On synthetic or fictional text the measurement scores the FICTION, not the labels. That
+  same run suggested `trust: 0.23` for a corpus whose spans are correct, because invented
+  details (`Name`, `Specialty`, `FocusArea`) return zero PubMed hits and count as
+  unverified, while the numeric span `"39"` matched 275,775 unrelated records and counted
+  as verified. Keep the declared prior for such a source; do not commit the measurement.
+  Short numeric and generic spans are the usual culprit, so check the per-query rows before
+  lowering anything.
 
 ## Picking a weight for a NEW dataset
 
