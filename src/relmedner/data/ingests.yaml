@@ -22,6 +22,7 @@ x-defaults:
   # newline-spam lists; see docs/quality-heuristics.md for the measured table
   reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
+  hf-parquet: &hf-parquet {source: hf_parquet, split: train}
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
     <<: *hf-train
@@ -453,3 +454,33 @@ datasets:
     source: local
     weight: *weight
     path: bc5cdr/test.avro
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_bigbio_kb/train/0000.parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_source/train/0000.parquet
+    columns_out: [text, entities, relations]
