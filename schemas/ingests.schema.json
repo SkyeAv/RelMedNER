@@ -806,18 +806,13 @@
     },
     "ValidateTrustConfig": {
       "additionalProperties": false,
-      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
+      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
       "properties": {
         "sample_size": {
           "default": 50,
           "minimum": 1,
           "title": "Sample Size",
           "type": "integer"
-        },
-        "backend": {
-          "default": "pubmed",
-          "title": "Backend",
-          "type": "string"
         },
         "report": {
           "default": "trust-report.jsonl",

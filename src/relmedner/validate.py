@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any, Protocol, Self
 
 from relmedner.constants import (
-    FIRECRAWL_BASE_URL,
     PUBMED_ESEARCH_URL,
     PUBMED_THROTTLE_SECONDS,
     PUBMED_THROTTLE_SECONDS_KEYED,
@@ -55,9 +54,9 @@ to eyeball whether a verdict was right"""
 
 
 class HitClient(Protocol):
-    """one validation backend: a query string in, an evidence-document count out. the protocol
-    keeps validate_source swappable between PubMed (primary) and Firecrawl (fallback) without
-    branching at the call site"""
+    """one validation backend: a query string in, an evidence-document count out. validate_source
+    depends on this protocol rather than a concrete client, so tests substitute fakes without
+    touching the network"""
 
     def hits(self: Self, query: str) -> int: ...
 
@@ -95,29 +94,6 @@ class PubMedClient(ThrottledClient):
         with urllib.request.urlopen(url, timeout=30) as response:  # noqa: S310 (fixed NCBI host)
             payload: dict[str, Any] = json.loads(response.read().decode("utf-8"))
         return int(payload["esearchresult"]["count"])
-
-
-class FirecrawlClient(ThrottledClient):
-    """self-hosted Firecrawl /v1/search fallback for sources PubMed cannot attest (general
-    web, non-biomedical text). Endpoint and key come from env so a self-hosted instance needs
-    no code change; hits = number of returned results, graded by the same thresholds"""
-
-    def __init__(self: Self, base_url: str = FIRECRAWL_BASE_URL, delay_seconds: float = 1.0) -> None:
-        super().__init__(delay_seconds)
-        self.base_url: str = base_url.rstrip("/")
-        self.api_key: str | None = environ.get("FIRECRAWL_API_KEY")
-
-    def hits(self: Self, query: str) -> int:
-        self._throttle()
-        request = urllib.request.Request(
-            f"{self.base_url}/v1/search",
-            data=json.dumps({"query": query, "limit": 10}).encode("utf-8"),
-            headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {self.api_key}"} if self.api_key else {})},
-            method="POST",
-        )
-        with urllib.request.urlopen(request, timeout=30) as response:  # noqa: S310 (self-hosted base url)
-            payload: dict[str, Any] = json.loads(response.read().decode("utf-8"))
-        return len(payload.get("data") or [])
 
 
 # ------------------------------------------------------------------------ sampling --
@@ -279,14 +255,13 @@ def suggested_yaml(summaries: list[dict[str, Any]]) -> str:
 
 def resolve_trust_settings(
     sample_size: int | None,
-    backend: str | None,
     report: str | None,
     config: ValidateTrustConfig | None,
-) -> tuple[int, str, str]:
+) -> tuple[int, str]:
     """flag > yaml > constants: CLI flags are Optional so an absent flag defers to the x-trust
     yaml section, whose own defaults are the constants. Secrets never participate -- env only"""
     Settings: ValidateTrustConfig = config or ValidateTrustConfig()
-    return (sample_size or Settings.sample_size, backend or Settings.backend, report or Settings.report)
+    return (sample_size or Settings.sample_size, report or Settings.report)
 
 
 def write_report(path: Path, summaries: list[dict[str, Any]], records: list[dict[str, Any]]) -> None:

@@ -200,17 +200,16 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 
 Optional top-level section (model field `x_trust`, YAML key `x-trust`, same aliasing
 convention as `x-defaults`) holding the `relmedner validate-trust` defaults; CLI flags
-(`--sample-size`, `--backend`, `--report`) override these one-for-one:
+(`--sample-size`, `--report`) override these one-for-one:
 
 ```yaml
 x-trust:
   sample_size: 50      # records sampled per source (>= 1)
-  backend: pubmed      # 'pubmed' (E-utilities) or 'firecrawl' (self-hosted)
   report: trust-report.jsonl
 ```
 
-Secrets never belong here (`ingests.yaml` is committed): `NCBI_API_KEY`,
-`FIRECRAWL_BASE_URL`, and `FIRECRAWL_API_KEY` come from the environment only.
+Secrets never belong here (`ingests.yaml` is committed): `NCBI_API_KEY` comes from the
+environment only.
 
 ### Row filters (`filters` / `RowFilters`)
 

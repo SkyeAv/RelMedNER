@@ -195,31 +195,30 @@ def test_suggested_yaml_is_parseable_yaml_per_source_block() -> None:
 
 
 def test_x_trust_section_parses_and_defaults_to_the_constants() -> None:
-    Config = ValidateTrustConfig.model_validate({"sample_size": 10, "backend": "firecrawl", "report": "out.jsonl"})
+    Config = ValidateTrustConfig.model_validate({"sample_size": 10, "report": "out.jsonl"})
     assert Config.sample_size == 10
-    assert Config.backend == "firecrawl"
     assert Config.report == "out.jsonl"
     assert ValidateTrustConfig().sample_size >= 1
 
 
-def test_unknown_backend_is_a_validation_error() -> None:
-    with pytest.raises(ValidationError, match="is not 'pubmed' or 'firecrawl'"):
+def test_unknown_x_trust_key_is_a_validation_error() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ValidateTrustConfig.model_validate({"backend": "duckduckgo"})
 
 
 def test_trust_settings_precedence_flag_over_yaml_over_constants() -> None:
-    Config = ValidateTrustConfig(sample_size=10, backend="firecrawl", report="x.jsonl")
-    assert resolve_trust_settings(None, None, None, Config) == (10, "firecrawl", "x.jsonl")
-    assert resolve_trust_settings(7, "pubmed", "y.jsonl", Config) == (7, "pubmed", "y.jsonl")
-    assert resolve_trust_settings(7, None, None, Config) == (7, "firecrawl", "x.jsonl")
-    assert resolve_trust_settings(None, None, None, None) >= (1, "pubmed", "")
+    Config = ValidateTrustConfig(sample_size=10, report="x.jsonl")
+    assert resolve_trust_settings(None, None, Config) == (10, "x.jsonl")
+    assert resolve_trust_settings(7, "y.jsonl", Config) == (7, "y.jsonl")
+    assert resolve_trust_settings(7, None, Config) == (7, "x.jsonl")
+    assert resolve_trust_settings(None, None, None) >= (1, "")
 
 
 def test_x_trust_attaches_to_yaml_ingests_under_the_aliased_key() -> None:
     Ingests = YamlIngests.model_validate(
         {
             "datasets": [],
-            "x-trust": {"sample_size": 3, "backend": "pubmed", "report": "r.jsonl"},
+            "x-trust": {"sample_size": 3, "report": "r.jsonl"},
         }
     )
     assert Ingests.x_trust is not None

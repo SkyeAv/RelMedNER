@@ -103,8 +103,8 @@ relmedner validate-trust
    and deterministic.
 
 Driver settings live in the optional top-level `x-trust:` section of `ingests.yaml`
-(`sample_size`, `backend`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
-Secrets (NCBI/Firecrawl keys) never go in the yaml, env only:
+(`sample_size`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
+Secrets (NCBI keys) never go in the yaml, env only:
 
 Notes:
 
@@ -116,9 +116,9 @@ Notes:
   source that scored nothing says which failure it hit: `all N queries errored` (fix the
   network or the key and re-run) versus `sampled records had no entities/relations to
   validate` (the source is not literature-validatable, keep its declared prior).
-- Backend: PubMed E-utilities (default; free, 3 req/s, 10 with a free `NCBI_API_KEY`).
-  For non-biomedical sources use `--backend firecrawl` against your self-hosted
-  instance (`FIRECRAWL_BASE_URL`, optional `FIRECRAWL_API_KEY`).
+- Backend: PubMed E-utilities only, the Firecrawl web-search fallback is gone. NCBI allows
+  3 req/s unauthenticated and 10 with a free `NCBI_API_KEY`; the client throttles itself to
+  about 3.4 and about 9 req/s to stay inside those windows.
 - Unauthenticated PubMed rate-limits at 3 req/s, and a small sample hits it: a 2-record run
   over `Pennlaine/Medical-Entity-JSON-Extraction` recorded `HTTP Error 429: Too Many
   Requests` on three of its queries (wenceslaus, 2026-09-23). Set `NCBI_API_KEY`, or lower
