@@ -44,6 +44,7 @@ FANOUT: tuple[tuple[str, str], ...] = (
     ("docs/post-training-families.md", "splits the multi-task corpus into disjoint families"),
     ("docs/fullmap-mining.md", "Per batch of documents (Beam"),
     ("docs/reddit-corpora.md", "Seven general-Reddit dumps from the `tensorshield` hub org"),
+    ("docs/biored.md", "BioRED gold (Luo et al. 2022"),
 )
 
 # the quick start is the only on-ramp for a new user and for CI reproduction
