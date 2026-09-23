@@ -76,6 +76,7 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.git' --exclude='.venv' --exclude='.ralph' \
         --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.ruff_cache' \
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
+        --exclude='synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
 fi
 

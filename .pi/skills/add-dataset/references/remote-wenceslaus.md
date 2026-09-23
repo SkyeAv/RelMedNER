@@ -220,14 +220,18 @@ Rules:
 1. **`rsync` without `--exclude='.venv'`** rebuilds the remote environment from a laptop-platform venv.
 2. **Skipping the `sed`** leaves every fullmap test skipped and the smoke run mining nothing, while
    pytest still exits 0. Audit `FULLMAP_SKIPS:0`.
-3. **The local-source avro must exist in the remote copy's package data dir.** The landed yaml
-   path `interventions/interventions.avro` resolves against `src/relmedner/data/`, the rsync
-   excludes `*.avro`, so a fresh remote copy fails `tests/test_outputs.py`'s smoke inside Beam
-   Prism with `FileNotFoundError`. The source file lives at `~/Desktop/interventions.avro`
-   (92,592,955 bytes, md5 `bee03c038faf3c5d25d4d77d338ad81c`): copy it into the remote tree once
-   (`mkdir -p <remote>/src/relmedner/data/interventions && cp ~/Desktop/interventions.avro
-   <remote>/src/relmedner/data/interventions/`); the exclude keeps rsync from transferring or
-   `--delete`-ing it, so one placement survives every later push. Never delete the test.
+3. **Operator-built local-source artifacts must exist in the remote copy's package data dir.**
+   Declared `local`/`local_delimited` paths resolve against `src/relmedner/data/`, and the rsync
+   excludes keep big out-of-band artifacts from transferring: `*.avro` is excluded wholesale,
+   and any untracked non-avro artifact (today:
+   `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv`) needs its own precise `--exclude` or
+   the next push's `--delete` removes the placed copy. A fresh remote copy fails
+   `tests/test_outputs.py`'s smoke inside Beam Prism with `FileNotFoundError`. Known fixtures on
+   wenceslaus: `~/Desktop/interventions.avro` (92,592,955 bytes, md5
+   `bee03c038faf3c5d25d4d77d338ad81c`) and the ade-tweets pair under
+   `~/Code/RelMedNER-worktrees/ade-tweets-ner/src/relmedner/data/synthetic-ner-ade-tweets/`.
+   Copy each into the remote tree's package data dir once; the excludes keep rsync from
+   transferring or deleting it, so one placement survives every later push. Never delete the test.
 4. **Bare `uv`** resolves to a broken snap. Absolute path only.
 5. **No `PYTHONUTF8=1`** turns packaged non-ASCII reads into decode failures under the login locale.
 6. **Receipt lines read back mangled** through pi's renderer; use `tr ':' '~'` or `base64`.
