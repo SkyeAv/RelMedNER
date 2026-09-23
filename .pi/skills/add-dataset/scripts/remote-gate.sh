@@ -85,7 +85,7 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
         --exclude='.rsync-dir-sentinel' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
-    remote "mkdir -p '$REMOTE_REL/src/relmedner/data/bc5cdr' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets' '$REMOTE_REL/src/relmedner/data/interventions' && touch '$REMOTE_REL/src/relmedner/data/bc5cdr/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/interventions/.rsync-dir-sentinel'" || exit 1
+    remote "mkdir -p '$REMOTE_REL/src/relmedner/data/bc5cdr' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets' '$REMOTE_REL/src/relmedner/data/interventions' '$REMOTE_REL/src/relmedner/data/medical-entity-json-extraction' && touch '$REMOTE_REL/src/relmedner/data/bc5cdr/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/interventions/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/medical-entity-json-extraction/.rsync-dir-sentinel'" || exit 1
 fi
 
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
