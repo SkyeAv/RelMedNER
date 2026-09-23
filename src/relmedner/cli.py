@@ -16,7 +16,7 @@ from relmedner.models import RunConfig
 from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
 from relmedner.pipeline import BeamPipeline
 from relmedner.schemas import cluster_schema, ingests_schema
-from relmedner.validate import FirecrawlClient, PubMedClient, resolve_trust_settings, suggested_yaml, validate_sources, write_report
+from relmedner.validate import PubMedClient, resolve_trust_settings, suggested_yaml, validate_sources, write_report
 
 APP: cyclopts.App = cyclopts.App()
 
@@ -51,21 +51,17 @@ def build_dataset(
 def validate_trust_command(
     sample_size: Annotated[int | None, cyclopts.Parameter("--sample-size", alias="-n")] = None,
     source: Annotated[str | None, cyclopts.Parameter("--source", alias="-s")] = None,
-    backend: Annotated[str | None, cyclopts.Parameter("--backend", alias="-b")] = None,
     report: Annotated[str | None, cyclopts.Parameter("--report", alias="-o")] = None,
     test_run: Annotated[bool, cyclopts.Parameter(alias="-t")] = False,
 ) -> None:
     """offline literature validation suggesting per-source trust values (docs/weighting.md).
-    Samples records through the real dispatch path, queries PubMed E-utilities (default) or a
-    self-hosted Firecrawl (--backend firecrawl), writes the per-record JSONL report to --report
-    and prints the suggested `trust:` yaml for hand-committing to ingests.yaml. Settings come
-    from the optional top-level `x-trust:` section of ingests.yaml, overridden flag-by-flag;
-    secrets (NCBI_API_KEY, FIRECRAWL_BASE_URL/API_KEY) come from env only"""
+    Samples records through the real dispatch path, queries PubMed E-utilities, writes the
+    per-record JSONL report to --report and prints the suggested `trust:` yaml for
+    hand-committing to ingests.yaml. Settings come from the optional top-level `x-trust:`
+    section of ingests.yaml, overridden flag-by-flag; secrets (NCBI_API_KEY) come from env only"""
     Ingests = YamlIngestsParser().parse_ingests()
-    Size, Backend, Report = resolve_trust_settings(sample_size, backend, report, Ingests.x_trust)
-    if Backend not in ("pubmed", "firecrawl"):
-        raise ValueError(f"unknown backend {Backend!r} -- expected 'pubmed' or 'firecrawl'")
-    client = PubMedClient() if Backend == "pubmed" else FirecrawlClient()
+    Size, Report = resolve_trust_settings(sample_size, report, Ingests.x_trust)
+    client = PubMedClient()
     Config: RunConfig = RunConfig.from_flags(test_run, Report, DedupMode.OFF)
     summaries, records = validate_sources(Ingests, Config, client, Size, source)
     write_report(Path(Report), summaries, records)

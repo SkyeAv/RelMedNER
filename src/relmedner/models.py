@@ -372,25 +372,13 @@ class ValidateTrustConfig(StrictBase):
     """the optional top-level `x-trust:` section of ingests.yaml: driver settings for the
     offline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags
     override these one-for-one, so the yaml holds the per-repo default and the command line
-    holds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,
+    holds the one-off experiment. Secrets (NCBI keys) NEVER ride here -- env only,
     ingests.yaml is a committed artifact"""
 
     sample_size: int = Field(TRUST_SAMPLE_SIZE, ge=1)
     """records sampled per source"""
-    backend: str = Field("pubmed")
-    """'pubmed' (E-utilities esearch, primary) or 'firecrawl' (self-hosted general-web fallback)"""
     report: str = Field("trust-report.jsonl")
     """JSONL report path"""
-
-    @field_validator("backend")
-    @classmethod
-    def backend_is_known(cls, value: str) -> str:
-        # a plain str with an explicit membership check, not Literal: Literal renders fine in
-        # the pydantic JSON Schema but dataclasses-avroschema cannot map it for avro schema
-        # generation (mirrors GazetteerPredicate.name_is_a_biolink_predicate)
-        if value not in ("pubmed", "firecrawl"):
-            raise ValueError(f"backend {value!r} is not 'pubmed' or 'firecrawl'")
-        return value
 
 
 class YamlIngests(StrictBase):
