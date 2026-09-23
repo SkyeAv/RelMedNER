@@ -207,11 +207,10 @@ DEDUP_SEED: int = 42
 # over every shingle hash. Measured in pure python on this repo's stack -- 0.60 ms for a
 # 20-token record (16 shingles), 7.45 ms at the 233-token pubmed median (229 shingles), 49 ms
 # at its 1,558-token max (1,554 shingles) -- so a full pass over the ~1.45M-row registry costs
-# on the order of 180 core-minutes at median length, spread across Beam workers. Vectorizing
-# the inner loop the way datasketch does (numpy/numba) is the lever if that ever dominates a
-# run; a rewrite must reproduce these signature bytes exactly, since the affine arithmetic
-# runs mod a 61-bit prime and a uint64 wraparound would silently change every near-dedup
-# decision.
+# on the order of 180 core-minutes at median length, spread across Beam workers. The inner
+# loop is now vectorized in numpy (dedup._affine_mod) with exact 32-bit-limb arithmetic that
+# reproduces these signature bytes; tests/test_dedup.py pins equality against the pure-python
+# reference, since a uint64 wraparound would silently change every near-dedup decision.
 DEDUP_NUM_PERM: int = 128
 
 # Band split of the 128-row signature; see the S-curve above: 8 bands x 16 rows puts the

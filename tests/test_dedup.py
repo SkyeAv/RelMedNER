@@ -428,3 +428,39 @@ def test_summary_line_absent_when_dedup_off() -> None:
     result.wait_until_finish()
     assert format_dedup_summary(result) is None
     assert format_dedup_summary(None) is None
+
+
+def _reference_signature(text: str) -> tuple[int, ...]:
+    """the pre-numpy implementation verbatim: python ints, exact modular arithmetic"""
+    from relmedner.dedup import _MERSENNE_PRIME, _PERM_A, _PERM_B, base_hash
+
+    hashes = [base_hash(shingle) for shingle in shingles(text)]
+    if not hashes:
+        return signature("")
+    return tuple(min((a * h + b) % _MERSENNE_PRIME for h in hashes) for a, b in zip(_PERM_A, _PERM_B, strict=True))
+
+
+def test_vectorized_signature_is_byte_identical_to_the_python_reference() -> None:
+    """signatures decide every near-dedup drop, and a uint64 overflow in the limb arithmetic
+    would change them silently; random texts (short, long, repeated shingles) must match the
+    python-int reference exactly, value for value"""
+    import random
+
+    rng = random.Random(11)
+    vocab = [f"w{index}" for index in range(300)]
+    texts = ["", "one two three", " ".join(["same"] * 40)]
+    texts += [" ".join(rng.choice(vocab) for _ in range(rng.randint(5, 1600))) for _ in range(60)]
+    for text in texts:
+        assert signature(text) == _reference_signature(text)
+
+
+def test_affine_mod_is_exact_at_the_modulus_edges() -> None:
+    """hashes near 2**64 and 2**61 exercise every fold and the conditional subtract"""
+    import numpy as np
+
+    from relmedner.dedup import _MERSENNE_PRIME, _PERM_A, _PERM_B, _affine_mod
+
+    edges = [0, 1, _MERSENNE_PRIME - 1, _MERSENNE_PRIME, _MERSENNE_PRIME + 1, (1 << 62) + 5, (1 << 64) - 1, (1 << 64) - 2]
+    got = _affine_mod(np.array(edges, dtype=np.uint64))
+    for j, (a, b) in enumerate(zip(_PERM_A, _PERM_B, strict=True)):
+        assert [int(value) for value in got[j]] == [(a * h + b) % _MERSENNE_PRIME for h in edges]
