@@ -13,6 +13,11 @@
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+  # shared QC thresholds for the reddit fullmap ingests, measured on wenceslaus 2026-09-23
+  # (1500-row grid probe per source, samples audited by hand): the stop-word floor drops
+  # 0.9-4.9 percent link-only/degenerate posts, the short-line ceiling 0.1 percent
+  # newline-spam lists; see docs/quality-heuristics.md for the measured table
+  reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
@@ -197,6 +202,11 @@ datasets:
           - r/nursing
     columns_out:
       - text
+    # 157 is the noisiest of the seven: a 5-word floor drops another 7.1 percent of
+    # one-liner posts (the other six sources measure 1.4 percent, under the enable bar)
+    filters:
+      <<: *reddit-quality
+      min_words: 5
   - task:
       type: fullmap
       outputs:
@@ -208,6 +218,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -219,6 +230,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -230,6 +242,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -241,6 +254,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -252,6 +266,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -263,6 +278,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner

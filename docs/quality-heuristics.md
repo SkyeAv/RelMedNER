@@ -60,6 +60,34 @@ Reading the numbers: a rule dropping < 2% of a source is usually noise-trimming;
 dropping > 20% deserves a sampled eyeball audit before it lands; a rule dropping 100%
 raises `ZeroYieldError` and fails the run loudly instead of shipping an empty training set.
 
+## Measured enablement: the reddit fullmap ingests (2026-09-23)
+
+The seven `tensorshield/reddit_dataset_*` ingests are the first sources with landed
+thresholds, chosen from a 1500-row-per-source grid probe through the production path
+(post-match_on), with every candidate rule's dropped rows sampled by hand. The shared
+values live in `ingests.yaml` under the `reddit-quality` anchor:
+
+- `min_stop_word_ratio: 0.02` - drops link-only and degenerate posts (sampled drops: a
+  bare statnews.com URL, a CDC link with an emoji). Measured share 0.9-4.9 percent by
+  source, confirmed by the landed probe: `dropped={..., min_stop_word_ratio:16}` over 2000
+  survivors of `reddit_dataset_30`.
+- `max_short_line_ratio: 0.9` - drops newline-spam list posts while sparing the r/AskDocs
+  Age/Sex/Height narrative template (measured 0.1 percent). The 0.5 candidate would have
+  dropped 10-14 percent, most of it ordinary hard-wrapped Reddit formatting, so it stayed
+  off.
+- `reddit_dataset_157` alone adds `min_words: 5` (drops another ~7 percent of one-liner
+  posts - sampled: "Just curious", a link-only sigh; the six siblings measure 1.4 percent,
+  under the enable bar, so they stay untouched).
+- `knowledgator/gliner-multilingual-synthetic` measures NO knob above the bar except the
+  stop-word floor, which would drop 43-80 percent of rows - the source is multilingual by
+  design, so the English-function-word proxy is intentionally not applied to it. No other
+  declared source crosses the 5 percent enable bar.
+
+Landed receipt (probe over the production path, `reddit_dataset_157`, 2000 rows):
+`dropped={match_on:428818, min_words:151, max_tokens:1, min_stop_word_ratio:5,
+max_short_line_ratio:4}` - the new rules attribute next to `match_on` in the same quality
+line, and the sources stay well clear of the zero-yield guard.
+
 ## Worked example
 
 ```yaml
