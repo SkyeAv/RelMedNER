@@ -49,6 +49,48 @@ _FENCE_RE = re.compile(r"^(```|~~~)")
 # schemes that can never resolve to a repo file are skipped outright (REQ-DOCS-2)
 _EXTERNAL_SCHEMES = ("http://", "https://", "mailto:")
 
+# a prose repeat is this many consecutive non-blank, non-code lines (REQ-CUR-1): four is
+# long enough that two identical runs cannot arise by coincidence in prose, and short
+# enough to catch a copy-pasted paragraph or a squash merge that re-applied a section
+_DUP_WINDOW = 4
+
+
+def _prose_lines(path: pathlib.Path) -> list[tuple[int, str]]:
+    """(line number, text) for every prose line of one markdown file, in order.
+
+    Code is excluded on purpose: fenced blocks toggle on ``` or ~~~ and four-space
+    indented blocks are skipped, because repeated shell or yaml snippets across a page are
+    normal (the same `uv run pytest` invocation can legitimately appear twice) while
+    repeated PROSE means the page was pasted onto itself."""
+    prose: list[tuple[int, str]] = []
+    in_fence = False
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence or not line.strip() or line.startswith(("    ", "\t")):
+            continue
+        prose.append((lineno, line.rstrip()))
+    return prose
+
+
+def _headings_in_order(path: pathlib.Path) -> list[tuple[int, str]]:
+    """(line number, slug) for every ATX heading outside code fences, in document order.
+    Ordered rather than de-duplicated like `_heading_slugs`, so a repeated heading can be
+    reported with both of its line numbers."""
+    headings: list[tuple[int, str]] = []
+    in_fence = False
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _ATX_HEADING_RE.match(line)
+        if match:
+            headings.append((lineno, _slug(match.group(2))))
+    return headings
+
 
 def _slug(heading_text: str) -> str:
     """GitHub-style heading slug: strip inline markdown (backticks, emphasis markers),
@@ -147,6 +189,43 @@ def test_readme_keeps_quick_start() -> None:
     missing_commands = [c for c in _QUICK_START_COMMANDS if c not in readme_text]
     assert not missing_headings, f"README.md lost quick-start heading(s): {missing_headings}"
     assert not missing_commands, f"README.md lost quick-start command(s): {missing_commands}"
+
+
+@pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
+def test_docs_have_no_duplicate_headings(doc: str) -> None:
+    """Repeated-heading guard (REQ-CUR-1): a squash merge that resolves a conflict by
+    keeping both sides re-applies a whole section, and the heading is the only visible
+    symptom. README.md shipped `## Reddit corpora` twice after #44 and #48 landed, so a
+    repeated slug in one file now fails instead of shipping a page that says the same
+    thing twice with two copies free to drift apart."""
+    headings = _headings_in_order(pathlib.Path(doc))
+    seen: dict[str, int] = {}
+    repeats: list[str] = []
+    for lineno, slug in headings:
+        if slug in seen:
+            repeats.append(f"{doc}:{lineno}: heading {slug!r} repeats line {seen[slug]}")
+        else:
+            seen[slug] = lineno
+    assert not repeats, "duplicate heading(s) in one file:\n" + "\n".join(repeats)
+
+
+@pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
+def test_docs_have_no_duplicate_prose_blocks(doc: str) -> None:
+    """Repeated-prose guard (REQ-CUR-1): catches the part a heading check misses, namely a
+    section pasted twice under a DIFFERENT heading, or a body duplicated without its
+    heading. Any window of four consecutive prose lines that appears twice in one file is
+    a duplication, reported with both line numbers so the fix is a deletion, not a guess."""
+    prose = _prose_lines(pathlib.Path(doc))
+    seen: dict[tuple[str, ...], int] = {}
+    repeats: list[str] = []
+    for start in range(len(prose) - _DUP_WINDOW + 1):
+        window = prose[start : start + _DUP_WINDOW]
+        key = tuple(text for _, text in window)
+        if key in seen:
+            repeats.append(f"{doc}:{window[0][0]}: {_DUP_WINDOW} prose lines repeat line {seen[key]}: {key[0][:70]!r}")
+        else:
+            seen[key] = window[0][0]
+    assert not repeats, "duplicate prose block(s) in one file:\n" + "\n".join(repeats)
 
 
 @pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
