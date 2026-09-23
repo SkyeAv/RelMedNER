@@ -75,14 +75,18 @@ rsync -az --delete \
 
 ```bash
 ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/<branch> && \
-  sed -i "s#/home/skyeav/Desktop/fullmap#/home/sgoetz/Desktop/fullmap#" src/relmedner/constants.py && \
+  sed -i s#/home/skyeav/Desktop/fullmap#\$HOME/Desktop/fullmap# src/relmedner/constants.py && \
   grep -n FULLMAP_DIR src/relmedner/constants.py'
 ```
 
-   The `sed` is idempotent (a second run finds no laptop literal). The `grep` is the receipt: it must
-   print the `/home/sgoetz/Desktop/fullmap` path before any remote run. A branch that has adopted the
-   `RELMEDNER_FULLMAP_DIR` env override still works, because the literal is inside the `environ.get`
-   fallback and the runners also export the variable.
+   The `sed` is idempotent (a second run finds no laptop literal). The replacement is the remote
+   shell's `$HOME` (escaped from the laptop shell), because `remote-runner.sh` exports
+   `RELMEDNER_FULLMAP_DIR` as `$HOME/Desktop/fullmap` and `tests/test_constants.py` reloads
+   constants against the envless literal: a literal that disagrees with the env (`/home/sgoetz`
+   vs `/users/sgoetz` on this box) fails those two tests deterministically. The `grep` is the
+   receipt: it must print the patched absolute path before any remote run. A branch that has
+   adopted the `RELMEDNER_FULLMAP_DIR` env override still works, because the literal is inside
+   the `environ.get` fallback and the runners also export the variable.
 
 3. Run the remote executor and read receipts (next section).
 
@@ -216,9 +220,14 @@ Rules:
 1. **`rsync` without `--exclude='.venv'`** rebuilds the remote environment from a laptop-platform venv.
 2. **Skipping the `sed`** leaves every fullmap test skipped and the smoke run mining nothing, while
    pytest still exits 0. Audit `FULLMAP_SKIPS:0`.
-3. **`~/Desktop/interventions.avro` must exist remotely** or `tests/test_outputs.py`'s local-source
-   ingest test fails inside Beam Prism with `FileNotFoundError`. It is present (92,592,955 bytes); if a
-   fresh box lacks it, `ssh_copy` it up once rather than deleting the test.
+3. **The local-source avro must exist in the remote copy's package data dir.** The landed yaml
+   path `interventions/interventions.avro` resolves against `src/relmedner/data/`, the rsync
+   excludes `*.avro`, so a fresh remote copy fails `tests/test_outputs.py`'s smoke inside Beam
+   Prism with `FileNotFoundError`. The source file lives at `~/Desktop/interventions.avro`
+   (92,592,955 bytes, md5 `bee03c038faf3c5d25d4d77d338ad81c`): copy it into the remote tree once
+   (`mkdir -p <remote>/src/relmedner/data/interventions && cp ~/Desktop/interventions.avro
+   <remote>/src/relmedner/data/interventions/`); the exclude keeps rsync from transferring or
+   `--delete`-ing it, so one placement survives every later push. Never delete the test.
 4. **Bare `uv`** resolves to a broken snap. Absolute path only.
 5. **No `PYTHONUTF8=1`** turns packaged non-ASCII reads into decode failures under the login locale.
 6. **Receipt lines read back mangled** through pi's renderer; use `tr ':' '~'` or `base64`.
