@@ -12,6 +12,7 @@
 # Full field reference: docs/yaml-config.md.
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
+  hf-parquet: &hf-parquet {source: hf_parquet, revision: refs/convert/parquet, split: train}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
 
 datasets:
@@ -225,3 +226,33 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_bigbio_kb/train/0000.parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_source/train/0000.parquet
+    columns_out: [text, entities, relations]

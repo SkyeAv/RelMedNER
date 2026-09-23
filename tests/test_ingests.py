@@ -369,6 +369,73 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    # the five bigbio/chia subset entries frozen from probe.py --freeze on wenceslaus (2026-09-23);
+    # the discriminator is the declared file, so the key carries the subset-relative parquet path
+    "bigbio/chia:chia_bigbio_kb/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_bigbio_kb/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chia:chia_fixed_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_fixed_source/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chia:chia_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_source/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chia:chia_without_scope_fixed_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_without_scope_fixed_source/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chia:chia_without_scope_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_without_scope_source/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
 }
 
 
