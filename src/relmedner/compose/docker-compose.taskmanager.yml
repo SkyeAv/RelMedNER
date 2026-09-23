@@ -27,11 +27,14 @@ services:
       - taskmanager.numberOfTaskSlots=${SLOTS}
       - -D
       - taskmanager.memory.process.size=${MEMORY}
-      # Beam's FnAPI data plane moves records over netty direct buffers; the ~128mb default
-      # framework off-heap budget OOMs the JVM ("Direct buffer memory") once a dozen FnAPI
-      # channels shuffle concurrently
+      # beam's FnAPI data plane moves records over netty direct buffers that live outside
+      # flink's own memory pools: task off-heap defaults to 0 and the JVM then caps direct
+      # memory near the 128m framework off-heap, which OOMs mid-job once a dozen FnAPI
+      # channels shuffle concurrently ("OutOfMemoryError: Direct buffer memory")
       - -D
       - taskmanager.memory.framework.off-heap.size=2g
+      - -D
+      - taskmanager.memory.task.off-heap.size=2g
     user: "0:0"
     restart: unless-stopped
 

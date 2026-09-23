@@ -10,10 +10,13 @@ from relmedner.models import (
     ChoiceField,
     Classification,
     Dataset,
+    DatasetBase,
     Description,
     Entity,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
     Relation,
     RelationField,
     RunConfig,
@@ -197,22 +200,24 @@ def test_relations_carry_provenance_defaults() -> None:
 # ---------------------------------------------------------------- mixing weights --
 
 
-def test_weight_defaults_to_neutral_and_rejects_nonpositive() -> None:
+def test_weight_defaults_to_neutral_and_rejects_negative() -> None:
     """1.0 keeps every existing producer honest (scripts and the miner build weightless examples);
-    a nonpositive weight would be a silent no-op at duplication time, so it is a model error"""
+    a NEGATIVE weight is a model error, but 0 is now the documented soft drop (US-011): the
+    record still reaches avro provenance and duplicates zero times at export"""
     assert TrainingExample(text="Alice").weight == 1.0
-    with pytest.raises(ValidationError):
-        TrainingExample(text="Alice", weight=0.0)
+    assert TrainingExample(text="Alice", weight=0.0).weight == 0.0
     with pytest.raises(ValidationError):
         TrainingExample(text="Alice", weight=-1.5)
-    with pytest.raises(ValidationError):
+    assert (
         HuggingFaceDataset(
             task=ScriptTask(type="script", name="GlinerBiomedScript", outputs=["entities"]),
             weight=0.0,
             source="hf",
             dataset="a/b",
             columns_out=["text"],
-        )
+        ).weight
+        == 0.0
+    )
 
 
 def _dataset(source: str, weight: float) -> HuggingFaceDataset:
@@ -250,7 +255,7 @@ def test_dispatch_row_stamps_the_declared_source_weight() -> None:
     """the source key rides the streamed row until dispatch; the stamped example keeps its
     content and the declared weight becomes avro provenance"""
     Row: StreamedRow = ("some/source", (("script", "GlinerBiomedScript", ("entities",)), ([], [])))
-    Outputs, Example = dispatch_row(Row, weights={"some/source": 2.5})
+    Outputs, Example = dispatch_row(Row, weights={"some/source": 2.5}, edge_trusts={})
 
     assert Outputs == ("entities",)
     assert Example.weight == 2.5
@@ -259,9 +264,60 @@ def test_dispatch_row_stamps_the_declared_source_weight() -> None:
 
 def test_dispatch_row_keeps_the_neutral_weight_when_none_is_declared() -> None:
     Row: StreamedRow = ("some/source", (("script", "GlinerBiomedScript", ("entities",)), ([], [])))
-    _Outputs, Example = dispatch_row(Row, weights={"some/source": 1.0})
+    _Outputs, Example = dispatch_row(Row, weights={"some/source": 1.0}, edge_trusts={})
 
     assert Example.weight == 1.0
+
+
+def test_x_defaults_namespace_accepted_and_ignored() -> None:
+    """compose-spec x- convention (https://compose-spec.github.io/compose-spec/11-extension.html):
+    reusable fragments live in a top-level x-defaults map OUTSIDE the validated datasets list;
+    anchors are resolved by CSafeLoader before pydantic sees anything, so the value only has to
+    round-trip untouched while dataset tuples stay byte-identical"""
+    Declaration: dict[str, Any] = {
+        "datasets": [
+            {
+                "source": "hf",
+                "dataset": "a/b",
+                "task": {"type": "script", "name": "GlinerBiomedScript", "outputs": ["entities"]},
+                "columns_out": ["text"],
+            }
+        ]
+    }
+    Baseline: YamlIngests = YamlIngests.model_validate(Declaration)
+    Extended: YamlIngests = YamlIngests.model_validate({"x-defaults": {"hf-train": {"weight": 1.0, "split": "train"}}, **Declaration})
+
+    assert Extended.x_defaults == {"hf-train": {"weight": 1.0, "split": "train"}}
+    assert Baseline.x_defaults is None
+    assert Extended.generate_tuples() == Baseline.generate_tuples()
+
+
+def test_unknown_top_level_key_still_rejected() -> None:
+    """extra="forbid" guards the positional tuple locks in test_ingests.py; x-defaults is the only
+    top-level key admitted beyond datasets"""
+    with pytest.raises(ValidationError):
+        YamlIngests.model_validate({"bogus": 1, "datasets": []})
+
+
+def test_x_defaults_declared_after_datasets() -> None:
+    """model_fields declaration order is the positional contract frozen by DatasetBase.to_tuple()
+    and the EXPECTED locks; appending (never inserting or renaming) is the only safe model change,
+    so a future reorder fails loudly here"""
+    # "x_trust" joined after gazetteer (US-011): appended, never inserted -- it must stay LAST
+    assert tuple(YamlIngests.model_fields) == ("datasets", "x_defaults", "gazetteer", "x_trust")
+
+
+@pytest.mark.parametrize(
+    "model",
+    (HuggingFaceDataset, HuggingFaceJsonDataset, LocalAvroDataset, LocalDelimitedDataset),
+    ids=lambda model: model.__name__,
+)
+def test_dataset_tuple_fields_freeze_the_packing_order(model: type[DatasetBase]) -> None:
+    """tuple_fields is the explicit packing order DatasetBase.to_tuple() iterates and the streams
+    unpack positionally; pinning it equal to model_fields minus NON_PAYLOAD_FIELDS means any
+    reorder, rename, or unlisted append (e.g. US-008 filters, reserved in NON_PAYLOAD_FIELDS)
+    fails CI here instead of silently shifting the EXPECTED tuple locks in test_ingests.py"""
+    assert model.tuple_fields == tuple(name for name in model.model_fields if name not in DatasetBase.NON_PAYLOAD_FIELDS)
 
 
 def test_relation_provenance_survives_avro_but_stays_out_of_the_gliner_projection() -> None:
@@ -301,7 +357,26 @@ def test_huggingface_json_dataset_pins_the_positional_payload_contract() -> None
         columns_out=["tokenized_text", "ner"],
     )
 
-    assert list(HuggingFaceJsonDataset.model_fields) == ["task", "weight", "source", "dataset", "file", "split", "match_on", "columns_out"]
+    # "filters" joined DatasetBase after this lock was written, and it sits in
+    # NON_PAYLOAD_FIELDS precisely so an appended field cannot shift a payload position:
+    # model_fields carries it, tuple_fields (the packing order asserted below) does not.
+    # "trust" and "trust_edges" joined after weight (US-011), before the keyword-only "filters"
+    # slot -- like filters they sit in NON_PAYLOAD_FIELDS, so tuple_fields (asserted below)
+    # carries none of them and no payload position shifted
+    assert list(HuggingFaceJsonDataset.model_fields) == [
+        "task",
+        "weight",
+        "trust",
+        "trust_edges",
+        "filters",
+        "source",
+        "dataset",
+        "file",
+        "split",
+        "match_on",
+        "columns_out",
+    ]
+    assert HuggingFaceJsonDataset.tuple_fields == ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
     assert Entry.to_tuple() == (
         "hf_json",
         (

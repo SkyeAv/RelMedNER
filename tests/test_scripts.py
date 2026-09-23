@@ -7,7 +7,7 @@ import pytest
 
 from relmedner.fullmap_mine import FullmapMiner
 from relmedner.models import Entity, Relation, RelationField, TrainingExample
-from relmedner.scripts import GlinerBiomedScript, KnowledgatorBiomedScript, SentenceRexScript
+from relmedner.scripts import BioleafletsScript, GlinerBiomedScript, KnowledgatorBiomedScript, SentenceRexScript
 from relmedner.scripts.sentence_rex import parse_tagged_sentence
 from relmedner.types import DispatchedExample, Script, ScriptValues
 from relmedner.utils import ResolutionGate, ResolvedMention, ScriptUtils, strip_biolink_prefix
@@ -1561,3 +1561,550 @@ def test_pubmed_coverage_push_pins_the_measured_raw_headings() -> None:
     assert len(label_map) == 211
     for unmapped in ("investigative techniques", "group processes", "chemical phenomena", "genetic phenomena"):
         assert unmapped not in label_map, f"{unmapped!r} has no faithful class and must stay unmapped"
+
+
+# NemotronPiiScript + the PII span decode policy (nvidia/Nemotron-PII ingest)
+# ---------------------------------------------------------------------------
+
+
+def test_the_nemotron_pii_parse_literal_spans_decodes_python_repr_strings_and_keeps_parsed_lists() -> None:
+    """datasets-server serves the spans column as python-repr strings, not arrays; an
+    already-parsed list (local/avro shape) must decode to the same thing"""
+    from relmedner.scripts.nemotron_pii import parse_literal_spans
+
+    Parsed: list[dict[str, Any]] = [{"start": 0, "end": 4, "text": "Mara", "label": "first_name"}]
+    assert parse_literal_spans("[{'start': 0, 'end': 4, 'text': 'Mara', 'label': 'first_name'}]") == Parsed
+    assert parse_literal_spans(Parsed) == Parsed
+    assert parse_literal_spans("[]") == []
+
+
+def test_the_nemotron_pii_parse_literal_spans_skips_values_that_are_not_lists_of_dicts() -> None:
+    """skip-don't-coerce: a malformed external column must never crash a row or become silently coerced spans"""
+    from relmedner.scripts.nemotron_pii import parse_literal_spans
+
+    assert parse_literal_spans("garbage [") == []
+    assert parse_literal_spans("'just a string'") == []
+    assert parse_literal_spans("['a', 'b']") == []
+    # a non-dict entry drops individually; the dict-shaped spans on the same row must survive
+    assert parse_literal_spans("[{'start': 0}, 3]") == [{"start": 0}]
+    assert parse_literal_spans(None) == []
+    assert parse_literal_spans(3) == []
+
+
+def test_the_nemotron_pii_script_yields_entities_on_structured_markdown_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """real-shaped structured fixture (markdown form, spans as a python-repr string): a nonzero
+    populated yield proves the decode -> slice -> resolve -> group chain works end to end"""
+    from relmedner.scripts import NemotronPiiScript
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is NemotronPiiScript.LABEL_MAP
+        assert mentions == [("Mara", "first_name"), ("Voss", "last_name"), ("Duluth", "city")]
+        return [
+            ResolvedMention(mention="Mara", category="Human", origin="fallback"),
+            ResolvedMention(mention="Voss", category="Human", origin="fallback"),
+            ResolvedMention(mention="Duluth", category="GeographicLocation", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "**Loan Application**\nFirst Name: Mara\nLast Name: Voss\nCity: Duluth\nCountry: USA"
+    Spans = (
+        "[{'start': 33, 'end': 37, 'text': 'Mara', 'label': 'first_name'}, "
+        "{'start': 49, 'end': 53, 'text': 'Voss', 'label': 'last_name'}, "
+        "{'start': 60, 'end': 66, 'text': 'Duluth', 'label': 'city'}]"
+    )
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.text == Text
+    assert Example.populated() == frozenset({"entities"})
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Human": ["Mara", "Voss"], "GeographicLocation": ["Duluth"]}
+
+
+def test_the_nemotron_pii_script_yields_entities_on_unstructured_prose_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the second document_format must decode identically (no format-specific branch exists), so a
+    prose row yields through the same path as the form-shaped one"""
+    from relmedner.scripts import NemotronPiiScript
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is NemotronPiiScript.LABEL_MAP
+        assert mentions == [("Mara", "first_name"), ("Duluth", "city"), ("full-time", "employment_status"), ("machinist", "occupation")]
+        return [
+            ResolvedMention(mention="Mara", category="Human", origin="fallback"),
+            ResolvedMention(mention="Duluth", category="GeographicLocation", origin="fallback"),
+            ResolvedMention(mention="full-time", category="SocioeconomicAttribute", origin="fallback"),
+            ResolvedMention(mention="machinist", category="SocioeconomicAttribute", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "Mara Voss lives in Duluth and works full-time as a machinist."
+    Spans = (
+        "[{'start': 0, 'end': 4, 'text': 'Mara', 'label': 'first_name'}, "
+        "{'start': 19, 'end': 25, 'text': 'Duluth', 'label': 'city'}, "
+        "{'start': 36, 'end': 45, 'text': 'full-time', 'label': 'employment_status'}, "
+        "{'start': 51, 'end': 60, 'text': 'machinist', 'label': 'occupation'}]"
+    )
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.populated() == frozenset({"entities"})
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Human": ["Mara"],
+        "GeographicLocation": ["Duluth"],
+        "SocioeconomicAttribute": ["full-time", "machinist"],
+    }
+
+
+def test_the_nemotron_pii_script_accepts_already_parsed_span_lists(monkeypatch: pytest.MonkeyPatch) -> None:
+    """an already-parsed list of span dicts (non-datasets-server shape) must decode without the string path"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Bo", "first_name"), ("Chen", "last_name"), ("12 Oak St", "street_address"), ("55501", "postcode")]
+        return [
+            ResolvedMention(mention="Bo", category="Human", origin="fallback"),
+            ResolvedMention(mention="Chen", category="Human", origin="fallback"),
+            ResolvedMention(mention="12 Oak St", category="GeographicLocation", origin="fallback"),
+            ResolvedMention(mention="55501", category="GeographicLocation", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "Contact Bo Chen at 12 Oak St, 55501."
+    Spans: list[dict[str, Any]] = [
+        {"start": 8, "end": 10, "text": "Bo", "label": "first_name"},
+        {"start": 11, "end": 15, "text": "Chen", "label": "last_name"},
+        {"start": 19, "end": 28, "text": "12 Oak St", "label": "street_address"},
+        {"start": 30, "end": 35, "text": "55501", "label": "postcode"},
+    ]
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.populated() == frozenset({"entities"})
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Human": ["Bo", "Chen"],
+        "GeographicLocation": ["12 Oak St", "55501"],
+    }
+
+
+def test_the_nemotron_pii_script_slices_surfaces_over_quirked_span_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    """measured quirks: span dicts carry int-typed text (age/cvv) and case-drifted values ('spanish'
+    against 'Spanish'); decoding must survive both and the surface must be the text slice, never the field"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("44", "age"), ("Spanish", "race_ethnicity"), ("spanish", "language"), ("441", "cvv")]
+        return [ResolvedMention(mention=surface, category=label, origin="raw") for surface, label in mentions]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "As a 44 years old Spanish national, she listed language spanish and card cvv 441."
+    Spans = (
+        "[{'start': 5, 'end': 7, 'text': 44, 'label': 'age'}, "
+        "{'start': 18, 'end': 25, 'text': 'spanish', 'label': 'race_ethnicity'}, "
+        "{'start': 56, 'end': 63, 'text': 'Spanish', 'label': 'language'}, "
+        "{'start': 77, 'end': 80, 'text': 441, 'label': 'cvv'}]"
+    )
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {
+        "Age": ["44"],
+        "RaceEthnicity": ["Spanish"],
+        "Language": ["spanish"],
+        "Cvv": ["441"],
+    }
+
+
+def test_the_nemotron_pii_script_drops_malformed_spans_without_killing_the_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """every malformed span variant measured in the wild (bool start, string end, negative start,
+    start==end, end past the text, missing/empty label, non-dict entries) drops individually while
+    good spans on the same row still ship"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("Bo", "first_name"), ("12 Oak St", "street_address")]
+        return [
+            ResolvedMention(mention="Bo", category="Human", origin="fallback"),
+            ResolvedMention(mention="12 Oak St", category="GeographicLocation", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "Contact Bo Chen at 12 Oak St, 55501."
+    Spans: list[Any] = [
+        {"start": 8, "end": 10, "text": "Bo", "label": "first_name"},
+        {"start": True, "end": 15, "label": "last_name"},
+        {"start": 11, "end": "15", "label": "last_name"},
+        {"start": -1, "end": 3, "label": "city"},
+        {"start": 30, "end": 30, "label": "postcode"},
+        {"start": 30, "end": 99, "label": "postcode"},
+        {"start": 30, "end": 35},
+        {"start": 30, "end": 35, "label": ""},
+        "not-a-dict",
+        7,
+        None,
+        {"start": 19, "end": 28, "text": "12 Oak St", "label": "street_address"},
+    ]
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.populated() == frozenset({"entities"})
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Human": ["Bo"], "GeographicLocation": ["12 Oak St"]}
+
+
+def test_the_nemotron_pii_script_ships_text_only_when_every_span_is_malformed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a row whose spans all fail validation must not crash or fabricate entities: it ships text-only,
+    populated() comes up empty, and the declared-outputs filter drops it downstream"""
+
+    def fail_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        raise AssertionError("no resolution may run when every span is malformed")
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fail_resolve))
+    Text = "Contact Bo Chen at 12 Oak St, 55501."
+    Spans: list[Any] = [
+        {"start": True, "end": 10, "label": "first_name"},
+        {"start": -2, "end": 3, "label": "city"},
+        {"start": 30, "end": 30, "label": "postcode"},
+        "not-a-dict",
+    ]
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.text == Text
+    assert Example.entities == []
+    assert Example.populated() == frozenset()
+
+
+def test_the_nemotron_pii_script_ships_text_only_for_blank_or_empty_text() -> None:
+    """blank/empty text must never crash the script; it ships as an empty example the filter drops"""
+    _, Empty = Script.dispatch("NemotronPiiScript", (("entities",), ("", "[]")))
+    assert Empty.text == ""
+    assert Empty.populated() == frozenset()
+    _, Blank = Script.dispatch("NemotronPiiScript", (("entities",), ("   \n\t", "[]")))
+    assert Blank.text == ""
+    assert Blank.populated() == frozenset()
+
+
+def test_the_nemotron_pii_script_maps_known_labels_and_pascalcases_the_rest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the two-tier label policy through the real resolution chain (fullmap patched out):
+    mapped labels yield their biolink category via the merged fallback map; unmapped tail labels
+    (Ssn, Ipv4, ...) stay in training as raw PascalCased labels instead of being dropped"""
+
+    monkeypatch.setattr(ScriptUtils, "_fullmap_best", classmethod(lambda cls, normalized: {}))
+    Text = "My first name is Peggy and my SSN is 250-38-8116."
+    Spans = "[{'start': 17, 'end': 22, 'text': 'Peggy', 'label': 'first_name'}, {'start': 37, 'end': 48, 'text': '250-38-8116', 'label': 'ssn'}]"
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Human": ["Peggy"], "Ssn": ["250-38-8116"]}
+    assert ScriptUtils.is_biolink_category("Human")
+    assert not ScriptUtils.is_biolink_category("Ssn")
+    assert ScriptUtils.pascal_label("medical_record_number") == "MedicalRecordNumber"
+
+
+def test_the_nemotron_pii_script_never_emits_relations(monkeypatch: pytest.MonkeyPatch) -> None:
+    """gazetteer predicates are biomedical-mined, so relation extraction would fabricate edges between
+    PII mentions under unbounded predicates; the script must stay entity-only in shape and output"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention="Mara", category="Human", origin="fallback"),
+            ResolvedMention(mention="Duluth", category="GeographicLocation", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Text = "Mara Voss lives in Duluth and works full-time as a machinist."
+    Spans = "[{'start': 0, 'end': 4, 'text': 'Mara', 'label': 'first_name'}, {'start': 19, 'end': 25, 'text': 'Duluth', 'label': 'city'}]"
+    _, Example = Script.dispatch("NemotronPiiScript", (("entities",), (Text, Spans)))
+
+    assert Example.relations == []
+    assert "relations" not in Example.populated()
+    assert "relations" not in Example.to_output()["output"]
+
+
+def test_the_nemotron_pii_script_registers_under_its_declared_name() -> None:
+    """self-registration via Script.__init_subclass__ is the dispatch contract; the ingest yaml
+    resolves scripts by NAME, so a mismatched key would silently break routing"""
+    from relmedner.scripts import NemotronPiiScript
+
+    assert isinstance(Script.REGISTRY["NemotronPiiScript"], NemotronPiiScript)
+    assert Script.REGISTRY["NemotronPiiScript"].NAME == "NemotronPiiScript"
+
+
+# ---------------------------------------------------------------------------
+# BioleafletsScript + ScriptUtils.parse_literal_dict (Bioleaflets ingest)
+# ---------------------------------------------------------------------------
+
+
+def bioleaflets_section(content: str | None, entities: list[Any] | None, title: str = "Overview") -> str:
+    """one Section_N parquet cell: a python-repr dict string carrying exactly the measured keys
+    Title / Section_Content / Entity_Recognition (468-row probe shape)"""
+    return repr({"Title": title, "Section_Content": content, "Entity_Recognition": entities})
+
+
+def comprehend_entry(text: str, label: str, begin: int, end: int) -> dict[str, Any]:
+    """a real-probe-shaped Comprehend entry: the 4 base keys plus Id/Score/Category/Traits/Attributes"""
+    return {
+        "Text": text,
+        "Type": label,
+        "BeginOffset": begin,
+        "EndOffset": end,
+        "Id": 0,
+        "Score": 0.99,
+        "Category": "MEDICATION",
+        "Traits": [],
+        "Attributes": [],
+    }
+
+
+def stanza_entry(text: str, label: str, begin: int, end: int) -> dict[str, Any]:
+    """a real-probe-shaped Stanza entry: only the 4 base keys"""
+    return {"Text": text, "Type": label, "BeginOffset": begin, "EndOffset": end}
+
+
+def test_parse_literal_dict_decodes_python_repr_dict_columns() -> None:
+    """the bioleaflets parquet stores Section_N cells as python-repr dict strings, not dict objects:
+    a dict-in-string decodes via ast.literal_eval (no code execution) and a real dict passes through"""
+    Section = "{'Title': 'Overview', 'Section_Content': 'aspirin treats migraine .', 'Entity_Recognition': None}"
+
+    assert ScriptUtils.parse_literal_dict(Section) == {
+        "Title": "Overview",
+        "Section_Content": "aspirin treats migraine .",
+        "Entity_Recognition": None,
+    }
+    Real = {"Title": "Overview", "Section_Content": "c", "Entity_Recognition": []}
+    assert ScriptUtils.parse_literal_dict(Real) == Real
+
+
+def test_parse_literal_dict_skips_non_dict_rows_without_raising() -> None:
+    """skip-don't-coerce: None, junk strings, lists, quoted strings, and malformed reprs all yield {}
+    so callers skip the cell instead of crashing or coercing it into a section"""
+    assert ScriptUtils.parse_literal_dict(None) == {}
+    assert ScriptUtils.parse_literal_dict("garbage [") == {}
+    assert ScriptUtils.parse_literal_dict("{'unbalanced': ") == {}
+    assert ScriptUtils.parse_literal_dict(["not", "a", "dict"]) == {}
+    assert ScriptUtils.parse_literal_dict("'a quoted string'") == {}
+    assert ScriptUtils.parse_literal_dict(3) == {}
+
+
+def test_every_bioleaflets_label_maps_to_a_biolink_category() -> None:
+    """dataset-local vocabulary values stay real biolink classes (import-time validate_label_map
+    raises first; this pins the invariant for the whole map)"""
+    from relmedner.scripts import BioleafletsScript
+
+    for raw_label, category in BioleafletsScript.LABEL_MAP.items():
+        assert ScriptUtils.is_biolink_category(category), f"fallback {raw_label!r} -> {category!r} is not a biolink class"
+
+
+def test_the_bioleaflets_label_map_is_exactly_the_measured_vocabulary() -> None:
+    """the measured 30-type vocabulary splits into the 10 faithful mappings (Comprehend and Stanza
+    name one concept two ways: dx_name/problem, generic_name vs brand_name, test_name vs test,
+    treatment_name vs treatment) and the PHI/noise tail that must stay UNMAPPED: AGE, ADDRESS, DATE,
+    ID, NAME, PHONE_OR_FAX, PROFESSION, NUMBER, PRODUCT_NAME and TIME_TO_* are not biomedical
+    concepts, so forcing them into a class would silently mislabel training data -- they surface as
+    PascalCased raw tails instead"""
+    from relmedner.scripts import BioleafletsScript
+
+    assert sorted(BioleafletsScript.LABEL_MAP) == [
+        "brand_name",
+        "dx_name",
+        "generic_name",
+        "problem",
+        "procedure_name",
+        "system_organ_site",
+        "test",
+        "test_name",
+        "treatment",
+        "treatment_name",
+    ]
+    assert BioleafletsScript.LABEL_MAP["dx_name"] == "Disease" and BioleafletsScript.LABEL_MAP["problem"] == "Disease"
+    assert BioleafletsScript.LABEL_MAP["generic_name"] == "Drug" and BioleafletsScript.LABEL_MAP["brand_name"] == "Drug"
+    assert BioleafletsScript.LABEL_MAP["procedure_name"] == "Procedure"
+    assert BioleafletsScript.LABEL_MAP["test_name"] == "ClinicalMeasurement" and BioleafletsScript.LABEL_MAP["test"] == "ClinicalMeasurement"
+    assert BioleafletsScript.LABEL_MAP["treatment_name"] == "Treatment" and BioleafletsScript.LABEL_MAP["treatment"] == "Treatment"
+    assert BioleafletsScript.LABEL_MAP["system_organ_site"] == "AnatomicalEntity"
+    for noise in (
+        "age",
+        "address",
+        "date",
+        "id",
+        "name",
+        "phone_or_fax",
+        "profession",
+        "number",
+        "product_name",
+        "time_to_execution",
+        "time_to_onset",
+    ):
+        assert noise not in BioleafletsScript.LABEL_MAP
+
+
+def test_the_bioleaflets_script_decodes_real_row_shapes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end-to-end over the measured row shape: six python-repr section cells, char-offset
+    Comprehend+Stanza entries bridged through content.split() triples, dataset-map resolution and
+    grouping, and a gazetteer relation emitted only inside the section that carries the trigger"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert label_map is BioleafletsScript.LABEL_MAP
+        # the Comprehend DX_NAME and Stanza PROBLEM spans overlap on 'migraine' with different types:
+        # both survive into resolution (only exact duplicates collapse); mentions carry the RAW types
+        # (resolution lowercases for the label-map lookup, so the fakes must assert them verbatim)
+        assert mentions == [("aspirin", "GENERIC_NAME"), ("migraine", "DX_NAME"), ("migraine", "PROBLEM")]
+        return [
+            ResolvedMention(mention="aspirin", category="Drug", curie="CHEBI:15365", preferred_name="Acetylsalicylic acid", origin="fullmap"),
+            ResolvedMention(mention="migraine", category="Disease", curie="MONDO:0005002", preferred_name="migraine disorder", origin="fullmap"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Content = "aspirin treats migraine ."
+    Entities: list[Any] = [
+        comprehend_entry("aspirin", "GENERIC_NAME", 0, 7),
+        comprehend_entry("migraine", "DX_NAME", 15, 23),
+        stanza_entry("migraine", "PROBLEM", 15, 23),
+    ]
+    Sections = (bioleaflets_section(Content, Entities),) + tuple(bioleaflets_section("empty section .", None) for _ in range(5))
+    _, Example = Script.dispatch("BioleafletsScript", (("entities",), Sections))
+
+    assert Example.text == " ".join(["aspirin treats migraine ."] + ["empty section ."] * 5)
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
+    assert Example.entities[0].description is not None and "[fullmap: CHEBI:15365 | Acetylsalicylic acid]" in Example.entities[0].description
+    assert Example.relations == [expected_relation("treats", "aspirin", "migraine")]
+    assert Example.populated() == frozenset({"entities", "relations"})
+
+
+def test_the_bioleaflets_script_collapses_exact_duplicates_but_keeps_different_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Comprehend re-annotates the same span the Stanza pass annotated: exact (begin, end, type)
+    duplicates collapse -- a repeated mention would skew entity grouping -- while the same span under
+    two different types survives, which is the measured Comprehend+Stanza overlap, real signal"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        # four entries decode to two mentions: the three identical DX_NAME entries collapsed to one
+        assert mentions == [("migraine", "DX_NAME"), ("migraine", "PROBLEM")]
+        return [
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Entries: list[Any] = [
+        comprehend_entry("migraine", "DX_NAME", 15, 23),
+        comprehend_entry("migraine", "DX_NAME", 15, 23),
+        stanza_entry("migraine", "PROBLEM", 15, 23),
+        comprehend_entry("migraine", "DX_NAME", 15, 23),
+    ]
+    _, Example = Script.dispatch("BioleafletsScript", (("entities",), (bioleaflets_section("aspirin treats migraine .", Entries),)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Disease": ["migraine"]}
+
+
+def test_the_bioleaflets_script_skips_none_malformed_and_empty_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """skip-don't-coerce per section: None cells, junk reprs, list cells, a None/empty/missing
+    Section_Content, and a None or non-list-decoding Entity_Recognition each drop their section and
+    never raise; the one good section still yields its entities and its relation"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("aspirin", "GENERIC_NAME"), ("migraine", "DX_NAME")]
+        return [
+            ResolvedMention(mention="aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Content = "aspirin treats migraine ."
+    Good: list[Any] = [
+        comprehend_entry("aspirin", "GENERIC_NAME", 0, 7),
+        stanza_entry("migraine", "DX_NAME", 15, 23),
+    ]
+    Sections: tuple[Any, ...] = (
+        None,
+        "garbage [",
+        ["not", "a", "section"],
+        bioleaflets_section(None, []),
+        bioleaflets_section("", []),
+        repr({"Title": "Overview", "Entity_Recognition": []}),
+        bioleaflets_section(Content, None),
+        bioleaflets_section(Content, "not a list"),
+        bioleaflets_section(Content, Good),
+    )
+    _, Example = Script.dispatch("BioleafletsScript", (("entities",), Sections))
+
+    assert Example.text == " ".join([Content] * 3)
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
+    assert Example.relations == [expected_relation("treats", "aspirin", "migraine")]
+
+
+def test_the_bioleaflets_script_drops_text_mismatched_and_malformed_entries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """offsets are authoritative and the Text check is the stale-annotation guard: an entry whose
+    Text differs from content[begin:end] drops (the slice also catches inverted and negative
+    offsets); so do non-dict entries, missing/mistyped offsets (bool is not int, floats are not
+    coerced), and a missing Type -- Id/Score/Category/Traits/Attributes are ignored on survivors"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        assert mentions == [("aspirin", "GENERIC_NAME"), ("migraine", "PROBLEM")]
+        return [
+            ResolvedMention(mention="aspirin", category="Drug", origin="fallback"),
+            ResolvedMention(mention="migraine", category="Disease", origin="fallback"),
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Content = "aspirin treats migraine ."
+    Entries: list[Any] = [
+        comprehend_entry("aspirin", "GENERIC_NAME", 0, 7),
+        comprehend_entry("aspirin", "GENERIC_NAME", 0, 6),
+        comprehend_entry("treats", "GENERIC_NAME", 0, 7),
+        {"Text": "migraine", "Type": "PROBLEM", "BeginOffset": 15},
+        stanza_entry("migraine", "PROBLEM", 15, "23"),
+        stanza_entry("migraine", "PROBLEM", True, 23),
+        stanza_entry("migraine", "PROBLEM", 15, 23.0),
+        {"Text": "migraine", "BeginOffset": 15, "EndOffset": 23},
+        {"Text": "migraine", "Type": "PROBLEM", "BeginOffset": 15, "EndOffset": 23, "Id": None, "Score": None},
+        stanza_entry("aspirin", "GENERIC_NAME", 7, 0),
+        stanza_entry("migraine", "PROBLEM", -8, -1),
+        "not a dict",
+        None,
+        3,
+    ]
+    _, Example = Script.dispatch("BioleafletsScript", (("entities",), (bioleaflets_section(Content, Entries),)))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
+
+
+def test_the_bioleaflets_script_emits_text_only_rows_when_nothing_yields() -> None:
+    """all-None sections emit the empty example (never raise); content with no surviving
+    Entity_Recognition emits a text-only example with no entity/relation keys, whose empty
+    populated() the pipeline's matches_declared_outputs gate drops"""
+    _, Empty = Script.dispatch("BioleafletsScript", (("entities",), tuple(None for _ in range(6))))
+    assert Empty.text == ""
+    assert Empty.populated() == frozenset()
+    _, NoEntities = Script.dispatch("BioleafletsScript", (("entities",), (bioleaflets_section("no entities here .", None),)))
+    assert NoEntities.text == "no entities here ."
+    assert NoEntities.entities == [] and NoEntities.relations == []
+    assert NoEntities.populated() == frozenset()
+
+
+def test_the_bioleaflets_script_never_pairs_mentions_across_sections(monkeypatch: pytest.MonkeyPatch) -> None:
+    """sections are independent documents: a trigger at the end of one section must not bracket a
+    mention living in another section (a merged token stream would fabricate treats(aspirin,
+    migraine) here, which no single section asserts)"""
+
+    def fake_resolve(mentions: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
+        return [
+            ResolvedMention(mention=mention, category="Drug" if mention == "aspirin" else "Disease", origin="fallback") for mention, _ in mentions
+        ]
+
+    monkeypatch.setattr(ScriptUtils, "resolve_mentions", staticmethod(fake_resolve))
+    Sections = (
+        bioleaflets_section("aspirin is used to treat", [comprehend_entry("aspirin", "GENERIC_NAME", 0, 7)]),
+        bioleaflets_section("migraine rarely", [stanza_entry("migraine", "PROBLEM", 0, 8)]),
+    )
+    _, Example = Script.dispatch("BioleafletsScript", (("entities",), Sections))
+
+    assert {entity.label: entity.mentions for entity in Example.entities} == {"Drug": ["aspirin"], "Disease": ["migraine"]}
+    assert Example.relations == []
+    assert Example.populated() == frozenset({"entities"})
+
+
+def test_the_synthetic_ner_ade_tweets_script_registers_under_its_declared_name() -> None:
+    """self-registration via Script.__init_subclass__ is the dispatch contract; the ingest yaml
+    resolves scripts by NAME, so a mismatched key would silently break routing (US-001)"""
+    from relmedner.scripts import SyntheticNerAdeTweetsScript
+
+    assert isinstance(Script.REGISTRY["SyntheticNerAdeTweetsScript"], SyntheticNerAdeTweetsScript)
+    assert Script.REGISTRY["SyntheticNerAdeTweetsScript"].NAME == "SyntheticNerAdeTweetsScript"
+
+
+def test_the_scripts_package_exports_every_script_sorted_and_script_only() -> None:
+    """__all__ is the package's public surface: alphabetical so additions have one right place,
+    and Script instances only so a stray helper cannot leak into registry-driven dispatch (US-001)"""
+    import relmedner.scripts as scripts
+
+    assert scripts.__all__ == sorted(scripts.__all__)
+    assert all(issubclass(getattr(scripts, name), Script) for name in scripts.__all__)

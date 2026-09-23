@@ -1,12 +1,83 @@
 from __future__ import annotations
 
+import pathlib
+import re
+
 import pytest
 
 from relmedner.ingests import YamlIngestsParser
+from relmedner.models import (
+    Cluster,
+    FullmapTask,
+    GazetteerPredicate,
+    GazetteerQualifier,
+    GazetteerSpec,
+    HuggingFaceDataset,
+    HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
+    MatchOn,
+    ScriptTask,
+    WorkerNode,
+    YamlIngests,
+)
 
 # per-ingest locks: each declared ingest's entry is asserted independently so adding a dataset is an
 # additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
 # parallel dataset worktrees
+# the single health-community allowlist match_on lock, shared by all seven tensorshield reddit
+# entries (values match the corpus EXACTLY: apply_match is exact membership, so casing must be
+# the Reddit canonical form or the row is silently dropped)
+EXPECTED_REDDIT_MATCH: tuple[object, ...] = (
+    (
+        "communityName",
+        (
+            "r/AskDocs",
+            "r/medical",
+            "r/medicine",
+            "r/Health",
+            "r/diabetes",
+            "r/ADHD",
+            "r/autism",
+            "r/Anxiety",
+            "r/depression",
+            "r/SuicideWatch",
+            "r/cancer",
+            "r/Celiac",
+            "r/ibs",
+            "r/IBD",
+            "r/CrohnsDisease",
+            "r/UlcerativeColitis",
+            "r/eczema",
+            "r/Psoriasis",
+            "r/acne",
+            "r/migraine",
+            "r/ChronicPain",
+            "r/Menopause",
+            "r/endometriosis",
+            "r/PCOS",
+            "r/infertility",
+            "r/birthcontrol",
+            "r/lupus",
+            "r/MultipleSclerosis",
+            "r/hypothyroidism",
+            "r/Hashimotos",
+            "r/asthma",
+            "r/COPD",
+            "r/epilepsy",
+            "r/schizophrenia",
+            "r/bipolar",
+            "r/BPD",
+            "r/OCD",
+            "r/ptsd",
+            "r/EatingDisorders",
+            "r/Dentistry",
+            "r/pharmacy",
+            "r/nursing",
+        ),
+    ),
+)
+
 EXPECTED: dict[str, tuple[object, ...]] = {
     "anthonyyazdaniml/gliner-biomed-pre-training": (
         "hf",
@@ -107,12 +178,12 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
     # tuple is deliberately shorter than the hf ones above (it still carries the weight field, which
     # DatasetBase declares for every source)
-    "~/Desktop/interventions.avro": (
+    "interventions/interventions.avro": (
         "local",
         (
             ("script", "CtkpInterventionsScript", ("entities",)),
             1.0,
-            "~/Desktop/interventions.avro",
+            "interventions/interventions.avro",
         ),
     ),
     "knowledgator/sentence_rex": (
@@ -185,24 +256,187 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             None,
         ),
     ),
+    # local avro script ingest: same short-tuple shape as interventions above (no subset/split,
+    # no columns_out; DatasetBase still carries the weight)
+    "synthetic-ner-ade-tweets/ade_tweets.avro": (
+        "local",
+        (("script", "SyntheticNerAdeTweetsScript", ("entities",)), 1.0, "synthetic-ner-ade-tweets/ade_tweets.avro"),
+    ),
+    # local delimited fullmap ingest: same shape as qualifiers above (columns_out joins the tuple,
+    # match_on stays None)
+    "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv": (
+        "local_delimited",
+        (("fullmap", 6, "9606", True, ("entities", "relations")), 1.0, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
+    ),
+    # nvidia/Nemotron-PII declares one ingest PER SPLIT off one repo id: entry_key qualifies on the
+    # split when no subset is declared, so the two locks coexist instead of silently overwriting
+    "nvidia/Nemotron-PII:train": (
+        "hf",
+        (
+            ("script", "NemotronPiiScript", ("entities",)),
+            1.0,
+            "nvidia/Nemotron-PII",
+            None,
+            "train",
+            None,
+            ("text", "spans"),
+        ),
+    ),
+    "nvidia/Nemotron-PII:test": (
+        "hf",
+        (
+            ("script", "NemotronPiiScript", ("entities",)),
+            1.0,
+            "nvidia/Nemotron-PII",
+            None,
+            "test",
+            None,
+            ("text", "spans"),
+        ),
+    ),
+    # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
+    # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
+    "tensorshield/reddit_dataset_157": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_157",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_171": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_171",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_217": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_217",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_237": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_237",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_30": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_30",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_84": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_84",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_85": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_85",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    # ruslan/bioleaflets-biomedical-ner: one repo id, two ingests distinguished ONLY by split (no
+    # subset), so entry_key qualifies BOTH keys with the split (same convention as nvidia/Nemotron-PII)
+    "ruslan/bioleaflets-biomedical-ner:train": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "train",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    "ruslan/bioleaflets-biomedical-ner:test": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "test",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    "Pennlaine/Medical-Entity-JSON-Extraction": (
+        "hf",
+        (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
+    ),
 }
 
 
-def entry_key(payload: tuple[object, ...]) -> str:
+def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str:
     """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
     "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
     different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    the loser would vanish from both locks and the failure would be silent"""
+    split qualifies instead -- or the train and test locks would collide and one would silently
+    vanish. A repo id declared once per split (nvidia/Nemotron-PII, ruslan/bioleaflets-biomedical-ner)
+    therefore carries the split on BOTH keys, ':train' and ':test'."""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
     # columns_out (a tuple), and there the declared path is already unique per file
+    if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
+        discriminator = payload[4]
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
 
 
 def tuples_by_ingest() -> dict[str, tuple[object, ...]]:
-    # the repo id moved to payload position 2 when the weight field joined DatasetBase
-    return {entry_key(payload): (source, payload) for source, payload in YamlIngestsParser().generate_tuples()}
+    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a repo id
+    # appearing on more than one declared ingest gets split-qualified keys (see entry_key)
+    entries: list[tuple[str, tuple[object, ...]]] = list(YamlIngestsParser().generate_tuples())
+    declared: dict[str, int] = {}
+    for _, payload in entries:
+        declared[str(payload[2])] = declared.get(str(payload[2]), 0) + 1
+    return {entry_key(payload, split_qualified=declared[str(payload[2])] > 1): (source, payload) for source, payload in entries}
 
 
 @pytest.mark.parametrize("ingest", sorted(EXPECTED))
@@ -212,3 +446,36 @@ def test_the_declared_tuple_shape_is_locked_per_ingest(ingest: str) -> None:
 
 def test_every_declared_ingest_is_accounted_for() -> None:
     assert set(tuples_by_ingest()) == set(EXPECTED)
+
+
+# doc drift guard: docs/yaml-config.md is the agent-facing schema reference, and it rots silently
+# when a model field is added or renamed; parametrizing over the live model_fields (not a copied
+# list) means the guard itself cannot go stale. Every name below must appear in the doc.
+# Every concrete dataset source is listed: main split the single LocalDataset into the avro,
+# delimited, and hf_json kinds, and a doc naming only one of them is exactly the silent rot
+# this guard exists to catch.
+_DOC_MODELS = (
+    YamlIngests,
+    ScriptTask,
+    FullmapTask,
+    HuggingFaceDataset,
+    HuggingFaceJsonDataset,
+    LocalAvroDataset,
+    LocalDelimitedDataset,
+    MatchOn,
+    Cluster,
+    WorkerNode,
+    GazetteerPredicate,
+    GazetteerQualifier,
+    GazetteerSpec,
+)
+
+_DOC_FIELD_NAMES: tuple[str, ...] = tuple(sorted({name for model in _DOC_MODELS for name in model.model_fields}))
+
+
+@pytest.mark.parametrize("field_name", _DOC_FIELD_NAMES)
+def test_every_yaml_model_field_is_named_in_docs_yaml_config(field_name: str) -> None:
+    text = pathlib.Path("docs/yaml-config.md").read_text(encoding="utf-8")
+    # backtick-anchored match, not a bare substring: prose words like "name" or "range" must
+    # not satisfy the guard -- only a code span (table cell or inline) naming the field counts
+    assert re.search(rf"`{re.escape(field_name)}`", text), f"field {field_name!r} is missing from docs/yaml-config.md"

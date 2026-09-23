@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, ClassVar, Literal, Self
 from uuid import uuid4
 
 from dataclasses_avroschema.pydantic import AvroBaseModel
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from tablassert.biolink import Predicates
 
-from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT
+from relmedner.constants import DEFAULT_OUTPUT, TEST_ROW_LIMIT, TRUST_SAMPLE_SIZE
 from relmedner.enums import DedupMode, OutputShapes, ProcessingTypes
+
+TrustScore = Annotated[float, Field(ge=0.0, le=1.0)]
+"""one trust value in [0, 1]; a named alias so trust/trust_edges carry the bound in the
+schema without duplicated Annotated expressions"""
 
 
 class StrictBase(AvroBaseModel):
@@ -80,12 +85,66 @@ Task: Annotated = Annotated[
 ]
 
 
+class RowFilters(StrictBase):
+    """declarative per-dataset row filters; kept OUT of the frozen payload tuple (NON_PAYLOAD_FIELDS)
+    and handed to the stream ctor as a keyword so filter changes never shift tuple positions.
+    The drop decision itself is the pure evaluator relmedner.row_filters.first_drop_reason"""
+
+    drop_empty: bool = Field(False)
+    """drop rows where every projected value is None, "", or an empty list/tuple/dict"""
+    min_text_len: int | None = Field(None, ge=0)
+    """drop rows whose joined text is shorter than this"""
+    max_text_len: int | None = Field(None, ge=0)
+    """drop rows whose joined text is longer than this"""
+    include_regex: str | None = Field(None)
+    """drop rows whose joined text does NOT match this pattern"""
+    exclude_regex: str | None = Field(None)
+    """drop rows whose joined text DOES match this pattern"""
+
+    @model_validator(mode="after")
+    def min_within_max(self: Self) -> Self:
+        if self.min_text_len is not None and self.max_text_len is not None and self.min_text_len > self.max_text_len:
+            raise ValueError(f"min_text_len {self.min_text_len} exceeds max_text_len {self.max_text_len}")
+        return self
+
+
 class DatasetBase(StrictBase):
+    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges"})
+    """names that never enter the packed payload: "source" is the dict key today; "filters",
+    "trust", and "trust_edges" are validation-time keyword-only fields, so none can shift an
+    existing tuple position"""
+
+    tuple_fields: ClassVar[tuple[str, ...]]
+    """the explicit field packing order frozen by tests/test_ingests.py EXPECTED locks; concrete
+    dataset models declare it so a new model field is an opt-in tuple change, never an accidental
+    position shift"""
+
     task: Task = Field(...)
-    weight: float = Field(1.0, gt=0.0)
+    weight: float = Field(1.0, ge=0.0)
     """per-source mixing weight stamped onto every TrainingExample the source emits. Stock
     gliner2 has no per-example weight channel (InputExample/from_dict/ExtractorDataset all
-    drop it), so consumption is weighted duplication at avro->JSONL export, not in-training"""
+    drop it), so consumption is weighted duplication at avro->JSONL export, not in-training.
+    0 is legal and means soft drop: the record still reaches the avro provenance but
+    duplicates zero times at export -- discouraged (docs/weighting.md), prefer trust: 0 or
+    row filters for unwanted data"""
+
+    trust: float = Field(1.0, ge=0.0, le=1.0)
+    """source-level trust score in [0, 1] suggested by the offline validation step
+    (`relmedner validate-trust`, see docs/weighting.md); folds into the stamped weight as
+    weight * trust clamped to the fixed +-TRUST_RANGE band (validators.adjust_weight).
+    1.0 (default) = no adjustment; 0 = explicit soft drop bypassing the band. Kept OUT of
+    the frozen payload tuple (NON_PAYLOAD_FIELDS) like filters, so it shifts no position"""
+
+    trust_edges: dict[str, TrustScore] | None = Field(None)
+    """per-predicate edge trust: relation NAME -> trust in [0, 1], the heuristic application
+    of sampled validation to the WHOLE dataset -- a predicate the sample found unreliable is
+    down-weighted on every record carrying it, untouched records keep the source weight
+    (validators.record_edge_factor takes the weakest flagged predicate on the record). 0
+    soft-drops records carrying that edge. Keyword-only, never in the frozen payload tuple"""
+
+    filters: RowFilters | None = Field(None)
+    """declarative row filters applied by the stream after match_on; appended LAST (after trust)
+    and excluded from tuple_fields, so it cannot shift any frozen payload position"""
 
     @property
     def row_key(self: Self) -> str:
@@ -94,7 +153,13 @@ class DatasetBase(StrictBase):
         raise NotImplementedError
 
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
-        return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).model_fields if name != "source"))
+        return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).tuple_fields))
+
+    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None]:
+        """the (source, payload, filters) envelope build_stream unpacks; the payload stays the
+        frozen 2-tuple shape cli.py and the EXPECTED locks depend on, filters ride keyword-only"""
+        source, payload = self.to_tuple()
+        return (source, payload, self.filters)
 
 
 class MatchOn(StrictBase):
@@ -103,6 +168,8 @@ class MatchOn(StrictBase):
 
 
 class HuggingFaceDataset(DatasetBase):
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "subset", "split", "match_on", "columns_out")
+
     source: Literal["hf"] = Field(...)
     dataset: str = Field(...)
     subset: str | None = Field(None)
@@ -123,6 +190,8 @@ class LocalAvroDataset(DatasetBase):
     have, because the file's own schema is already the contract)
     """
 
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "path")
+
     source: Literal["local"] = Field(...)
     path: str = Field(...)
 
@@ -140,6 +209,8 @@ class LocalDelimitedDataset(DatasetBase):
     exist there, else against the package data dir, so in-repo corpora work from any CWD.
     """
 
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "path", "columns_out", "match_on")
+
     source: Literal["local_delimited"] = Field(...)
     path: str = Field(...)
     columns_out: list[str] = Field(..., min_length=1)
@@ -154,6 +225,8 @@ class HuggingFaceJsonDataset(DatasetBase):
     """json-builder ingest over an hf:// URL inside one hub repo file; see relmedner.hf_json for the
     two measured blockers (old-style dataset_infos.json, cold-cache streaming corruption) that keep
     this route out of the "hf" source"""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
 
     source: Literal["hf_json"] = Field(...)
     dataset: str = Field(...)
@@ -176,11 +249,162 @@ Dataset: Annotated = Annotated[
 ]
 
 
+def _reject_malformed_phrases(owner: str, phrases: list[list[str]]) -> None:
+    """shared phrase rules for every gazetteer trigger/cue table: an empty phrase or token can
+    never match and only masks an authoring bug, and an uppercase token can never match the
+    lowercased scan input (mirrors gazetteer.validate_trigger_table)"""
+    for phrase in phrases:
+        if not phrase:
+            raise ValueError(f"{owner} has an empty phrase")
+        for token in phrase:
+            if not token:
+                raise ValueError(f"{owner} phrase {phrase!r} contains an empty token")
+            if token != token.lower():
+                raise ValueError(f"{owner} phrase {phrase!r} contains uppercase token {token!r}")
+
+
+class GazetteerPredicate(StrictBase):
+    """one YAML-declared predicate arm of the relation gazetteer (US-010). WHY a model instead
+    of raw dicts: the name must be a tablassert.biolink.Predicates member (mirroring
+    gazetteer.validate_trigger_table) so a typo'd predicate fails at parse time instead of
+    emitting KGX edges that fail Biolink validation downstream"""
+
+    name: str = Field(...)
+    triggers: list[list[str]] = Field(..., min_length=1)
+
+    @field_validator("name")
+    @classmethod
+    def name_is_a_biolink_predicate(cls, value: str) -> str:
+        valid: frozenset[str] = frozenset(predicate.value for predicate in Predicates)
+        if value not in valid:
+            raise ValueError(f"predicate {value!r} is not a tablassert.biolink.Predicates member")
+        return value
+
+    @field_validator("triggers")
+    @classmethod
+    def triggers_are_wellformed(cls, value: list[list[str]]) -> list[list[str]]:
+        _reject_malformed_phrases("a YAML-declared predicate", value)
+        return value
+
+
+class GazetteerQualifier(StrictBase):
+    """one qualifier arm; ONLY structurally validated in this tree. The qualifier scanner
+    machinery (QUALIFIER_TRIGGERS, QUALIFIER_RANGES, DISABLED_QUALIFIERS) lives on the
+    add-qualifiers-to-relationship-pipelines branch and lands with PR #22, so declaring
+    qualifiers in ingests.yaml raises a structured NotImplementedError at configure time
+    (gazetteer.configure_gazetteer) instead of being silently accepted and ignored"""
+
+    slot: str = Field(...)
+    range: str | None = Field(None)
+    triggers: list[list[str]] = Field(default_factory=list)
+
+    @field_validator("slot")
+    @classmethod
+    def slot_is_named(cls, value: str) -> str:
+        if not value:
+            raise ValueError("a YAML-declared qualifier has an empty slot")
+        return value
+
+    @field_validator("triggers")
+    @classmethod
+    def triggers_are_wellformed(cls, value: list[list[str]]) -> list[list[str]]:
+        _reject_malformed_phrases("a YAML-declared qualifier", value)
+        return value
+
+
+class GazetteerSpec(StrictBase):
+    """the optional top-level `gazetteer:` section of ingests.yaml (US-010). Predicates merge
+    additively over the builtin trigger table (see gazetteer.configure_gazetteer); qualifiers
+    and negation_cues parse and validate structurally but raise at configure time until PR #22
+    lands the scanner -- fail-loud, never silent accept-and-ignore"""
+
+    predicates: list[GazetteerPredicate] | None = Field(None)
+    qualifiers: list[GazetteerQualifier] | None = Field(None)
+    negation_cues: list[list[str]] | None = Field(None)
+
+    @field_validator("negation_cues")
+    @classmethod
+    def negation_cues_are_wellformed(cls, value: list[list[str]] | None) -> list[list[str]] | None:
+        if value is not None:
+            _reject_malformed_phrases("YAML-declared negation_cues", value)
+        return value
+
+    @model_validator(mode="after")
+    def the_section_declares_something(self: Self) -> Self:
+        if not (self.predicates or self.qualifiers or self.negation_cues):
+            raise ValueError("gazetteer section is empty: declare predicates, qualifiers, or negation_cues")
+        return self
+
+    @model_validator(mode="after")
+    def yaml_phrases_have_one_owner(self: Self) -> Self:
+        """two YAML predicates claiming one phrase would make the longest-match winner depend on
+        merge order; builtin-vs-YAML ownership is rejected later, at configure time, where the
+        builtin table is reachable without a circular models<->gazetteer import"""
+        owners: dict[tuple[str, ...], str] = {}
+        for entry in self.predicates or []:
+            for phrase in entry.triggers:
+                key = tuple(phrase)
+                owner = owners.setdefault(key, entry.name)
+                if owner != entry.name:
+                    raise ValueError(f"phrase {key!r} is claimed by both {owner!r} and {entry.name!r}")
+        return self
+
+
+class ValidateTrustConfig(StrictBase):
+    """the optional top-level `x-trust:` section of ingests.yaml: driver settings for the
+    offline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags
+    override these one-for-one, so the yaml holds the per-repo default and the command line
+    holds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,
+    ingests.yaml is a committed artifact"""
+
+    sample_size: int = Field(TRUST_SAMPLE_SIZE, ge=1)
+    """records sampled per source"""
+    backend: str = Field("pubmed")
+    """'pubmed' (E-utilities esearch, primary) or 'firecrawl' (self-hosted general-web fallback)"""
+    report: str = Field("trust-report.jsonl")
+    """JSONL report path"""
+
+    @field_validator("backend")
+    @classmethod
+    def backend_is_known(cls, value: str) -> str:
+        # a plain str with an explicit membership check, not Literal: Literal renders fine in
+        # the pydantic JSON Schema but dataclasses-avroschema cannot map it for avro schema
+        # generation (mirrors GazetteerPredicate.name_is_a_biolink_predicate)
+        if value not in ("pubmed", "firecrawl"):
+            raise ValueError(f"backend {value!r} is not 'pubmed' or 'firecrawl'")
+        return value
+
+
 class YamlIngests(StrictBase):
+    """compose-spec x- extension namespace: a top-level "x-defaults" map hosts reusable YAML anchor
+    definitions document-wide; CSafeLoader resolves the anchors before pydantic sees anything, so the
+    parsed value is stored but never read by loader code (extra="forbid" stays intact otherwise)"""
+
     datasets: list[Dataset] = Field(...)
+    x_defaults: dict[str, Any] | None = Field(None, alias="x-defaults")
+    gazetteer: GazetteerSpec | None = Field(None)
+    """optional relation-gazetteer overlay (US-010); appended LAST, after x_defaults, and kept
+    out of generate_tuples/stream_args, so it shifts no frozen dataset payload position"""
+    x_trust: ValidateTrustConfig | None = Field(None, alias="x-trust")
+    """optional validate-trust driver settings (US-011); appended LAST, after gazetteer, kept
+    out of generate_tuples/stream_args. CLI flags override these values one-for-one"""
+
+    class Meta(StrictBase.Meta):
+        # dataclasses-avroschema cannot map dict[str, Any] (no typing.Any arm exists, schema
+        # generation raises "unknown type"), but x_defaults is a validation-only YAML
+        # convenience and YamlIngests is never avro-serialized, so opt it out of the
+        # generated schema instead of narrowing the annotation
+        exclude = ["x_defaults"]
 
     def generate_tuples(self: Self) -> tuple[tuple[str, tuple[Any, ...]], ...]:
+        """KEPT at the frozen 2-tuple shape: cli.py parallelism count and the test_ingests.py
+        entry[1][2] helper index the payload positionally"""
         return tuple(dataset.to_tuple() for dataset in self.datasets)
+
+    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None], ...]:
+        """the pipeline's Create stage feeds build_stream, which unpacks each 3-tuple as
+        (source, payload, filters)"""
+        return tuple(dataset.to_stream_args() for dataset in self.datasets)
 
     def weights_by_source(self: Self) -> dict[str, float]:
         """row key -> declared mixing weight; rows key on the source's repo id (not the "hf"
@@ -191,6 +415,31 @@ class YamlIngests(StrictBase):
             if weights.setdefault(dataset.row_key, dataset.weight) != dataset.weight:
                 raise ValueError(f"dataset {dataset.row_key!r} is declared twice with conflicting weights")
         return weights
+
+    def trusts_by_source(self: Self) -> dict[str, float]:
+        """row key -> declared trust; mirrors weights_by_source's shared-key agreement raise:
+        two entries over one row key must agree on trust or the stamped weight would be
+        ambiguous (weight * trust is computed once per row key, not per entry)"""
+        trusts: dict[str, float] = {}
+        for dataset in self.datasets:
+            if trusts.setdefault(dataset.row_key, dataset.trust) != dataset.trust:
+                raise ValueError(f"dataset {dataset.row_key!r} is declared twice with conflicting trusts")
+        return trusts
+
+    def trust_edges_by_source(self: Self) -> dict[str, dict[str, float]]:
+        """row key -> {predicate: trust}; entries sharing one row key MERGE their maps (the two
+        Nemotron splits may each flag different predicates) but the same predicate twice with
+        different values raises, matching weights_by_source's ambiguity rule"""
+        edges: dict[str, dict[str, float]] = {}
+        for dataset in self.datasets:
+            if dataset.trust_edges is None:
+                continue
+            slot: dict[str, float] = edges.setdefault(dataset.row_key, {})
+            for predicate, score in dataset.trust_edges.items():
+                if predicate in slot and slot[predicate] != score:
+                    raise ValueError(f"dataset {dataset.row_key!r} declares conflicting trust for predicate {predicate!r}")
+                slot[predicate] = score
+        return edges
 
 
 class Entity(StrictBase):
@@ -260,10 +509,11 @@ def describe(descriptions: list[Description] | None) -> dict[str, str]:
 
 class TrainingExample(StrictBase):
     text: str = Field(...)
-    weight: float = Field(1.0, gt=0.0)
-    """source-declared mixing weight; rides the avro record as provenance and stays out of the
+    weight: float = Field(1.0, ge=0.0)
+    """effective (trust-adjusted) mixing weight; rides the avro record as provenance and stays out of the
     gliner2 to_output() projection -- stock gliner2 silently drops extra keys, so the actual
-    training-time consumption is weighted duplication at the avro->JSONL export step"""
+    training-time consumption is weighted duplication at the avro->JSONL export step. ge=0.0
+    because trust == 0 soft-drops a record: it still ships to avro but duplicates zero times"""
     entities: list[Entity] = Field(default_factory=list)
     classifications: list[Classification] = Field(default_factory=list)
     structures: list[Structure] = Field(default_factory=list)

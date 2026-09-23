@@ -13,11 +13,13 @@ from relmedner.avro_shards import ShardWriter, merge_shards
 from relmedner.constants import MAX_BATCH_ROWS, MIN_BATCH_ROWS, OUTPUTS_MOUNT
 from relmedner.dedup import apply_dedup, format_dedup_summary
 from relmedner.fullmap_mine import FullmapMiner
+from relmedner.gazetteer import configure_gazetteer
 from relmedner.ingests import YamlIngestsParser
-from relmedner.models import RunConfig, TrainingExample, YamlIngests
+from relmedner.models import GazetteerSpec, RunConfig, TrainingExample, YamlIngests
 from relmedner.registry import build_stream
 from relmedner.streams import DataStream, StreamedRow, rebuild_task
 from relmedner.types import DispatchedExample, Script
+from relmedner.validators import adjust_weight, example_weight
 
 logger = logging.getLogger(__name__)
 
@@ -28,27 +30,62 @@ def stream_rows(stream: DataStream, config: RunConfig) -> Iterator[StreamedRow]:
     return stream.stream(config)
 
 
-def weighted(example: TrainingExample, weight: float) -> TrainingExample:
-    """stamp the source-declared mixing weight onto a frozen example (avro provenance)"""
-    return example.model_copy(update={"weight": weight})
+def weighted(example: TrainingExample, weight: float, edge_trusts: dict[str, float] | None = None) -> TrainingExample:
+    """stamp the effective mixing weight onto a frozen example (avro provenance): the
+    source-level (trust-band-adjusted) weight, then scaled by the record's weakest flagged
+    edge trust -- edge weighting touches ONLY records carrying sampled-unreliable predicates,
+    everything else keeps the source weight byte-identical"""
+    return example.model_copy(update={"weight": example_weight(example, weight, edge_trusts or {})})
 
 
-def dispatch_row(row: StreamedRow, weights: dict[str, float]) -> DispatchedExample:
+def dispatch_row(row: StreamedRow, weights: dict[str, float], edge_trusts: dict[str, dict[str, float]]) -> DispatchedExample:
     """script tasks dispatch through the registry; the leading task value discriminates"""
     source, (task, values) = row
     task_model = rebuild_task(task)
     outputs = tuple(task_model.outputs)
     outputs, example = Script.dispatch(task_model.name, (outputs, values))
-    return (outputs, weighted(example, weights[source]))
+    return (outputs, weighted(example, weights[source], edge_trusts.get(source)))
 
 
-def resolve_rows(rows: list[StreamedRow], weights: dict[str, float]) -> Iterator[DispatchedExample]:
+def resolve_rows(rows: list[StreamedRow], weights: dict[str, float], edge_trusts: dict[str, dict[str, float]]) -> Iterator[DispatchedExample]:
     """one shared redb round trip per batch of fullmap rows (batched upstream by BatchElements)"""
     tasks = [rebuild_task(task) for _source, (task, _values) in rows]
     sources = [source for source, _payload in rows]
     pairs = [(values[0], task) for (_source, (_task, values)), task in zip(rows, tasks, strict=True)]
     for source, task, example in zip(sources, tasks, FullmapMiner.resolve_batch(pairs), strict=True):
-        yield (tuple(task.outputs), weighted(example, weights[source]))
+        yield (tuple(task.outputs), weighted(example, weights[source], edge_trusts.get(source)))
+
+
+class ResolveMinedBatches(beam.DoFn):
+    """fullmap batch-resolution DoFn that CARRIES the parsed GazetteerSpec as instance data.
+
+    WHY a DoFn and not the module-level resolve_rows function: Beam serializes the transform
+    graph by pickling DoFn instances, but a module-level function pickles by reference and the
+    driver's post-import module mutations do not survive serialization. Flink sdkworkers
+    (the production path) re-import relmedner.gazetteer fresh, so a driver-side
+    configure_gazetteer call would never reach them and a declared `gazetteer:` section would
+    silently produce builtin-only relations on cluster runs. This DoFn instead stores the
+    spec on the pickled instance (StrictBase models are frozen and pickle by value) and
+    re-runs configure_gazetteer in setup(), which Beam calls on the worker after unpickling,
+    so every worker rebuilds its trigger tables from builtins + this spec before its first
+    batch. The rebuild is idempotent, so this plus the driver-side parse_ingests() configure
+    are harmless double configuration."""
+
+    def __init__(
+        self: Self, gazetteer: GazetteerSpec | None, weights: dict[str, float], edge_trusts: dict[str, dict[str, float]] | None = None
+    ) -> None:
+        self.gazetteer: GazetteerSpec | None = gazetteer
+        self.weights: dict[str, float] = weights
+        self.edge_trusts: dict[str, dict[str, float]] = edge_trusts or {}
+        configure_gazetteer(gazetteer)
+
+    def setup(self: Self) -> None:
+        # runs worker-side after unpickle (and once on DirectRunner); the driver-time module
+        # state never crossed the wire, so the spec is re-applied here as data
+        configure_gazetteer(self.gazetteer)
+
+    def process(self, batch: list[StreamedRow]) -> Iterator[DispatchedExample]:
+        yield from resolve_rows(batch, self.weights, self.edge_trusts)
 
 
 def matches_declared_outputs(dispatched: DispatchedExample) -> bool:
@@ -65,6 +102,17 @@ def to_record(example: TrainingExample) -> dict[str, Any]:
     return example.asdict()
 
 
+def output_path(options: PipelineOptions | None, config: RunConfig) -> Path:
+    """external flink runs write into the durable sdkworker mount so the shards can be
+    collected back to the submitting host; direct-style runners keep the caller's ordinary
+    local path. Options presence alone is not the test: local prism runs carry options
+    (worker counts) yet must keep writing locally."""
+    Runner = (options.get_all_options().get("runner") or "") if options is not None else ""
+    if "flink" in Runner.lower():
+        return Path(OUTPUTS_MOUNT) / config.artifact_name()
+    return Path(config.output)
+
+
 class BeamPipeline:
     def __init__(self: Self, options: PipelineOptions | None = None) -> None:
         self.options: PipelineOptions | None = options
@@ -75,17 +123,26 @@ class BeamPipeline:
     def run(self: Self, config: RunConfig) -> None:
         Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
         # per-source mixing weight stamped onto every record each source emits (avro provenance;
-        # stock gliner2 has no per-example weight, so duplication happens at JSONL export)
-        Weights: dict[str, float] = Ingests.weights_by_source()
-        # Flink user code runs in the sdkworker, so external runs write to its durable output mount.
-        # DirectRunner keeps honoring the caller's ordinary local path for development and unit tests.
-        Output: Path = Path(config.output) if self.options is None else Path(OUTPUTS_MOUNT) / config.artifact_name()
+        # stock gliner2 has no per-example weight, so duplication happens at JSONL export).
+        # stamped value is the TRUST-ADJUSTED weight (validators.adjust_weight): declared
+        # weight * trust clamped to the +-TRUST_RANGE band, trust==0 soft-dropping to 0. the
+        # adjustment composes here -- not in a new Beam transform -- so the graph stays
+        # identical and only the stamped values change. side effect, documented in
+        # docs/weighting.md: adjusted weight feeds dedup priority, so between two near-
+        # duplicates the higher-trust source's record survives
+        Trusts: dict[str, float] = Ingests.trusts_by_source()
+        Weights: dict[str, float] = {source: adjust_weight(weight, Trusts.get(source, 1.0)) for source, weight in Ingests.weights_by_source().items()}
+        # per-predicate edge trust (validators.record_edge_factor): applied record-by-record
+        # at the stamp, so only records carrying a flagged predicate move; the dict rides the
+        # DoFns as pickled instance data exactly like Weights
+        EdgeTrusts: dict[str, dict[str, float]] = Ingests.trust_edges_by_source()
+        Output: Path = output_path(self.options, config)
         Schema: dict[str, Any] = TrainingExample.avro_schema_to_python()
 
         with beam.Pipeline(options=self.options) as new_pipeline:
             rows = (
                 new_pipeline
-                | "load declarative ingests" >> beam.Create(Ingests.generate_tuples())
+                | "load declarative ingests" >> beam.Create(Ingests.stream_args())
                 | "initialize datastream classes" >> beam.MapTuple(build_stream)
                 | "stream declared data" >> beam.FlatMap(stream_rows, config=config)
             )
@@ -94,13 +151,13 @@ class BeamPipeline:
             script_rows, fullmap_rows = rows | "split by task type" >> beam.Partition(lambda row, count: 1 if row[1][0][0] == FULLMAP_TYPE else 0, 2)
             dispatched = (
                 script_rows
-                | "dispatch rows to declared scripts" >> beam.Map(dispatch_row, weights=Weights)
+                | "dispatch rows to declared scripts" >> beam.Map(dispatch_row, weights=Weights, edge_trusts=EdgeTrusts)
                 | "keep examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
             mined = (
                 fullmap_rows
                 | "buffer fullmap rows into batches" >> beam.BatchElements(min_batch_size=MIN_BATCH_ROWS, max_batch_size=MAX_BATCH_ROWS)
-                | "resolve mined batches" >> beam.FlatMap(resolve_rows, weights=Weights)
+                | "resolve mined batches" >> beam.ParDo(ResolveMinedBatches(Ingests.gazetteer, Weights, EdgeTrusts))
                 | "keep mined examples matching declared outputs" >> beam.Filter(matches_declared_outputs)
             )
             merged = (dispatched, mined) | "merge task branches" >> beam.Flatten() | "drop the declared output key" >> beam.Values()
@@ -110,19 +167,23 @@ class BeamPipeline:
             (
                 deduped
                 | "shape examples into avro records" >> beam.Map(to_record)
+                # WriteFiles' streaming finalization stamps TIMESTAMP_MAX_VALUE and trips flink's
+                # watermark hold ("TimestampCombiner moved element"), so records go to per-bundle
+                # avro shards that collection merges instead (see relmedner.avro_shards)
                 | "write training data to avro" >> beam.ParDo(ShardWriter(str(Output), Schema))
             )
         # the with-block runs the pipeline on exit and stashes the result on the Pipeline
         # object; retaining it here is what lets US-005 query metrics after the block closes
         self.result = new_pipeline.result
+        if Output.parent != Path(OUTPUTS_MOUNT):
+            # the shard writer only produces parts; assemble the final avro file for local-style
+            # runs (flink runs assemble during collection instead, see relmedner.collect)
+            merge_shards(Output, Schema)
         # REQ-INT-4: report what dedup rejected on a local run only (the Flink runner keeps
         # the same counters in the job UI/REST instead). The `options is None` check mirrors
         # the output-path branch above, so a cluster run never reaches metrics() here and an
         # absent result/counters just skips the line, never crashing the run
         if self.options is None:
-            # the shard writer only produces parts; assemble the final avro file for local runs
-            # (cluster runs assemble during collection instead — see relmedner.collect)
-            merge_shards(Output, Schema)
             summary = format_dedup_summary(self.result)
             if summary is not None:
                 logger.info(summary)

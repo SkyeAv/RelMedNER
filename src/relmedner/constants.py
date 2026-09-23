@@ -33,7 +33,7 @@ FLINK_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.flink"
 # Local fullmap database directory for resolution on the driver (no cluster mount). Workers always
 # read the mounted bundle instead: the sdkworker containers get RELMEDNER_FULLMAP_DIR=/opt/fullmap
 # from the compose files, and the driver on the head host exports RELMEDNER_FULLMAP_DIR itself.
-FULLMAP_DIR: Path = Path(environ.get("RELMEDNER_FULLMAP_DIR", "/home/skyeav/Desktop/fullmap"))
+FULLMAP_DIR: Path = Path(environ.get("RELMEDNER_FULLMAP_DIR") or "/home/skyeav/Desktop/fullmap")
 
 # ---------------------------------------------------------------- fullmap mining knobs ----
 # Every constant below was fixed by measurement against the live fullmap (2026jul22,
@@ -149,6 +149,24 @@ MIN_UNIGRAM_LENGTH: int = 3
 MIN_BATCH_ROWS: int = 200
 MAX_BATCH_ROWS: int = 2000
 
+# ------------------------------------------------------- training-row token cap knobs ----
+# Platform-wide cap on one training row's joined text, applied ALWAYS-ON by
+# row_filters.first_drop_reason (independent of any declared RowFilters rules): the cap
+# is a platform constant concern, not per-dataset config, so no ingests.yaml setting may waive it.
+
+# Largest allowed text, in TOKENS. Chars-to-tokens conversion uses the OpenAI rule of thumb
+# of ~4 characters per token for English
+# (https://help.openai.com/en/articles/4936856-understanding-and-counting-tokens).
+MAX_TEXT_TOKENS: int = 8192
+
+# Chars assumed per token for the conversion above. Medical text runs longer words than
+# general English, so its real chars/token sits above 4 and len(text) // CHARS_PER_TOKEN
+# OVERestimates the true token count; the resulting early fire (a few rows a real tokenizer
+# would keep) is the accepted medical-text error margin -- the cap is a cost guard, not
+# tokenization. Compared in CHARS with strict > (never floor-divide first), so a 1-char
+# overshoot still drops: floor division would round 32769 chars back to 8192 "tokens".
+CHARS_PER_TOKEN: int = 4
+
 # ---------------------------------------------------------------- near-dedup knobs ----
 # MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
 # P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,
@@ -186,3 +204,41 @@ DEDUP_ROWS_PER_BAND: int = 16
 # Texts shorter than this many tokens bypass near-dedup entirely: below ~10 tokens a word
 # 5-gram shingle set has <6 members, so its MinHash Jaccard estimate is noise, not signal.
 MIN_NEAR_TOKENS: int = 10
+
+# ---------------------------------------------------------------- trust knobs ----
+# Source-level trust (US-011): an offline sampled validation (validate.py, NEVER inside the
+# Beam graph) scores a source's entities/relations against PubMed E-utilities and suggests a
+# trust in [0, 1] that folds into the stamped weight as weight * trust, clamped to the fixed
+# symmetric band below. Trust nudges; it cannot overturn a declared weight.
+
+# Half-width of the trust adjustment band around the declared weight: trust-scaled weight is
+# clamped to [w*(1-TRUST_RANGE), min(1.0, w*(1+TRUST_RANGE))]. Fixed for every source -- a
+# wider or narrower band is a declared-weight change, not a trust change. 0.2 means the best
+# a fully-trusted (trust=1.0) source gains is +20%, the worst a distrusted one loses is -20%.
+TRUST_RANGE: float = 0.2
+
+# Records sampled per source by `relmedner validate-trust` when the caller passes no size.
+# Large enough that a source with ~20% bad rows shows a visibly sub-1.0 trust, small enough
+# that 3 rps of PubMed E-utilities finishes a source in well under a minute.
+TRUST_SAMPLE_SIZE: int = 50
+
+# Relation hit grading (validators.grade_relation): >= 5 co-occurring PubMed documents is
+# strong attestation, 1-4 is a real but possibly coincidental co-occurrence (half credit),
+# 0 is unverified. Spans stay binary (one hit verifies) because a surface+label pair has no
+# coincidental-middle case the way entity pairs do.
+TRUST_RELATION_VERIFIED_HITS: int = 5
+TRUST_RELATION_PARTIAL_HITS: int = 1
+
+# NCBI E-utilities esearch endpoint (no key: 3 rps; NCBI_API_KEY env raises to 10 rps).
+# PubMed is the PRIMARY validator: biomedical domain fit is exact and it is free; the
+# self-hosted Firecrawl fallback (FIRECRAWL_BASE_URL env) covers non-biomedical sources.
+PUBMED_ESEARCH_URL: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+# 3.4 requests/second ceiling under the no-key 3 rps policy (the 0.1 headroom absorbs jitter
+# in NCBI's window accounting); with NCBI_API_KEY set the client uses a 0.11s delay for 9 rps.
+PUBMED_THROTTLE_SECONDS: float = 0.29
+PUBMED_THROTTLE_SECONDS_KEYED: float = 0.11
+
+# Self-hosted Firecrawl fallback for validate-trust (duckduckgo-search was REJECTED: the
+# library renamed and DDG's 202 rate-limit breakage makes it unreliable for a scored corpus
+# workflow). Base URL carries no path -- the client appends /v1/search.
+FIRECRAWL_BASE_URL: str = environ.get("FIRECRAWL_BASE_URL", "http://localhost:3002")

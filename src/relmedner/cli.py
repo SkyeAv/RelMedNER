@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from typing import Annotated
+import json
+from pathlib import Path
+from typing import Annotated, Any
 
 import cyclopts
 
@@ -13,6 +15,8 @@ from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig
 from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
 from relmedner.pipeline import BeamPipeline
+from relmedner.schemas import cluster_schema, ingests_schema
+from relmedner.validate import FirecrawlClient, PubMedClient, resolve_trust_settings, suggested_yaml, validate_sources, write_report
 
 APP: cyclopts.App = cyclopts.App()
 
@@ -43,6 +47,49 @@ def build_dataset(
     # the driver runs on the head host, whose worker entry is the collection source this process
     # can read directly; every other worker's shards arrive over ssh (gateway hop from off-LAN)
     collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, Parser.jobmanager(), run_cmd)
+
+
+@APP.command(name="validate-trust")
+def validate_trust_command(
+    sample_size: Annotated[int | None, cyclopts.Parameter("--sample-size", alias="-n")] = None,
+    source: Annotated[str | None, cyclopts.Parameter("--source", alias="-s")] = None,
+    backend: Annotated[str | None, cyclopts.Parameter("--backend", alias="-b")] = None,
+    report: Annotated[str | None, cyclopts.Parameter("--report", alias="-o")] = None,
+    test_run: Annotated[bool, cyclopts.Parameter(alias="-t")] = False,
+) -> None:
+    """offline literature validation suggesting per-source trust values (docs/weighting.md).
+    Samples records through the real dispatch path, queries PubMed E-utilities (default) or a
+    self-hosted Firecrawl (--backend firecrawl), writes the per-record JSONL report to --report
+    and prints the suggested `trust:` yaml for hand-committing to ingests.yaml. Settings come
+    from the optional top-level `x-trust:` section of ingests.yaml, overridden flag-by-flag;
+    secrets (NCBI_API_KEY, FIRECRAWL_BASE_URL/API_KEY) come from env only"""
+    Ingests = YamlIngestsParser().parse_ingests()
+    Size, Backend, Report = resolve_trust_settings(sample_size, backend, report, Ingests.x_trust)
+    if Backend not in ("pubmed", "firecrawl"):
+        raise ValueError(f"unknown backend {Backend!r} -- expected 'pubmed' or 'firecrawl'")
+    client = PubMedClient() if Backend == "pubmed" else FirecrawlClient()
+    Config: RunConfig = RunConfig.from_flags(test_run, Report, DedupMode.OFF)
+    summaries, records = validate_sources(Ingests, Config, client, Size, source)
+    write_report(Path(Report), summaries, records)
+    print(suggested_yaml(summaries))
+
+
+@APP.command(name="schema")
+def schema_command(
+    output_dir: Annotated[str, cyclopts.Parameter(alias="-o")] = "schemas/",
+) -> None:
+    # regenerate the checked-in JSON Schema artifacts from the models (single source of truth:
+    # relmedner.schemas); tests/test_schemas.py is the drift guard that fails CI when a models.py
+    # change lands without rerunning this command. Byte-stable rendering (indent=2 + trailing
+    # newline) keeps regeneration a no-op on a fresh checkout
+    Target: Path = Path(output_dir)
+    Target.mkdir(parents=True, exist_ok=True)
+    Artifacts: tuple[tuple[str, dict[str, Any]], ...] = (
+        ("ingests.schema.json", ingests_schema()),
+        ("cluster.schema.json", cluster_schema()),
+    )
+    for name, schema in Artifacts:
+        (Target / name).write_text(json.dumps(schema, indent=2) + "\n", encoding="utf-8")
 
 
 @APP.command(name="deploy-cluster")

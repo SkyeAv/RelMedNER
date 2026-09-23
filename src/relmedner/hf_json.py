@@ -5,7 +5,9 @@ from typing import Any, ClassVar, Self
 
 from datasets import load_dataset
 
-from relmedner.streams import DataStream, StreamedRow
+from relmedner.models import RowFilters
+from relmedner.row_filters import first_drop_reason
+from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
 
 
 class HuggingFaceJsonDataStream(DataStream):
@@ -36,11 +38,13 @@ class HuggingFaceJsonDataStream(DataStream):
         split: str | None,
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None,
         columns_out: tuple[str, ...],
+        *,
+        filters: RowFilters | None = None,
     ) -> None:
         # positional contract: the payload DatasetBase.to_tuple() produces for HuggingFaceJsonDataset
-        # (model field order minus source); registry.build_stream splats it into this __init__
-        self.task: tuple[Any, ...] = tuple(task)
-        self.weight: float = weight
+        # (model field order minus source); registry.build_stream splats it into this __init__;
+        # filters is keyword-only and rides the shared base __init__ (US-008)
+        super().__init__(task, weight, filters=filters)
         self.name: str = dataset
         self.dataset: str = dataset
         self.file: str = file
@@ -55,6 +59,30 @@ class HuggingFaceJsonDataStream(DataStream):
         # no streaming kwarg, on purpose: see the class docstring cold-cache hazard
         datastream = load_dataset("json", data_files=f"hf://datasets/{self.dataset}/{self.file}", split=self.split)
 
+        # every pass counts (US-009 shape), INCLUDING the declared-filters-None one: the
+        # historical None fast path skipped stats, the evaluator, and the quality line, which
+        # let over-cap rows stream through unfiltered sources with no accounting. The ALWAYS-ON
+        # token cap must reach this source like every other, so the fast path is gone; rows
+        # under the cap yield byte-identically, only over-cap rows are new drops (log/stats-only
+        # difference otherwise)
+        self.stats = StreamStats()
+        candidates = 0
         for row in datastream:
-            if self.apply_match(row):
-                yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))
+            self.stats.rows_in += 1
+            if not self.apply_match(row):
+                self.stats.drop("match_on")
+                continue
+            candidates += 1
+            values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
+            reason: str | None = first_drop_reason(values, self.effective_filters)
+            if reason is not None:
+                self.stats.drop(reason)
+                continue
+            self.stats.rows_out += 1
+            yield (self.name, (self.task, values))
+        # fail-loud zero-yield guard, matching the other hf stream: a declared filter OR the
+        # ALWAYS-ON token cap that drops every candidate row of a non-empty source is the
+        # silent-empty-training-set bug; a genuinely empty source (0 candidates, e.g. everything
+        # match_on-dropped) is recorded, not guarded
+        if candidates > 0 and self.stats.rows_out == 0:
+            raise ZeroYieldError(f"filters {self.filters} dropped 100% of {candidates} rows from {self.name}")
