@@ -33,3 +33,9 @@ the only and sufficient lever (~11.5 us/key lookup).
 
 A future teacher-distillation pass (gliner-biomed-large agreeing with mined spans) is
 deliberately deferred; `fullmap_mine.resolve_batch` is the interception point.
+
+## Related
+
+- [README index](../README.md) -- the fullmap ingest rows and the full docs index
+- [ingests](ingests.md) -- the resolution chain the mined spans enter
+- [qualifiers](qualifiers.md) -- the qualifier relations the gazetteer emits from mined spans

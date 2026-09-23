@@ -15,3 +15,9 @@ produced at least one declared shape. Rows may produce fewer shapes than declare
 (entity-only mined rows flow) and may produce extra shapes (the `[entities]`-only
 pile-ner declaration keeps rows whose gazetteer also fired -- relations are free signal,
 not a contract violation).
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [ingests](ingests.md) -- the resolution chain and gates feeding these records
+- [weighting](weighting.md) -- how weight rides the avro provenance

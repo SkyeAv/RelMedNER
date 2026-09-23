@@ -110,3 +110,9 @@ The CDR corpus is public domain under the NCBI/NLM PUBLIC DOMAIN NOTICE. The hub
 mirror `bigbio/bc5cdr` simply re-ships the original `CDR_Data.zip`. The release also
 carries PubTator `.txt` files with identical annotations; they are ignored here and
 the BioC XML is canonical for these containers.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows for the three containers and the full docs index
+- [ctkp interventions](ctkp-interventions.md) -- the other out-of-band local-avro ingest
+- [output](output.md) -- the TrainingExample records these rows emit

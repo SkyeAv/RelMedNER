@@ -77,3 +77,9 @@ every row emits in all four splits (100.0%): train_annotated 2,000/2,000 (2,000 
 1,995, 42,291 mentions, 30,068 relations), dev 998/998 (998 + 985, 21,377 mentions, 12,275
 relations), test 1,000/1,000 entities-only (21,559 mentions). Dev and test were probed over
 their FULL splits; the labeled splits average ~12.5 gold relations per document.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows for the four splits and the full docs index
+- [ingests](ingests.md) -- the shared resolution chain and gates
+- [output](output.md) -- the records the four splits emit

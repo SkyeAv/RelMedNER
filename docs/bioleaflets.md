@@ -27,3 +27,9 @@ change serves this corpus: the label/category buckets gained a dedicated drugnam
 and brand labels demand chemical compatibility before a fullmap hit is accepted) and dx/problem
 keywords joined the disease bucket.
 
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows and the full docs index
+- [ingests](ingests.md) -- the ResolutionGate buckets measured on corpora like this one
+- [weighting](weighting.md) -- the tier and trust prior for its row keys
