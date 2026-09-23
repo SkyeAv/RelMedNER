@@ -156,6 +156,8 @@ run on wenceslaus over the full 2,000-row train split of each subset (receipt st
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
 - [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
 - [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
+- [docs/reddit-corpora.md](docs/reddit-corpora.md) -- the seven general-Reddit `tensorshield` dumps, their `match_on` health-community anchor, and the 100k-row inclusion bar.
+
 
 ## GAD (bigbio/gad)
 
@@ -179,29 +181,6 @@ total); declaring them would upweight GAD about 22x in the mix, so they stay out
 Probe invocation: `probe.py --declared 'bigbio/gad:gad_blurb_bigbio_text/train/0000.parquet'
 --limit 200 --script GadBlurbScript --outputs classifications --text-column text`
 (plus the full-census throwaway probe kept at wenceslaus:~/probe_gad.py).
-
-## Reddit corpora
-
-Seven general-Reddit dumps from the `tensorshield` hub org, all MIT-licensed. The
-inclusion bar is corpus-wide `total_rows >= 100,000` in the org's stats.json: the kept
-seven span 121,584 to 7,114,560 rows. `tensorshield/reddit_dataset_226` (22,572 rows)
-carries the same license but fails the bar: after the health-community filter its
-projected yield is noise, so it stays out of the pipeline.
-
-None of these corpora are biomedical on their own, so every entry filters rows
-client-side post-stream with `match_on`: exact-value membership on `communityName`
-against a single yaml anchor `&biomed_communities` holding 42 provisional health
-subreddits (`r/AskDocs`, `r/diabetes`, `r/CrohnsDisease`, ...; the full list lives in
-`src/relmedner/data/ingests.yaml` and all seven entries alias the one anchor, so the
-allowlists cannot drift apart). Casing must be the Reddit canonical form: `r/askdocs`
-does not match, and neither does a non-health community like `r/madmen`. `columns_out`
-is `text` alone.
-
-The table's rows-in are stats.json `total_rows` for the whole corpus, before the
-community filter. Mining runs the unchanged fullmap path of the previous section;
-informal reddit prose (slang, misspellings, first-person narratives) is expected to
-mine at lower unigram precision than the curated corpus, and the measured gates in
-`relmedner/constants.py` are deliberately not loosened for it.
 
 ## BioRED
 
