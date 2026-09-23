@@ -58,3 +58,25 @@ def test_build_dataset_rejects_invalid_dedup_mode() -> None:
     pipeline work; exit_on_error=False surfaces the same CoercionError the CLI renders"""
     with pytest.raises(CoercionError, match="Invalid value"):
         APP.parse_args(["build-dataset", "--dedup-mode", "garbage"], exit_on_error=False)
+
+
+# ---------------------------------------------------------------- validate-trust (US-011) --
+
+
+def test_validate_trust_command_registers_with_defaults() -> None:
+    Command, Bound, _ = APP.parse_args(["validate-trust"], exit_on_error=False)
+    assert Command.__name__ == "validate_trust_command"
+    # all driver defaults are None at the CLI: an absent flag defers to the x-trust yaml
+    # section (resolve_trust_settings owns the precedence, tested in test_trust.py)
+    assert Bound.arguments.get("report") is None
+    assert Bound.arguments.get("sample_size") is None
+
+
+def test_validate_trust_source_and_sample_size_parse() -> None:
+    _Command, Bound, _ = APP.parse_args(
+        ["validate-trust", "--source", "knowledgator/PubMedAbstractsNER", "--sample-size", "5", "-t"],
+        exit_on_error=False,
+    )
+    assert Bound.arguments.get("source") == "knowledgator/PubMedAbstractsNER"
+    assert Bound.arguments.get("sample_size") == 5
+    assert Bound.arguments.get("test_run") is True

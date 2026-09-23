@@ -13,6 +13,11 @@
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+  # shared QC thresholds for the reddit fullmap ingests, measured on wenceslaus 2026-09-23
+  # (1500-row grid probe per source, samples audited by hand): the stop-word floor drops
+  # 0.9-4.9 percent link-only/degenerate posts, the short-line ceiling 0.1 percent
+  # newline-spam lists; see docs/quality-heuristics.md for the measured table
+  reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
@@ -78,6 +83,35 @@ datasets:
     dataset: knowledgator/PubMedAbstractsNER
     file: train.json
     columns_out: [tokenized_text, ner]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_annotated.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_distant.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/dev.json.gz
+    columns_out: [sents, vertexSet, labels]
+  # test rows carry no labels key at all, so this split ships entities only
+  - task: {type: script, name: DocredScript, outputs: [entities]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/test.json.gz
+    columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: SuperGlueRecordScript, outputs: [entities, classifications]}
     <<: *hf-train
     dataset: aps/super_glue
@@ -168,6 +202,11 @@ datasets:
           - r/nursing
     columns_out:
       - text
+    # 157 is the noisiest of the seven: a 5-word floor drops another 7.1 percent of
+    # one-liner posts (the other six sources measure 1.4 percent, under the enable bar)
+    filters:
+      <<: *reddit-quality
+      min_words: 5
   - task:
       type: fullmap
       outputs:
@@ -179,6 +218,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -190,6 +230,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -201,6 +242,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -212,6 +254,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -223,6 +266,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task:
       type: fullmap
       outputs:
@@ -234,6 +278,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+    filters: *reddit-quality
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner
@@ -279,3 +324,8 @@ datasets:
     dataset: agentlans/json-extraction
     subset: HenriqueGodoy-extract-0
     columns_out: [text, json, source]
+  - task: {type: script, name: MedicalEntityJsonScript, outputs: [entities]}
+    <<: *hf-train
+    split: test
+    dataset: Pennlaine/Medical-Entity-JSON-Extraction
+    columns_out: [text]

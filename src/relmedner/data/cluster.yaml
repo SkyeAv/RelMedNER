@@ -1,25 +1,28 @@
 ssh_user: sgoetz
 
+# head host: runs the jobmanager stack AND its own taskmanager + sdkworker. deploy, `build-dataset`,
+# and shard collection all run from this host's checkout (tmux), so "local" in the old sense — a
+# laptop worker — is gone entirely. every listed host also serves taskmanager duty.
+jobmanager: 10.2.9.11
+
 workers:
   # fullmap points at the host directory holding the fullmap redb bundle (primary redb + <stem>.s<N>.redb
   # shards), NOT the redb file itself; it is bind-mounted read-only into the sdkworker at /opt/fullmap.
   # outputs is the host directory the sdkworker writes avro shards into (mounted rw at /opt/outputs);
-  # shards written on remotes are collected back to the laptop when the job finishes
-  - host: local # skyetop (laptop) — jobmanager lives here
-    slots: 8
-    memory: 16g
-    fullmap: /home/skyeav/Desktop/fullmap
-    outputs: /home/skyeav/Desktop/fullmap/outputs
-  - host: 10.2.9.11 # wenceslaus — 60 CPU / 120 GB
-    slots: 60
-    memory: 110g
-    # merge-key fragment anchors the shared host path pair (fullmap + outputs); the hypatia
-    # block below joins by referencing <<: *wenceslaus-paths instead of restating both paths
-    <<: &wenceslaus-paths
-      fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
-      outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
-  # hypatia — 4 CPU / 8 GB; needs docker-compose-v2 installed before it can join
-  # - host: 10.2.9.19
-  #   slots: 4
-  #   memory: 6g
-  #   <<: *wenceslaus-paths
+  # shards are collected onto the head host when the job finishes.
+  # measured 2026-09-24: 80 CPU / 187 GB RAM (152 GB available with the resident llama-server).
+  - host: 10.2.9.11 # wenceslaus — head node (jobmanager + taskmanager + sdkworker)
+    slots: 64
+    memory: 112g
+    fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
+    outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
+  # measured 2026-09-24: 40 CPU / 125 GB RAM (102 GB available); docker has no compose plugin —
+  # standalone docker-compose lives in the nix profile. cross-host traffic is :22-only, so the
+  # flink rpc/blob/shuffle ports ride ssh -L tunnels spawned by deploy (see deploy.py).
+  - host: 10.2.9.19 # hypatia
+    slots: 16
+    memory: 40g
+    fullmap: /ssd2/sgoetz/fullmap
+    outputs: /ssd2/sgoetz/outputs
+    # Xeon E5-2690 v2 (Ivy Bridge): no AVX2/FMA/BMI2 — the default polars runtime dies with SIGILL
+    polars_runtime: compat

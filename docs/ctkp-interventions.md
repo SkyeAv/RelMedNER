@@ -49,5 +49,8 @@ cluster. Rebuilding: `build_ctkp2.sh` joins the AACT `interventions` and
 `intervention_other_names` tables against the KP's `interventions_mapped`,
 `interventions_unmapped`, `interventions_synonyms`, and `interventions_synonyms_restored` into
 `combined2.tsv`, then `tsv_to_avro2.py` converts `combined2.tsv` into `interventions.avro`;
-both scripts live on wenceslaus at `/users/sgoetz/ctkp-staging/`. To point at a different
+both scripts live on wenceslaus at `/local_raid1/sgoetz/ctkp-staging/`, next to the
+`interventions.avro` snapshot they build. Operator-built corpus artifacts stay on the local
+RAID array rather than the NFS home dir: the array is the faster disk for gate runs, and every
+remote gate stages the blob from there into the package data dir. To point at a different
 snapshot, edit `path` in `src/relmedner/data/ingests.yaml`.
