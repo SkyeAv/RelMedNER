@@ -220,19 +220,27 @@ Rules:
 1. **`rsync` without `--exclude='.venv'`** rebuilds the remote environment from a laptop-platform venv.
 2. **Skipping the `sed`** leaves every fullmap test skipped and the smoke run mining nothing, while
    pytest still exits 0. Audit `FULLMAP_SKIPS:0`.
-3. **`~/Desktop/interventions.avro` must exist remotely** or `tests/test_outputs.py`'s local-source
+3. **Out-of-band package-data artifacts must be placed on the remote copy by hand.** The rsync
+   excludes `*.avro`, and the corpora built out-of-band into `src/relmedner/data/` are not in the repo
+   at all: `synthetic-ner-ade-tweets/ade_tweets.avro` + `ade_tweets_unannotated.tsv` (md5s in
+   docs/synthetic-ner-ade-tweets.md) and `interventions/interventions.avro` (md5 bee03c038faf3c5d2...,
+   92,592,955 bytes) exist only on the box (sibling trees carry copies; json-extraction and
+   interventions-avro/ade-tweets-ner have them). `tests/test_outputs.py` fails with FileNotFoundError
+   without them. The gate excludes both corpus dirs from the push so `--delete` cannot wipe them; a
+   FRESH remote copy still needs a manual copy of those dirs first (verify md5s against the docs).
+4. **`~/Desktop/interventions.avro` must exist remotely** or `tests/test_outputs.py`'s local-source
    ingest test fails inside Beam Prism with `FileNotFoundError`. It is present (92,592,955 bytes); if a
    fresh box lacks it, `ssh_copy` it up once rather than deleting the test.
-4. **Bare `uv`** resolves to a broken snap. Absolute path only.
-5. **No `PYTHONUTF8=1`** turns packaged non-ASCII reads into decode failures under the login locale.
-6. **Receipt lines read back mangled** through pi's renderer; use `tr ':' '~'` or `base64`.
-7. **No hub token on the box.** Public repos stream fine; a gated repo needs `hf auth login` (or
+5. **Bare `uv`** resolves to a broken snap. Absolute path only.
+6. **No `PYTHONUTF8=1`** turns packaged non-ASCII reads into decode failures under the login locale.
+7. **Receipt lines read back mangled** through pi's renderer; use `tr ':' '~'` or `base64`.
+8. **No hub token on the box.** Public repos stream fine; a gated repo needs `hf auth login` (or
    `HF_TOKEN` exported in the runner) before the probe can measure anything. Say so loudly instead of
    reporting a zero-row census as a dataset property.
-8. **`test_outputs.py` derives its smoke bound from the declaration.** Adding a dataset must not
+9. **`test_outputs.py` derives its smoke bound from the declaration.** Adding a dataset must not
    re-hardcode a dataset count there; two past branches re-staled that bound.
-9. **Remote copies are not git repos.** No `git` on the remote; no commits from the remote.
-10. **The box is shared.** Check `tmux ls` and load before launching a multi-hour build; a full
+10. **Remote copies are not git repos.** No `git` on the remote; no commits from the remote.
+11. **The box is shared.** Check `tmux ls` and load before launching a multi-hour build; a full
     `--direct` run competes with other agents' DAGs.
 
 ## pi project trust (one-time, user-level)
