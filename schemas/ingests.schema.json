@@ -185,9 +185,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -289,9 +313,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -387,9 +435,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -444,9 +516,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -624,6 +720,30 @@
       ],
       "title": "ScriptTask",
       "type": "object"
+    },
+    "ValidateTrustConfig": {
+      "additionalProperties": false,
+      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
+      "properties": {
+        "sample_size": {
+          "default": 50,
+          "minimum": 1,
+          "title": "Sample Size",
+          "type": "integer"
+        },
+        "backend": {
+          "default": "pubmed",
+          "title": "Backend",
+          "type": "string"
+        },
+        "report": {
+          "default": "trust-report.jsonl",
+          "title": "Report",
+          "type": "string"
+        }
+      },
+      "title": "ValidateTrustConfig",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -675,6 +795,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/GazetteerSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "x-trust": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ValidateTrustConfig"
         },
         {
           "type": "null"
