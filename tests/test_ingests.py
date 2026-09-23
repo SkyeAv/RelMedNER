@@ -186,6 +186,31 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "interventions/interventions.avro",
         ),
     ),
+    # bc5cdr (US-001): one local avro container per split, each with its own row_key slot
+    "bc5cdr/train.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/train.avro",
+        ),
+    ),
+    "bc5cdr/dev.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/dev.avro",
+        ),
+    ),
+    "bc5cdr/test.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/test.avro",
+        ),
+    ),
     "knowledgator/sentence_rex": (
         "hf",
         (
@@ -234,6 +259,54 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "thunlp/docred:data/train_annotated.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_annotated.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/train_distant.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_distant.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/dev.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/dev.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/test.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities",)),
+            1.0,
+            "thunlp/docred",
+            "data/test.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
     "aps/super_glue:record": (
         "hf",
         (
@@ -255,6 +328,18 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
             None,
         ),
+    ),
+    # local avro script ingest: same short-tuple shape as interventions above (no subset/split,
+    # no columns_out; DatasetBase still carries the weight)
+    "synthetic-ner-ade-tweets/ade_tweets.avro": (
+        "local",
+        (("script", "SyntheticNerAdeTweetsScript", ("entities",)), 1.0, "synthetic-ner-ade-tweets/ade_tweets.avro"),
+    ),
+    # local delimited fullmap ingest: same shape as qualifiers above (columns_out joins the tuple,
+    # match_on stays None)
+    "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv": (
+        "local_delimited",
+        (("fullmap", 6, "9606", True, ("entities", "relations")), 1.0, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
     ),
     # nvidia/Nemotron-PII declares one ingest PER SPLIT off one repo id: entry_key qualifies on the
     # split when no subset is declared, so the two locks coexist instead of silently overwriting
@@ -407,6 +492,110 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    # ruslan/bioleaflets-biomedical-ner: one repo id, two ingests distinguished ONLY by split (no
+    # subset), so entry_key qualifies BOTH keys with the split (same convention as nvidia/Nemotron-PII)
+    "ruslan/bioleaflets-biomedical-ner:train": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "train",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    "ruslan/bioleaflets-biomedical-ner:test": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "test",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    # agentlans/json-extraction: one lock per source config; the six entries share the repo-id row
+    # key, so entry_key qualifies on the subset (the hub config is the real filter)
+    "agentlans/json-extraction:owkin-medical_knowledge_from_extracts": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "owkin-medical_knowledge_from_extracts",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:ProfessorBob-relation_extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "relations")),
+            1.0,
+            "agentlans/json-extraction",
+            "ProfessorBob-relation_extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:roborovski-dolly-entity-extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "roborovski-dolly-entity-extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:sandeeppanem-resume-json-extraction-5k": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "sandeeppanem-resume-json-extraction-5k",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:Jiraya-html_to_json_information_extraction_dataset": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "Jiraya-html_to_json_information_extraction_dataset",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:HenriqueGodoy-extract-0": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures",)),
+            1.0,
+            "agentlans/json-extraction",
+            "HenriqueGodoy-extract-0",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "Pennlaine/Medical-Entity-JSON-Extraction": (
+        "hf",
+        (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
+    ),
 }
 
 
@@ -414,13 +603,13 @@ def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str
     """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
     "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
     different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    the loser would vanish from both locks and the failure would be silent"""
+    split qualifies instead -- or the train and test locks would collide and one would silently
+    vanish. A repo id declared once per split (nvidia/Nemotron-PII, ruslan/bioleaflets-biomedical-ner)
+    therefore carries the split on BOTH keys, ':train' and ':test'."""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
-    # columns_out (a tuple), and there the declared path is already unique per file. A repo id
-    # declared once PER SPLIT (nvidia/Nemotron-PII) has no subset, so the split qualifies instead
-    # or the train and test locks would collide and one would silently vanish
+    # columns_out (a tuple), and there the declared path is already unique per file
     if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
         discriminator = payload[4]
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset

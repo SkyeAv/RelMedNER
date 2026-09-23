@@ -223,6 +223,9 @@ def project(row: Any, columns: tuple[str, ...]) -> tuple[Any, ...]:
     for a raw hub row"""
     record = as_dict(row)
     if record is not None:
+        if not columns:
+            # local sources (avro/whole-record) ship the record as a 1-tuple; there is no projection
+            return (record,)
         return tuple(record.get(name) for name in columns)
     return tuple(row)
 
@@ -368,7 +371,7 @@ def report_spans(rows: list[Any], columns: tuple[str, ...], span_column: str, te
     say("SPAN_OUT_OF_BOUNDS", out_of_bounds)
 
 
-def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outputs: tuple[str, ...]) -> None:
+def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outputs: tuple[str, ...], declared: bool = False) -> None:
     heading(f"dispatch yield ({script}, outputs={list(outputs)})")
     from relmedner.models import TrainingExample
     from relmedner.types import Script
@@ -378,10 +381,15 @@ def report_dispatch(rows: list[Any], columns: tuple[str, ...], script: str, outp
     mentions = 0
     relations = 0
     for row in rows:
-        values = project(row, columns)
-        if len(values) != len(columns) and as_dict(row) is not None:
-            say("DISPATCH_ERROR", "--script over a raw hub row needs --columns matching the intended columns_out")
-            return
+        if declared:
+            # declared rows ARE the values tuples the script will receive; re-projecting them
+            # would destroy whole-record local avro rows (columns is empty there)
+            values = tuple(row)
+        else:
+            values = project(row, columns)
+            if len(values) != len(columns) and columns and as_dict(row) is not None:
+                say("DISPATCH_ERROR", "--script over a raw hub row needs --columns matching the intended columns_out")
+                return
         _, example = Script.dispatch(script, (outputs, values))
         assert isinstance(example, TrainingExample)
         populated = example.populated()
@@ -495,7 +503,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.span_column:
         report_spans(rows, columns, args.span_column, args.text_column, args.label_index)
     if args.script:
-        report_dispatch(rows, columns, args.script, tuple(part.strip() for part in args.outputs.split(",") if part.strip()))
+        report_dispatch(rows, columns, args.script, tuple(part.strip() for part in args.outputs.split(",") if part.strip()), declared=stream is not None)
     if args.fullmap:
         if not args.text_column:
             say("ERROR", "--fullmap needs --text-column")

@@ -1,9 +1,11 @@
 # relmedner
 
 Apache Beam pipeline that builds gliner2 training data from biomedical text corpora.
-Datasets come from the HuggingFace hub (`source: hf`) or from a local avro container built
-out-of-band (`source: local`, see [CTKP interventions](docs/ctkp-interventions.md)). Two ingest
-types share one declarative pipeline:
+Datasets come from the HuggingFace hub (`source: hf`, or `hf_json` for one JSON file inside a
+hub repo) or from files built out-of-band and shipped in the package data dir (`source: local`
+for an avro container, see [CTKP interventions](docs/ctkp-interventions.md), and
+`local_delimited` for a header-delimited TSV/CSV). Two task types share one declarative
+pipeline:
 
 - **script tasks** -- datasets that already carry gold spans
   (every `script` row in the [ingest table](#ingests), which is the list that stays current as
@@ -25,7 +27,8 @@ types share one declarative pipeline:
 - **local sources** -- files on disk instead of a hub dataset. `source: local` reads an avro
   container and ships each record whole (see [CTKP interventions](docs/ctkp-interventions.md));
   `source: local_delimited` reads a header-delimited TSV/CSV with a `columns_out` projection
-  (`src/relmedner/data/qualifiers/qualifier_corpus.tsv`, read by `LocalDelimitedDataStream`).
+  (`LocalDelimitedDataStream`); both declared files of that kind, the qualifier corpus and the
+  unannotated ADE tweets, are fullmap-mined.
   Relative paths resolve against the CWD first, then the package data dir, so in-repo corpora
   work from any CWD and inside the worker container.
 
@@ -50,9 +53,18 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `interventions/interventions.avro` (local package data) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
 | `qualifiers/qualifier_corpus.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
+| `synthetic-ner-ade-tweets/ade_tweets.avro` (local package data) | `script` -> `SyntheticNerAdeTweetsScript` | whole avro record | entities | 17,000 (probe census, wenceslaus 2026-09-22) |
+| `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 8,502 (probe census, wenceslaus 2026-09-22) |
+| `bc5cdr/train.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
+| `bc5cdr/dev.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
+| `bc5cdr/test.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
 | `aps/super_glue` (`multirc`) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 | `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
 | `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
+| `thunlp/docred` (`train_annotated`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 3,053 |
+| `thunlp/docred` (`train_distant`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 101,873 |
+| `thunlp/docred` (`dev`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 998 |
+| `thunlp/docred` (`test`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities | 1,000 |
 | `nvidia/Nemotron-PII` (train + test) | `script` -> `NemotronPiiScript` | `text`, `spans` | entities | 200,000 |
 | `wcole3/biored-parquet` (train + validation + test) | `script` -> `BioredScript` | `passages`, `entities`, `relations` | entities, relations | 600 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
@@ -62,6 +74,15 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_85` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 150,311 |
 | `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
+| `ruslan/bioleaflets-biomedical-ner` (`train`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 1,068 |
+| `ruslan/bioleaflets-biomedical-ner` (`test`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 134 |
+| `agentlans/json-extraction` (`owkin-medical_knowledge_from_extracts`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 1,383 |
+| `agentlans/json-extraction` (`ProfessorBob-relation_extraction`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, relations | 6,920 |
+| `agentlans/json-extraction` (`roborovski-dolly-entity-extraction`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 5,945 |
+| `agentlans/json-extraction` (`sandeeppanem-resume-json-extraction-5k`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 4,879 |
+| `agentlans/json-extraction` (`Jiraya-html_to_json_information_extraction_dataset`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 3,035 |
+| `agentlans/json-extraction` (`HenriqueGodoy-extract-0`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures | 2,606 |
+| `Pennlaine/Medical-Entity-JSON-Extraction` (test) | `script` -> `MedicalEntityJsonScript` | `text` | entities | 50 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
 
@@ -71,6 +92,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/ingests.md](docs/ingests.md) -- ingest resolution chains and gates for every table row.
 - [docs/ctkp-interventions.md](docs/ctkp-interventions.md) -- the `source: local` avro-container ingest and its schema.
 - [docs/deduplication.md](docs/deduplication.md) -- the dedup stage every merged `TrainingExample` passes through before Avro write.
+- [docs/docred.md](docs/docred.md) -- the `thunlp/docred` document-level relation ingests over the raw hub `json.gz` files.
 - [docs/output.md](docs/output.md) -- the Avro `TrainingExample` records and their provenance fields.
 - [docs/fullmap-mining.md](docs/fullmap-mining.md) -- how fullmap tasks mine n-gram spans against the local redb per batch.
 - [docs/qualifiers.md](docs/qualifiers.md) -- the six DAKP qualifier slots on gazetteer relations and negation.
@@ -78,29 +100,13 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/super-glue-record.md](docs/super-glue-record.md) -- the `aps/super_glue` `record` ingest, the one that ships general-domain text.
 - [docs/trialpanorama-database.md](docs/trialpanorama-database.md) -- the TrialPanorama `studies` subset this ingest mines.
 - [docs/nemotron-pii.md](docs/nemotron-pii.md) -- the NVIDIA Nemotron-PII corpus, the one general-domain ingest.
-
-## Reddit corpora
-
-Seven general-Reddit dumps from the `tensorshield` hub org, all MIT-licensed. The
-inclusion bar is corpus-wide `total_rows >= 100,000` in the org's stats.json: the kept
-seven span 121,584 to 7,114,560 rows. `tensorshield/reddit_dataset_226` (22,572 rows)
-carries the same license but fails the bar: after the health-community filter its
-projected yield is noise, so it stays out of the pipeline.
-
-None of these corpora are biomedical on their own, so every entry filters rows
-client-side post-stream with `match_on`: exact-value membership on `communityName`
-against a single yaml anchor `&biomed_communities` holding 42 provisional health
-subreddits (`r/AskDocs`, `r/diabetes`, `r/CrohnsDisease`, ...; the full list lives in
-`src/relmedner/data/ingests.yaml` and all seven entries alias the one anchor, so the
-allowlists cannot drift apart). Casing must be the Reddit canonical form: `r/askdocs`
-does not match, and neither does a non-health community like `r/madmen`. `columns_out`
-is `text` alone.
-
-The table's rows-in are stats.json `total_rows` for the whole corpus, before the
-community filter. Mining runs the unchanged fullmap path of the previous section;
-informal reddit prose (slang, misspellings, first-person narratives) is expected to
-mine at lower unigram precision than the curated corpus, and the measured gates in
-`relmedner/constants.py` are deliberately not loosened for it.
+- [docs/bioleaflets.md](docs/bioleaflets.md) -- the EMA package-leaflet corpus and its measured ResolutionGate drugname bucket.
+- [docs/synthetic-ner-ade-tweets.md](docs/synthetic-ner-ade-tweets.md) -- the synthetic ADE-tweets corpus, its BRAT-standoff decode, and its gold-plus-unannotated ingest pair.
+- [docs/json-extraction.md](docs/json-extraction.md) -- the structured-extraction corpus, its six per-source ingests, and the honest-biolink label maps behind its structures-plus-entities shapes.
+- [docs/weighting.md](docs/weighting.md) -- how to pick ingest weights, the `trust` band, and the offline `validate-trust` literature check.
+- [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
+- [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
+- [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
 
 ## Reddit corpora
 
@@ -176,12 +182,30 @@ deployment, watching, and shard collection):
 
     uv run relmedner build-dataset --direct -o ./relmedner.avro
 
-Full run on the LAN flink cluster (requires the VPN route to every `cluster.yaml` worker -- the SSH
-gateway alone is not enough, because flink taskmanagers connect back to the laptop's jobmanager
-ports and `YamlClusterParser.jobmanager()` resolves the laptop via a route probe toward the first
-remote):
+Full run on the LAN flink cluster -- run from the checkout **on the head host** (wenceslaus, in
+tmux); the cluster is fully self-contained there (jobmanager, both taskmanagers, and the ssh
+tunnels that carry the :22-only cross-host traffic), so the laptop needs no VPN and no cluster
+ports:
 
     uv run relmedner build-dataset -o ./relmedner.avro
+
+## Validate trust
+
+Suggest a `trust:` value per source from literature evidence. No cluster and no VPN, but it
+does need network egress: records stream through the same dispatch path as `build-dataset`,
+and every emitted entity or relation becomes a PubMed E-utilities query. One source, two
+records:
+
+    uv run relmedner validate-trust --source Pennlaine/Medical-Entity-JSON-Extraction -t --sample-size 2 -o ./trust-report.jsonl
+
+Nothing is written back to `ingests.yaml`. The command prints a suggested `trust:` snippet per
+source and writes the per-record JSONL report for review. Defaults come from the optional
+`x-trust:` section of `ingests.yaml` (50 records per source, `trust-report.jsonl`), overridden
+flag-by-flag; an optional `NCBI_API_KEY` in the environment
+lifts the client's own throttle from 3.4 to about 9 req/s (NCBI allows 3 unauthenticated, 10
+authenticated). A key that is malformed or expired makes every query fail, and the printed
+snippet says so rather than blaming the corpus. Reading the report and turning it into a
+committed weight: [docs/weighting.md](docs/weighting.md).
 
 ## Testing
 
@@ -234,9 +258,12 @@ mount is absent, and miner unit tests inject fake `lookup_rows` rows so they nev
 
 ## Cluster
 
-`make deploy` targets the LAN Flink cluster declared in
-`src/relmedner/data/cluster.yaml`; workers bind-mount the fullmap bundle read-only at
-`/opt/fullmap`. The compute node is only reachable through the gateway SSH hop -- from
-off-VPN, add a `ProxyJump` through the gateway in `~/.ssh/config`, or run without the
-cluster entirely: `build-dataset --direct` (no pipeline options) keeps output on the local
-filesystem.
+`make deploy` runs from the head-host checkout (wenceslaus) and targets the LAN Flink cluster
+declared in `src/relmedner/data/cluster.yaml`: a jobmanager + taskmanager + sdkworker on the head,
+a taskmanager + sdkworker on hypatia, and per-host ssh `-L` tunnels (one tmux session per target,
+`relmedner-tunnel-*`) because cross-host traffic is :22-only. Workers bind-mount the fullmap bundle
+read-only at `/opt/fullmap` (the sdkworker reads it via `RELMEDNER_FULLMAP_DIR`). Cross-host ports
+are firewalled, so everything -- deploy, submit, monitoring, shard collection -- happens on the head
+host; from off-LAN, reach a head-host shell with a `ProxyJump` through the gateway in
+`~/.ssh/config`, or run without the cluster entirely: `build-dataset --direct` (no pipeline
+options) keeps output on the local filesystem.

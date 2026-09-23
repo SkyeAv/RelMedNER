@@ -50,6 +50,33 @@ def test_rows_yield_the_whole_record_keyed_on_the_declared_path(tmp_path: Path) 
     assert Values == ({"name": "aspirin", "description": "81 mg"},)
 
 
+def test_a_missing_declared_path_falls_back_to_the_copy_staged_beside_the_fullmap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """inside the sdkworker `~` is /root and only the fullmap dir is mounted, so cluster hosts stage
+    the file there; the row key stays the declared path so mixing weights still resolve"""
+    import relmedner.local as local
+
+    Staged: Path = tmp_path / "fullmap"
+    Staged.mkdir()
+    write_avro(Staged / "interventions.avro", [{"name": "aspirin", "description": None}])
+    monkeypatch.setattr(local, "FULLMAP_DIR", Staged)
+    Declared: str = str(tmp_path / "absent" / "interventions.avro")
+
+    Rows: list[Any] = list(LocalAvroDataStream(AVRO_TASK, WEIGHT, Declared).rows())
+
+    assert [values[0]["name"] for _source, (_task, values) in Rows] == ["aspirin"]
+    assert Rows[0][0] == Declared
+
+
+def test_a_path_missing_everywhere_still_raises_on_the_declared_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import relmedner.local as local
+
+    monkeypatch.setattr(local, "FULLMAP_DIR", tmp_path / "empty")
+    Declared: str = str(tmp_path / "absent" / "interventions.avro")
+
+    with pytest.raises(FileNotFoundError, match="absent"):
+        list(LocalAvroDataStream(AVRO_TASK, WEIGHT, Declared).rows())
+
+
 def test_the_registry_builds_the_local_stream_from_its_declared_tuple(tmp_path: Path) -> None:
     Target: Path = write_avro(tmp_path / "ctkp.avro", [{"name": "ALG-055009", "description": None}])
     Stream = build_stream("local", (AVRO_TASK, 0.75, str(Target)))
@@ -237,6 +264,20 @@ def test_match_on_filters_rows_like_the_hf_stream(tmp_path: Path) -> None:
     Path_ = Path(write_tsv(tmp_path / "rows.tsv", ("text", "kind"), (("keep", "x"), ("drop", "y"))))
     Stream = LocalDelimitedDataStream(DELIMITED_TASK, WEIGHT, Path_, ("text",), match_on=(("kind", ("x",)),))
     assert [row[1][1][0] for row in Stream.rows()] == ["keep"]
+
+
+def test_delimited_filters_none_source_still_drops_over_cap_rows(tmp_path: Path) -> None:
+    """the ALWAYS-ON token cap reaches the unfiltered delimited path too: an over-cap row
+    attributes to max_tokens while short rows yield unchanged -- before effective_filters the
+    evaluator only ran on sources with declared filters"""
+    Path_ = Path(write_tsv(tmp_path / "cap.tsv", ("text",), (("aspirin trial",), ("word " * 7000,))))
+    Stream = LocalDelimitedDataStream(DELIMITED_TASK, WEIGHT, Path_, ("text",))
+
+    Yielded: list[Any] = list(Stream.rows())
+
+    assert [row[1][1][0] for row in Yielded] == ["aspirin trial"]
+    assert Stream.filters is None
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
 
 
 def test_the_registry_keys_the_delimited_source_separately_from_avro() -> None:

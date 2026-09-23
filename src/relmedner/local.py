@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self
 
 from fastavro import reader
 
-from relmedner.constants import DATA
+from relmedner.constants import DATA, FULLMAP_DIR
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
 from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
@@ -44,6 +44,16 @@ class LocalAvroDataStream(DataStream):
             # python 3.13 pathlib propagates PermissionError from is_file() probes; an
             # unreadable parent means the caller's path is not a usable file either way
             resolved = Path(str(DATA)) / path
+        # last resort on the cluster: nothing packaged and the declared path is a laptop path
+        # (~/Desktop/...). the sdkworker only mounts the fullmap bundle, so out-of-band sources
+        # are staged beside it; the row key stays the DECLARED path so mixing weights resolve
+        try:
+            found: bool = resolved.is_file()
+        except OSError:
+            found = False
+        staged: Path = FULLMAP_DIR / Path(path).name
+        if not found and staged.is_file():
+            resolved = staged
         self.path: Path = resolved
 
     def rows(self: Self) -> Iterator[StreamedRow]:
@@ -66,18 +76,19 @@ class LocalAvroDataStream(DataStream):
         with self.path.open("rb") as handle:
             for record in reader(handle):
                 self.stats.rows_in += 1
-                # the text rule applies over the record's own values (same rule as the hf projection)
-                if self.filters is not None:
-                    reason: str | None = first_drop_reason(tuple(record.values()), self.filters)
-                    if reason is not None:
-                        self.stats.drop(reason)
-                        continue
+                # the text rule applies over the record's own values (same rule as the hf
+                # projection); the ALWAYS-ON token cap rides the same evaluator via
+                # effective_filters even when no filters were declared
+                reason: str | None = first_drop_reason(tuple(record.values()), self.effective_filters)
+                if reason is not None:
+                    self.stats.drop(reason)
+                    continue
                 self.stats.rows_out += 1
                 yield (self.name, (self.task, (record,)))
-            # fail-loud zero-yield guard (US-008, unchanged): a filter that drops every row of a
-            # non-empty source is the silent-empty-training-set bug; an empty file (rows_in == 0)
-            # is not an error
-            if self.filters is not None and self.stats.rows_in > 0 and self.stats.rows_out == 0:
+            # fail-loud zero-yield guard (US-008, now covering the ALWAYS-ON cap): a declared
+            # filter OR the token cap that drops every row of a non-empty source is the
+            # silent-empty-training-set bug; an empty file (rows_in == 0) is not an error
+            if self.stats.rows_in > 0 and self.stats.rows_out == 0:
                 raise ZeroYieldError(f"filters {self.filters} dropped 100% of {self.stats.rows_in} rows from {self.name}")
 
 
@@ -147,15 +158,16 @@ class LocalDelimitedDataStream(DataStream):
                     continue
                 self.stats.rows_in += 1
                 values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
-                if self.filters is not None:
-                    reason: str | None = first_drop_reason(values, self.filters)
-                    if reason is not None:
-                        self.stats.drop(reason)
-                        continue
+                # the ALWAYS-ON token cap rides the same evaluator via effective_filters even
+                # when no filters were declared
+                reason: str | None = first_drop_reason(values, self.effective_filters)
+                if reason is not None:
+                    self.stats.drop(reason)
+                    continue
                 self.stats.rows_out += 1
                 yield (self.name, (self.task, values))
-            # fail-loud zero-yield guard (US-008, unchanged): a filter that drops every row of a
-            # non-empty source is the silent-empty-training-set bug; a genuinely empty file
-            # (rows_in == 0) is not an error
-            if self.filters is not None and self.stats.rows_in > 0 and self.stats.rows_out == 0:
+            # fail-loud zero-yield guard (US-008, now covering the ALWAYS-ON cap): a declared
+            # filter OR the token cap that drops every row of a non-empty source is the
+            # silent-empty-training-set bug; a genuinely empty file (rows_in == 0) is not an error
+            if self.stats.rows_in > 0 and self.stats.rows_out == 0:
                 raise ZeroYieldError(f"filters {self.filters} dropped 100% of {self.stats.rows_in} rows from {self.name}")
