@@ -52,6 +52,12 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `TrialPanorama/TrialPanorama-database` (`studies`) | `fullmap` (max_ngram=6, taxon=9606) | `abstract` | entities, relations | 1,332,141 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `interventions/interventions.avro` (local package data) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `fewrel/train_wiki.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 44,800 |
+| `fewrel/val_wiki.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 11,200 |
+| `fewrel/val_nyt.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 2,500 |
+| `fewrel/val_semeval.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 8,851 |
+| `fewrel/val_pubmed.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 1,000 |
+| `fewrel/pubmed_unsupervised.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities | 2,500 |
 | `qualifiers/qualifier_corpus.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` (local package data) | `script` -> `SyntheticNerAdeTweetsScript` | whole avro record | entities | 17,000 (probe census, wenceslaus 2026-09-22) |
 | `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 8,502 (probe census, wenceslaus 2026-09-22) |
@@ -81,6 +87,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/yaml-config.md](docs/yaml-config.md) -- field-by-field reference for the two pipeline YAML files and their pydantic validation.
 - [docs/ingests.md](docs/ingests.md) -- ingest resolution chains and gates for every table row.
 - [docs/ctkp-interventions.md](docs/ctkp-interventions.md) -- the `source: local` avro-container ingest and its schema.
+- [docs/fewrel.md](docs/fewrel.md) -- the six FewRel local-avro ingests: delivery, span encoding, resolution chain.
 - [docs/deduplication.md](docs/deduplication.md) -- the dedup stage every merged `TrainingExample` passes through before Avro write.
 - [docs/docred.md](docs/docred.md) -- the `thunlp/docred` document-level relation ingests over the raw hub `json.gz` files.
 - [docs/output.md](docs/output.md) -- the Avro `TrainingExample` records and their provenance fields.
