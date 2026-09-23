@@ -13,7 +13,15 @@ from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.local import LocalAvroDataStream
 from relmedner.models import HuggingFaceDataset, LocalAvroDataset, RowFilters, ScriptTask, YamlIngests
 from relmedner.registry import build_stream
-from relmedner.row_filters import first_drop_reason
+from relmedner.row_filters import (
+    first_drop_reason,
+    repeat_ngram_ratio,
+    short_line_ratio,
+    stop_word_ratio,
+    symbol_ratio,
+    upper_ratio,
+    word_count,
+)
 from relmedner.streams import ZeroYieldError
 
 TASK: tuple[Any, ...] = ("script", "CtkpInterventionsScript", ("entities",))
@@ -215,6 +223,102 @@ def test_an_invalid_regex_raises_at_construction() -> None:
             columns_out=("text",),
             filters=RowFilters(exclude_regex="*not-anchored"),
         )
+
+
+# ------------------------------------------------------------------ quality heuristics --
+# The web-corpus QC primitive family (C4 / Gopher document-level heuristics): pure ratio
+# functions the evaluator composes into opt-in drop rules. Each test pins the exact ratio
+# semantics on hand-built texts because every future threshold in ingests.yaml is set
+# against these numbers -- a silent semantics change here would silently change what ships
+# as training data.
+
+
+def test_word_count_counts_whitespace_tokens() -> None:
+    """min_words will drop low-word-count rows, so its counting rule must be plain
+    whitespace tokenization: no punctuation stripping, no case folding, empty is zero"""
+    assert word_count("") == 0
+    assert word_count("   ") == 0
+    assert word_count("aspirin trial") == 2
+    assert word_count("  spaced   out  ") == 2
+    assert word_count("BRCA1-related.") == 1
+
+
+def test_stop_word_ratio_uses_the_function_word_stoplist_case_insensitively() -> None:
+    """the language proxy must measure the share of closed-class English function words
+    (constants.FUNCTION_WORDS, the pipeline's ONLY stoplist) over lowercase-folded tokens:
+    a 100%-function-word text is 1.0, jargon-only text (gene-symbol lists, tables) is 0.0,
+    and case must not hide function words ("The" at a sentence start still counts)"""
+    assert stop_word_ratio("") == 0.0
+    assert stop_word_ratio("   ") == 0.0
+    assert stop_word_ratio("the of and") == 1.0
+    assert stop_word_ratio("The Of") == 1.0
+    assert stop_word_ratio("BRCA1 mutation analysis") == 0.0
+    # 1 function word of 3 tokens
+    assert abs(stop_word_ratio("the BRCA1 mutation") - 1 / 3) < 1e-9
+
+
+def test_symbol_ratio_counts_non_alphanumeric_non_space_chars() -> None:
+    """the markup/code-junk guard: over NON-SPACE chars, anything str.isalnum() rejects
+    counts as symbol noise; whitespace is neutral (never inflates the ratio) and an
+    all-whitespace text is 0.0, not a crash; unicode letters stay alphanumeric so a
+    non-Latin script is NOT a symbol-ratio signal (that is the stop-word check's job)"""
+    assert symbol_ratio("") == 0.0
+    assert symbol_ratio("     ") == 0.0
+    assert symbol_ratio("abc") == 0.0
+    assert symbol_ratio("!!!") == 1.0
+    # non-space chars a, b, ! -> one third
+    assert abs(symbol_ratio("a b!") - 1 / 3) < 1e-9
+    assert symbol_ratio("癌") == 0.0
+    assert abs(symbol_ratio("a b!!") - 0.5) < 1e-9
+
+
+def test_upper_ratio_counts_all_caps_alpha_words_over_alpha_words() -> None:
+    """the weird-capitalization guard: the denominator is purely alphabetic words (digits
+    and punctuation make a token like BRCA1 or @TODO neither shouted nor normal), the
+    numerator is those that are entirely uppercase; no alpha words at all is 0.0"""
+    assert upper_ratio("") == 0.0
+    assert upper_ratio("123 !!!") == 0.0
+    assert upper_ratio("aspirin trial") == 0.0
+    assert upper_ratio("ASAP NOW") == 1.0
+    assert upper_ratio("aspirin ASAP") == 0.5
+    # BRCA1 is not purely alphabetic, so it leaves both numerator and denominator
+    assert upper_ratio("BRCA1 ASAP") == 1.0
+
+
+def test_repeat_ngram_ratio_flags_repeated_windows_and_passes_short_texts() -> None:
+    """the repeated-words/phrases guard: sliding windows of REPEAT_NGRAM_WORDS words
+    (case-folded) counted in a plain dict -- no builtin hash(); texts shorter than one
+    window pass with 0.0, all-identical windows ("word " * 20 spam) approach 1.0, and a
+    unique prose text is exactly 0.0"""
+    assert repeat_ngram_ratio("") == 0.0
+    assert repeat_ngram_ratio("short text") == 0.0
+    assert repeat_ngram_ratio("one two three four five six seven eight nine") == 0.0
+    # 20 identical words -> 11 windows of 10, the first is novel, the other 10 repeat
+    Spam: str = " ".join(["word"] * 20)
+    assert abs(repeat_ngram_ratio(Spam) - 10 / 11) < 1e-9
+    # case-folded: the same phrase in different casing still repeats
+    assert repeat_ngram_ratio(" ".join(["Word"] * 20)) > 0.9
+    # 21 unique-ish words with the SAME 10-gram appearing twice: windows 0 and 11 match
+    A: list[str] = [f"w{i}" for i in range(10)]
+    Twice: str = " ".join(A + ["gap"] + A)
+    assert abs(repeat_ngram_ratio(Twice) - 1 / 12) < 1e-9
+    # ordinary prose: distinct 10-grams throughout
+    assert repeat_ngram_ratio("the quick brown fox jumps over the lazy dog near") == 0.0
+
+
+def test_short_line_ratio_measures_short_lines_over_multi_line_texts() -> None:
+    """the abnormal-line-breaks guard: share of lines under SHORT_LINE_CHARS; a single-line
+    text always passes 0.0 (there is no line structure to be abnormal), blank lines count
+    as short (newline spam), and a trailing newline does not manufacture a phantom line"""
+    assert short_line_ratio("") == 0.0
+    assert short_line_ratio("one single line of ordinary prose length") == 0.0
+    assert short_line_ratio("short\nlines here") == 1.0
+    Mixed: str = "this line is definitely longer than thirty characters\nshort\nshort"
+    assert abs(short_line_ratio(Mixed) - 2 / 3) < 1e-9
+    # blank lines are zero-length, hence short
+    assert short_line_ratio("\n\n") == 1.0
+    # trailing newline: splitlines yields no phantom empty tail line
+    assert short_line_ratio("this line is definitely longer than thirty characters\n") == 0.0
 
 
 # ------------------------------------------------------------------ envelope plumbing --

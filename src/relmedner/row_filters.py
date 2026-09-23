@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from relmedner.constants import CHARS_PER_TOKEN, MAX_TEXT_TOKENS
+from relmedner.constants import CHARS_PER_TOKEN, FUNCTION_WORDS, MAX_TEXT_TOKENS, REPEAT_NGRAM_WORDS, SHORT_LINE_CHARS
 from relmedner.models import RowFilters
 
 
@@ -57,3 +57,78 @@ def first_drop_reason(values: tuple[Any, ...], filters: RowFilters) -> str | Non
     if filters.exclude_regex is not None and re.search(filters.exclude_regex, text) is not None:
         return "exclude_regex"
     return None
+
+
+# ------------------------------------------------------- web-corpus QC heuristics ----
+# Pure ratio primitives in the C4 / Gopher document-level filter family. The evaluator
+# (first_drop_reason) composes them into opt-in RowFilters drop rules; they are free
+# functions over plain text so every threshold in ingests.yaml is set against numbers
+# these functions return, and each rule stays independently unit-testable.
+
+
+def word_count(text: str) -> int:
+    """plain whitespace tokenization: no punctuation stripping, no case folding"""
+    return len(text.split())
+
+
+def stop_word_ratio(text: str) -> float:
+    """share of lowercase-folded whitespace tokens that are closed-class English function
+    words (constants.FUNCTION_WORDS, the pipeline's ONLY stoplist). The cheap deterministic
+    language proxy: a non-English or degenerate (gene-symbol list, table) text has almost no
+    English function words. FastText language ID was REJECTED for this role: it needs a
+    ~130MB pretrained model download, a native-lib dependency, and per-row inference cost."""
+    words = text.lower().split()
+    if not words:
+        return 0.0
+    return sum(word in FUNCTION_WORDS for word in words) / len(words)
+
+
+def symbol_ratio(text: str) -> float:
+    """share of NON-SPACE chars that str.isalnum() rejects (markup, code, punctuation noise);
+    whitespace is neutral and unicode letters stay alphanumeric, so a non-Latin script is
+    NOT a symbol signal here (that is stop_word_ratio's job)"""
+    chars = [char for char in text if not char.isspace()]
+    if not chars:
+        return 0.0
+    return sum(not char.isalnum() for char in chars) / len(chars)
+
+
+def upper_ratio(text: str) -> float:
+    """share of purely alphabetic words that are entirely uppercase (the "shouting caps"
+    signal). Tokens with digits or symbols (BRCA1, @TODO) are neither shouted nor normal:
+    they leave both numerator and denominator."""
+    words = [word for word in text.split() if word.isalpha()]
+    if not words:
+        return 0.0
+    return sum(word.isupper() for word in words) / len(words)
+
+
+def repeat_ngram_ratio(text: str, n: int = REPEAT_NGRAM_WORDS) -> float:
+    """share of case-folded n-word sliding windows that appeared earlier in the text (the
+    Gopher-style duplicate-ngram signal). Texts shorter than one window pass with 0.0. The
+    counts live in a plain dict keyed by word tuples: dict hashing is deterministic for str,
+    so the ratio is byte-stable across processes (builtin hash() stays forbidden exactly as
+    in dedup)."""
+    words = text.lower().split()
+    if len(words) < n:
+        return 0.0
+    windows: dict[tuple[str, ...], int] = {}
+    repeated = 0
+    for i in range(len(words) - n + 1):
+        gram = tuple(words[i : i + n])
+        if windows.get(gram):
+            repeated += 1
+        else:
+            windows[gram] = 1
+    return repeated / (len(words) - n + 1)
+
+
+def short_line_ratio(text: str) -> float:
+    """share of lines shorter than SHORT_LINE_CHARS (the abnormal-line-breaks signal:
+    newline spam, OCR fragments, bullet walls). A single-line text always passes 0.0 --
+    there is no line structure to be abnormal -- and splitlines never manufactures a
+    phantom empty tail line for a trailing newline."""
+    lines = text.splitlines()
+    if len(lines) < 2:
+        return 0.0
+    return sum(len(line) < SHORT_LINE_CHARS for line in lines) / len(lines)

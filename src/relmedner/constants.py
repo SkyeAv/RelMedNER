@@ -168,6 +168,23 @@ MAX_TEXT_TOKENS: int = 8192
 # overshoot still drops: floor division would round 32769 chars back to 8192 "tokens".
 CHARS_PER_TOKEN: int = 4
 
+# ------------------------------------------------- row-quality heuristic knobs ----
+# Web-corpus QC heuristics (C4 / Gopher document-level filter family), wired as opt-in
+# RowFilters rules by row_filters.first_drop_reason. The two knobs below are the shape
+# constants of the pure ratio primitives; every THRESHOLD is a per-dataset decision in
+# ingests.yaml, because every dropped record is supervised signal and repo convention fixes
+# defaults only by measurement. See docs/quality-heuristics.md for measured starting values.
+
+# Window (in words) of the duplicate-ngram repetition check (repeat_ngram_ratio). Gopher's
+# document-level repetition rule uses 10-gram duplicate fraction; short texts under one
+# window always pass.
+REPEAT_NGRAM_WORDS: int = 10
+
+# Line length under which a line counts as "short" for short_line_ratio (abnormal line
+# breaks: newline spam, OCR fragments, bullet walls). A 30-char bar separates prose lines
+# from fragments while leaving ordinary wrapped paragraphs at ratio 0.
+SHORT_LINE_CHARS: int = 30
+
 # ---------------------------------------------------------------- near-dedup knobs ----
 # MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
 # P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,
