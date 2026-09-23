@@ -175,6 +175,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | gold | 1.0 | 1.0 | curated, class-balanced variant |
 | `interventions/interventions.avro` | gold | 1.0 | 1.0 | local curated intervention gazetteer |
 | `thunlp/docred` (three declared ingests, one row key) | gold | 1.0 | 1.0 | human-annotated document-level entity clusters and gold relations |
+| `fewrel/*` (six declared ingests, six row keys, one wildcard like the reddit anchor) | gold | 1.0 | 1.0 | human-annotated gold token spans and relations; wiki/nyt/semeval general domain, pubmed splits biomedical |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | silver | 0.7 | 0.8 | silver IOB annotations |
 | `knowledgator/sentence_rex` | silver | 0.7 | 0.8 | sentence-level RE, distant labels |
 | `Universal-NER/Pile-NER-type` | silver | 0.7 | 0.8 | LLM-generated type annotations |

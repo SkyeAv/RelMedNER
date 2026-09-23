@@ -782,6 +782,12 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text", "labels"),
         ),
     ),
+    "fewrel/train_wiki.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/train_wiki.avro")),
+    "fewrel/val_wiki.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_wiki.avro")),
+    "fewrel/val_nyt.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_nyt.avro")),
+    "fewrel/val_semeval.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_semeval.avro")),
+    "fewrel/val_pubmed.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_pubmed.avro")),
+    "fewrel/pubmed_unsupervised.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro")),
 }
 
 

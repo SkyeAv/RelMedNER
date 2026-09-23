@@ -6,6 +6,7 @@ from relmedner.scripts.chia import ChiaScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.docred import DocredScript
 from relmedner.scripts.ehr_rel import EhrRelScript
+from relmedner.scripts.fewrel import FewRelScript
 from relmedner.scripts.gad_blurb import GadBlurbScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
@@ -31,6 +32,7 @@ __all__ = [
     "CtkpInterventionsScript",
     "DocredScript",
     "EhrRelScript",
+    "FewRelScript",
     "GadBlurbScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
