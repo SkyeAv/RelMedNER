@@ -112,12 +112,9 @@ class FewRelScript(Script):
         still ship; a self-loop drops the relation but ships its entities; an empty or
         unresolvable label ships entities only. run never raises on a bad row (skip-don't-coerce).
         """
-        # run() accepts the projection the probe harness hands over for a local avro row:
-        # the stream ships (record,), but the probe's zero-column projection flattens a dict
-        # into (); when values is empty AND the caller cannot hand the record over positionally,
-        # run() cannot recover it. The dispatch evidence must come from the QUALITY counters
-        # (rows_in/rows_out through the production stream), not the probe's flattened dispatch
-        # projection. Treat a dict in values[0] as the record, anything else as malformed.
+        # values = (record,): LocalAvroDataStream ships the whole avro record as a 1-tuple,
+        # so values[0] IS the record; anything else (a drifted projection, an empty tuple)
+        # cannot yield one and the row drops as malformed rather than crashing the worker.
         record: Any
         if len(values) == 1 and isinstance(values[0], dict):
             record = values[0]
