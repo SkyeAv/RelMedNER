@@ -61,6 +61,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_85` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 150,311 |
 | `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
+| `bigbio/gad` (`gad_blurb_bigbio_text`, train + validation + test) | `script` -> `GadBlurbScript` | `text`, `labels` | classifications | 5,330 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
 
@@ -77,6 +78,28 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/super-glue-record.md](docs/super-glue-record.md) -- the `aps/super_glue` `record` ingest, the one that ships general-domain text.
 - [docs/trialpanorama-database.md](docs/trialpanorama-database.md) -- the TrialPanorama `studies` subset this ingest mines.
 - [docs/nemotron-pii.md](docs/nemotron-pii.md) -- the NVIDIA Nemotron-PII corpus, the one general-domain ingest.
+
+## GAD (bigbio/gad)
+
+Dataset-format notes (GadBlurbScript): bigbio/gad is the Genetic Association Database
+sentence corpus (cc-by-4.0, not gated). The repo's own builder is a loading script
+(`gad.py`) that the installed `datasets` refuses ("Dataset scripts are no longer
+supported"), so rows stream from the hub's auto parquet conversion branch
+(`refs/convert/parquet`) through the `hf_parquet` source, one parquet shard per
+(config, split). The declared subset is `gad_blurb_bigbio_text` only, all three
+splits: train 4,261 / validation 535 / test 534 rows (source: datasets-server
+`splits` listing plus a full-census probe over every parquet file, wenceslaus
+2026-09-23). A row is (`text`, `labels`): `text` is a short anonymized sentence
+(7-81 tokens, median 25) carrying literal `@GENE$` / `@DISEASE$` placeholders that
+ship as-is; `labels` is a one-element list of `"1"` (gene-disease association
+reported) or `"0"`, ~52.6% `"1"` corpus-wide, no third label, no nulls. Measured
+over the first 200 declared-stream rows per split: 100% emit exactly one
+classification, zero drops. The repo's other 21 subset-splits (10 cross-validation
+folds in two variants) re-partition the same 5,122 unique texts (111,930 rows
+total); declaring them would upweight GAD about 22x in the mix, so they stay out.
+Probe invocation: `probe.py --declared 'bigbio/gad:gad_blurb_bigbio_text:train'
+--limit 200 --script GadBlurbScript --outputs classifications --text-column text`
+(plus the full-census throwaway probe kept at wenceslaus:~/probe_gad.py).
 
 ## Reddit corpora
 
