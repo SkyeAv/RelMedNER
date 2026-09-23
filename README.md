@@ -52,6 +52,9 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `qualifiers/qualifier_corpus.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` (local package data) | `script` -> `SyntheticNerAdeTweetsScript` | whole avro record | entities | 17,000 (probe census, wenceslaus 2026-09-22) |
 | `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 8,502 (probe census, wenceslaus 2026-09-22) |
+| `bc5cdr/train.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
+| `bc5cdr/dev.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
+| `bc5cdr/test.avro` (local package data) | `script` -> `Bc5CdrScript` | whole avro record | entities, relations | 500 |
 | `aps/super_glue` (`multirc`) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 | `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
 | `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
