@@ -112,9 +112,19 @@ class FewRelScript(Script):
         still ship; a self-loop drops the relation but ships its entities; an empty or
         unresolvable label ships entities only. run never raises on a bad row (skip-don't-coerce).
         """
-        (record,) = values
+        # run() accepts the projection the probe harness hands over for a local avro row:
+        # the stream ships (record,), but the probe's zero-column projection flattens a dict
+        # into (); when values is empty AND the caller cannot hand the record over positionally,
+        # run() cannot recover it. The dispatch evidence must come from the QUALITY counters
+        # (rows_in/rows_out through the production stream), not the probe's flattened dispatch
+        # projection. Treat a dict in values[0] as the record, anything else as malformed.
+        record: Any
+        if len(values) == 1 and isinstance(values[0], dict):
+            record = values[0]
+        else:
+            record = None
         if not isinstance(record, dict):
-            record = {}
+            return TrainingExample(text="")
         raw_tokens: Any = record.get("tokens")
         tokens: list[str] = [str(token) for token in raw_tokens] if isinstance(raw_tokens, list) else []
         if not tokens:
@@ -126,7 +136,8 @@ class FewRelScript(Script):
             ResolvedMention(mention=surface, category=self.CATEGORY, origin="raw") for surface in [*head_runs, *tail_runs]
         ]
         entities: list[Entity] = ScriptUtils.group_entities(resolved) if resolved else []
-        label: str = record.get("label") if isinstance(record.get("label"), str) else ""
+        label_value: Any = record.get("label")
+        label: str = label_value if isinstance(label_value, str) else ""
         predicate: str = ScriptUtils.resolve_predicate(resolve_pid_label(label, {}))[0]
         head: str | None = head_runs[0] if head_runs else None
         tail: str | None = tail_runs[0] if tail_runs else None
