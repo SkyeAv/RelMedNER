@@ -137,11 +137,19 @@ Notes:
 
 ## Reweighting the existing datasets
 
-All 25 entries today share one anchor (`&weight 1.0`). Proposal: replace it with three
-tier anchors in `x-defaults` (`&weight-gold 1.0`, `&weight-silver 0.7`,
-`&weight-general 0.4`) so tier membership is visible at a glance. The `trust` values
-below are **priors to confirm with `validate-trust`** -- run the validation, then replace
-priors with measured values.
+All 29 declared entries land on `weight: 1.0` today, by three routes: 8 alias the single
+`&weight 1.0` anchor outright, 14 inherit it through the `<<: *hf-train` merge from
+`x-defaults`, and the 7 reddit entries declare no `weight` at all and take the model
+default. Proposal: replace that one anchor with three tier anchors in `x-defaults`
+(`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`) so tier membership is
+visible at a glance. The `trust` values below are **priors to confirm with
+`validate-trust`** -- run the validation, then replace priors with measured values.
+
+Every row key in `src/relmedner/data/ingests.yaml` must appear in this table
+(`tests/test_docs.py` fails otherwise), so adding an ingest means adding its tier here in
+the same PR. Rows sharing one row key (two splits of one repo, or one local avro plus its
+fullmap-mine tsv) are listed once, with the split note, because `weights_by_source` keys
+on the row key and refuses to stamp two entries that disagree.
 
 | Dataset(s) | Tier | Weight | Trust prior | Why |
 | --- | --- | --- | --- | --- |
@@ -157,11 +165,15 @@ priors with measured values.
 | `anthonyyazdaniml/gliner-biomed-post-training` | silver | 0.7 | 0.8 | synthetic post-training corpus |
 | `knowledgator/gliner-multilingual-synthetic` | silver | 0.7 | 0.8 | synthetic, multilingual |
 | `qualifiers/qualifier_corpus.tsv` | silver | 0.7 | 0.8 | local qualifier text, unverified provenance |
+| `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` | silver | 0.7 | 0.8 | same tweet texts with no gold spans, fullmap-mined, so distant labels |
+| `ruslan/bioleaflets-biomedical-ner` (train + test, one row key) | silver | 0.7 | 0.8 | EMA regulatory leaflets; the card does not state annotation provenance |
+| `Pennlaine/Medical-Entity-JSON-Extraction` | silver | 0.7 | 0.8 | 50 instruction-tuned vignettes, hub card body empty |
+| `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
 | `nvidia/Nemotron-PII` (train + test, one row key -- weights must stay equal) | general | 0.4 | 0.6 | PII not biomedical, synthetic; kept for span diversity |
 | `aps/super_glue` multirc | general | 0.3 | 0.6 | classification task transfer, non-med |
 | `aps/super_glue` record | general | 0.3 | 0.6 | reading-comprehension transfer, non-med |
-| `tensorshield/reddit_dataset_*` (all 8 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
+| `tensorshield/reddit_dataset_*` (all 7 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
 
 Worked example (one entry, gold tier):
 

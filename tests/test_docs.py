@@ -16,8 +16,17 @@ import re
 
 import pytest
 
+from relmedner.ingests import YamlIngestsParser
+
 README = pathlib.Path("README.md")
 DOCS_DIR = pathlib.Path("docs")
+WEIGHTING_DOC = pathlib.Path("docs/weighting.md")
+
+# the section of docs/weighting.md holding the per-dataset tier/weight/trust table; the
+# coverage guard reads the table out of this section only, so prose mentions elsewhere in
+# the page cannot satisfy it (REQ-CUR-2)
+_PRIORS_HEADING = "## Reweighting the existing datasets"
+_BACKTICKED_RE = re.compile(r"`([^`]+)`")
 
 # (docs page path, sentinel string taken verbatim from the body that must MOVE into that
 # page): while the string still appears in README.md the fan-out has not happened and the
@@ -191,6 +200,23 @@ def test_readme_keeps_quick_start() -> None:
     assert not missing_commands, f"README.md lost quick-start command(s): {missing_commands}"
 
 
+def _priors_table_rows(path: pathlib.Path = WEIGHTING_DOC) -> list[str]:
+    """The markdown rows of the priors table: the lines between the reweighting heading and
+    the next `## ` heading that begin with a pipe and a backtick, which excludes the header
+    row, the separator row, and any non-table prose in the section."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = lines.index(_PRIORS_HEADING)
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    return [line for line in lines[start:end] if line.startswith("| `")]
+
+
+def _names_row_key(row_key: str, spans: list[str]) -> bool:
+    """True when one backticked span in the priors table names `row_key`, either exactly or
+    through a trailing-`*` wildcard. The wildcard exists because the seven reddit corpora
+    share one row on purpose, exactly as they share one `match_on` anchor."""
+    return any(span == row_key or (span.endswith("*") and row_key.startswith(span[:-1])) for span in spans)
+
+
 @pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
 def test_docs_have_no_duplicate_headings(doc: str) -> None:
     """Repeated-heading guard (REQ-CUR-1): a squash merge that resolves a conflict by
@@ -226,6 +252,22 @@ def test_docs_have_no_duplicate_prose_blocks(doc: str) -> None:
         else:
             seen[key] = window[0][0]
     assert not repeats, "duplicate prose block(s) in one file:\n" + "\n".join(repeats)
+
+
+def test_every_declared_ingest_has_a_weighting_prior() -> None:
+    """Weighting-coverage guard (REQ-CUR-2): the row keys come from the real parser
+    (`weights_by_source`, the same key space the pipeline stamps weights on), not from a
+    copied list, so declaring a new ingest without giving it a tier in docs/weighting.md
+    fails CI. That drift is not hypothetical: the guide claimed 25 entries and had no row
+    for bioleaflets, Medical-Entity-JSON-Extraction, or either synthetic ADE artifact while
+    ingests.yaml declared 29 entries over 26 row keys."""
+    row_keys = sorted(YamlIngestsParser().parse_ingests().weights_by_source())
+    spans = [span for line in _priors_table_rows() for span in _BACKTICKED_RE.findall(line)]
+    missing = [key for key in row_keys if not _names_row_key(key, spans)]
+    assert not missing, (
+        f"docs/weighting.md priors table has no row for {len(missing)} declared row key(s): {missing}. "
+        "Give each one a tier, weight, and trust prior in the '## Reweighting the existing datasets' table."
+    )
 
 
 @pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
