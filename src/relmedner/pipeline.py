@@ -154,6 +154,13 @@ class BeamPipeline:
                 | "load declarative ingests" >> beam.Create(Ingests.stream_args())
                 | "initialize datastream classes" >> beam.MapTuple(build_stream)
                 | "stream declared data" >> beam.FlatMap(stream_rows, config=config)
+                # fan-out barrier: each declared source is ONE element of the Create, so without
+                # a fusion break its streaming read AND every downstream dispatch/mine step run
+                # fused in a single task -- one core per dataset no matter how many slots exist.
+                # Reshuffle breaks fusion so rows spread over every slot; the Flink portable
+                # translator lowers it to DataStream.rebalance() (round-robin, no keyed state),
+                # so on the cluster the barrier costs one network hop, not a GroupByKey
+                | "fan rows out across workers" >> beam.Reshuffle()
             )
             # one branch per task type: script dispatch is per-row, fullmap mining needs
             # BatchElements so one redb round trip serves many documents

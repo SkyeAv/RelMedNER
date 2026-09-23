@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import yaml
 from apache_beam.options.pipeline_options import FlinkRunnerOptions, PipelineOptions, PortableOptions
 
 from relmedner.clusters import YamlClusterParser
@@ -71,3 +72,21 @@ def test_runner_options_use_explicit_parallelism() -> None:
     Options: PipelineOptions = YamlClusterParser().runner_options(2)
 
     assert Options.get_all_options(drop_default=True)["parallelism"] == 2
+
+
+def test_runner_options_run_one_sdk_harness_per_slot() -> None:
+    """a python harness is GIL-bound to about one core, so the job must ask for one harness per
+    slot on the largest node; beam's default (1) would push every slot through one core"""
+    Parser: YamlClusterParser = YamlClusterParser()
+    Options: PipelineOptions = Parser.runner_options()
+
+    assert Parser.max_slots() == max(worker.slots for worker in Parser.parse_cluster().workers)
+    assert int(Options.view_as(PortableOptions).sdk_worker_parallelism) == Parser.max_slots()
+
+
+def test_the_sdkworker_pins_polars_to_one_thread() -> None:
+    """parallelism comes from harness count; a per-process polars pool would oversubscribe cores"""
+    from relmedner.constants import TASKMANAGER_COMPOSE
+
+    compose = yaml.safe_load(TASKMANAGER_COMPOSE.read_text(encoding="utf-8"))
+    assert compose["services"]["sdkworker"]["environment"]["POLARS_MAX_THREADS"] == "1"

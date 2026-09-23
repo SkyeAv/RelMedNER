@@ -169,3 +169,16 @@ def test_a_post_training_relation_row_survives_the_real_gliner_sanitizer(tmp_pat
     }
     assert [relation.evidence for relation in Example.relations] == ["asserted", "asserted", "sampled_negative"]
     assert [relation.negated for relation in Example.relations] == [False, False, True]
+
+
+def test_streamed_rows_pass_a_reshuffle_before_dispatch() -> None:
+    """each declared source is ONE Create element, so without a fusion break the source read and
+    every dispatch/mine step run fused in one task (one core per dataset). The pipeline must
+    place a Reshuffle between streaming and the task-type split; the Flink translator lowers it
+    to rebalance(), which is what fans rows out over every slot"""
+    import inspect
+
+    from relmedner import pipeline
+
+    source = inspect.getsource(pipeline.BeamPipeline.run)
+    assert source.index('"stream declared data"') < source.index("beam.Reshuffle()") < source.index('"split by task type"')

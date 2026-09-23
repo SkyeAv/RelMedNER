@@ -57,6 +57,14 @@ class YamlClusterParser(YamlParser):
         if parallelism:
             flags.append(f"--parallelism={parallelism}")
         flags += [
+            # one python sdk harness PER SLOT on each taskmanager, not beam's default of one per
+            # taskmanager: a harness is GIL-bound to ~one core, so the default ran every host's 64
+            # (or 16) slots through a single core. Measured on wenceslaus: 32 concurrent dispatch
+            # processes reach 11x the single-process row rate at <0.8 GB anonymous RSS each.
+            # 0 = the runner's auto value (cores - 1) is unsafe on a shared box, so size to slots
+            f"--sdk_worker_parallelism={self.max_slots()}",
+        ]
+        flags += [
             # EXTERNAL: user code runs in the per-node sdkworker pool (see the compose files), which
             # owns the fullmap volume mount; DOCKER environment cannot mount host dirs (beam #19240).
             # localhost resolves because both taskmanager and sdkworker use host networking.
@@ -68,3 +76,8 @@ class YamlClusterParser(YamlParser):
 
     def total_slots(self: Self) -> int:
         return sum(worker.slots for worker in self.parse_cluster().workers)
+
+    def max_slots(self: Self) -> int:
+        """harnesses per taskmanager: sdk_worker_parallelism is one job-wide number, so it is sized
+        to the largest node; a smaller node simply never has more concurrent bundles than slots"""
+        return max(worker.slots for worker in self.parse_cluster().workers)

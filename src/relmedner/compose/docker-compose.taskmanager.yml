@@ -57,6 +57,10 @@ services:
       RELMEDNER_FULLMAP_DIR: ${FULLMAP_MOUNT}
       # which polars runtime to load: "compat" on CPUs without AVX2 (hypatia), else the fast default
       POLARS_FORCE_PKG: "${POLARS_RUNTIME}"
+      # one polars thread per harness: parallelism comes from one harness per slot
+      # (sdk_worker_parallelism), so per-process polars pools would oversubscribe the cores
+      # (slots x ncpu threads) and multiply resident thread stacks for no throughput
+      POLARS_MAX_THREADS: "1"
     volumes:
       - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
       # avro shards land here; the host side is collected onto the head host when the job finishes
