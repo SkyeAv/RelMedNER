@@ -411,6 +411,104 @@
       "title": "HuggingFaceJsonDataset",
       "type": "object"
     },
+    "HuggingFaceParquetDataset": {
+      "additionalProperties": false,
+      "description": "parquet-builder ingest over one per-config file on the hub's refs/convert/parquet branch; see\nrelmedner.hf_parquet for why a script-era hub repo needs this route (main branch has only\nloading-script files, datasets refuses script datasets, whole-revision parquet load fails on\nmixed per-config schemas)",
+      "properties": {
+        "task": {
+          "discriminator": {
+            "mapping": {
+              "fullmap": "#/$defs/FullmapTask",
+              "script": "#/$defs/ScriptTask"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScriptTask"
+            },
+            {
+              "$ref": "#/$defs/FullmapTask"
+            }
+          ],
+          "title": "Task"
+        },
+        "weight": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowFilters"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "const": "hf_parquet",
+          "title": "Source",
+          "type": "string"
+        },
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "file": {
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "split": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Split"
+        },
+        "match_on": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MatchOn"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match On"
+        },
+        "columns_out": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns Out",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task",
+        "source",
+        "dataset",
+        "file",
+        "columns_out"
+      ],
+      "title": "HuggingFaceParquetDataset",
+      "type": "object"
+    },
     "LocalAvroDataset": {
       "additionalProperties": false,
       "description": "an avro container built out-of-band and read from disk by LocalAvroDataStream\n\npath is resolved with expanduser at stream time; the whole avro record ships to the declared\nscript, which owns the record shape (there is no columns_out projection like the hf streams\nhave, because the file's own schema is already the contract)",
@@ -833,6 +931,7 @@
           "mapping": {
             "hf": "#/$defs/HuggingFaceDataset",
             "hf_json": "#/$defs/HuggingFaceJsonDataset",
+            "hf_parquet": "#/$defs/HuggingFaceParquetDataset",
             "local": "#/$defs/LocalAvroDataset",
             "local_delimited": "#/$defs/LocalDelimitedDataset"
           },
@@ -850,6 +949,9 @@
           },
           {
             "$ref": "#/$defs/HuggingFaceJsonDataset"
+          },
+          {
+            "$ref": "#/$defs/HuggingFaceParquetDataset"
           }
         ]
       },

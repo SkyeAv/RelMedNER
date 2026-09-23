@@ -23,7 +23,8 @@ the loader does not accept it.
 ## Discriminators
 
 - `task.type` selects the task block: `script` -> `ScriptTask`, `fullmap` -> `FullmapTask`.
-- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `local` -> `LocalDataset`.
+- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `local` -> `LocalDataset`,
+  `hf_parquet` -> `HuggingFaceParquetDataset`.
 - Any other value for either key is a validation error.
 
 ## ingests.yaml
@@ -188,6 +189,24 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | --- | --- | --- | --- | --- |
 | `source` | yes | none | literal `local` | selects `LocalDataset` |
 | `path` | yes | none | filesystem path | avro container built out-of-band. Used as declared when it names an existing file (absolute, `~`-expanded, or relative to the caller's CWD); otherwise resolved against the package data dir (`relmedner.constants.DATA`). The whole record ships to the declared script; there is no `columns_out` projection because the file's own schema is the contract. Doubles as the row key for weight stamping |
+
+`HuggingFaceParquetDataset` (`source: hf_parquet`):
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `source` | yes | none | literal `hf_parquet` | selects `HuggingFaceParquetDataset` |
+| `dataset` | yes | none | hub repo id | the HuggingFace dataset; doubles as the row key for weight stamping |
+| `file` | yes | none | path under the hub's auto-convert `refs/convert/parquet` branch | one per-config parquet file, e.g. `ehr_rel_bigbio_pairs/train/0000.parquet`; loaded via `load_dataset("parquet", data_files="hf://datasets/{dataset}@refs/convert/parquet/{file}", split=...)` |
+| `split` | no | absent | hub split name | which split streams; absent = the dataset default |
+| `match_on` | no | absent | list of `MatchOn` (see below) | row filter: keep only rows whose `column` value is in `values` |
+| `columns_out` | yes | none | list of column names | the columns streamed to the task, in declaration order |
+
+WHY a separate source kind: a script-era hub repo (e.g. `bigbio/ehr_rel`) carries only
+loading-script files on its `main` branch (current `datasets` refuses script datasets outright),
+and loading the whole `refs/convert/parquet` revision in one call fails on mixed schemas (the
+auto-conversion publishes one parquet schema per config, so the union across configs is not a
+single table). One per-config parquet file is the only working route, and the parquet files are
+already typed arrow, so unlike the `hf_json` builder there is no cold-cache streaming hazard.
 
 ### `match_on` entries (`MatchOn`)
 
@@ -413,6 +432,24 @@ On the pubmed-abstracts-ner branch this shape is `HuggingFaceJsonDataset`
 `columns_out`), a json-builder ingest over one hub repo file kept out of the
 `hf` source by two measured blockers (old-style `dataset_infos.json`,
 cold-cache streaming corruption).
+
+(e) hf_parquet dataset: one auto-convert parquet file from a script-era hub repo
+(`HuggingFaceParquetDataset`, `source: hf_parquet`, fields `dataset`, `file`,
+`split`, `match_on`, `columns_out`):
+
+```yaml
+datasets:
+  - task: {type: script, name: GlinerBiomedScript, outputs: [entities]}
+    source: hf_parquet
+    dataset: bigbio/ehr_rel
+    file: ehr_rel_bigbio_pairs/train/0000.parquet
+    split: train
+    columns_out: [text]
+```
+
+`file` is relative to the `refs/convert/parquet` branch root, and the branch is
+pinned into the load URL automatically; a whole-revision load would fail on
+mixed per-config schemas, so one file per entry is the shape that works.
 
 ### Deliberately NOT configurable
 
