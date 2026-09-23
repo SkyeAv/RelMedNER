@@ -33,16 +33,18 @@ def is_empty_value(value: Any) -> bool:
 
 def first_drop_reason(values: tuple[Any, ...], filters: RowFilters) -> str | None:
     """the FIRST matching drop reason in the fixed order drop_empty -> min_text_len ->
-    max_text_len -> max_tokens -> include_regex -> exclude_regex, or None when the row passes.
-    match_on is NOT evaluated here: it is exact-value membership applied by the streams before
-    this evaluator.
+    max_text_len -> max_tokens -> min_words -> min_stop_word_ratio -> max_symbol_ratio ->
+    max_upper_ratio -> max_repeat_ngram_ratio -> max_short_line_ratio -> include_regex ->
+    exclude_regex, or None when the row passes. match_on is NOT evaluated here: it is
+    exact-value membership applied by the streams before this evaluator.
 
     The text every length/regex rule measures is joined_text(values) (see its docstring for the
     exact contribution rule). It is always computed (once per call) because the max_tokens cap
     is ALWAYS on -- an over-cap row drops even when the declared RowFilters sets no rules; the
     cap sits AFTER the declared length rules so any row that already attributed to max_text_len
-    keeps that attribution, and BEFORE the regexes so an over-cap row never attributes to a
-    regex."""
+    keeps that attribution, BEFORE the six opt-in heuristic rules (whose block costs no
+    tokenization at all when every knob is unset), and BEFORE the regexes so an over-cap row
+    never attributes to a regex."""
     if filters.drop_empty and all(is_empty_value(value) for value in values):
         return "drop_empty"
     text = joined_text(values)
