@@ -435,9 +435,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
