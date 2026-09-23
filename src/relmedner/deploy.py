@@ -148,38 +148,42 @@ def tunnel_plan(
 
 DYN_WATCHER_REMOTE: str = "/tmp/relmedner-dynwatch.sh"
 DYN_WATCHER_LOG: str = "/tmp/relmedner-dynwatch.log"
-DYN_PIDS_REMOTE: str = "/tmp/relmedner-dyn-pids"
+DYN_CTL_SOCKET: str = "/tmp/relmedner-dyn-ctl"
 DYN_SEEN_REMOTE: str = "/tmp/relmedner-dyn-ports"
 
 
 def dyn_forwarder_script(jobmanager_host: str, user: str) -> str:
-    """bash file, installed on a taskmanager host and run DETACHED (setsid nohup, not tmux): the
-    beam worker pool dials the job server's FnAPI endpoints, which the java job server binds on
-    RANDOM ports per submission - unfixable from flags. the cross-host firewall means those dials
-    must be relayed over ssh, so watch the pool log for each new `endpoint localhost:<port>` and
-    forward that port to the head host before the pool's worker-retry loop gives the tunnel time
-    to come up. tmux died once mid-job (server killed by an ssh blip) and took every forward with
-    it, so neither the watcher nor the forwards live in tmux anymore; forward pids are tracked in
-    a file so a redeploy reaps the previous generation"""
+    """bash file, installed on a taskmanager host and run DETACHED (setsid nohup): the beam worker
+    pool dials the job server's FnAPI endpoints, which the java job server binds on RANDOM ports
+    per submission - unfixable from flags. the cross-host firewall means those dials must be
+    relayed over ssh, so poll the pool log for every new provision/control/log/artifact endpoint
+    and attach a forward for it. one PERSISTENT ssh master carries the listeners (its survival
+    profile matches the static tunnels, which outlived everything); each new port is attached
+    live via `ssh -O forward`. per-port ssh processes were tried first and died en masse."""
     return f"""#!/bin/bash
 seen={DYN_SEEN_REMOTE}
-pids={DYN_PIDS_REMOTE}
+ctl={DYN_CTL_SOCKET}
 : > "$seen"
-if [ -f "$pids" ]; then xargs -r kill 2>/dev/null < "$pids"; fi
-: > "$pids"
 # POLL, don't stream: a long-lived `docker logs -f | grep | grep` pipeline dies silently when any
 # member exits (observed mid-job), while a fresh pipeline per tick is self-healing by construction
 while true; do
+  # ensure the master carrier; -O check pings the control socket
+  if ! ssh -O check -S "$ctl" {user}@{jobmanager_host} >/dev/null 2>&1; then
+    setsid nohup ssh -M -S "$ctl" -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
+      -o ControlPersist=no -N {user}@{jobmanager_host} </dev/null >/dev/null 2>&1 &
+    sleep 1
+  fi
   # 2>&1, never 2>/dev/null: hypatia's docker CLI emits log lines on STDERR — discarding it
   # blinded the watcher from day one (empty seen file, zero forwards, workers dialing dead ports)
   for p in $(docker logs --since 2m relmedner-sdkworker-1 2>&1 \\
-      | grep -oE '(provision|control|logging|artifact)_endpoint.{{0,16}}localhost:[0-9]+' \
+      | grep -oE '(provision|control|logging|artifact)_endpoint.{{0,16}}localhost:[0-9]+' \\
       | grep -oE 'localhost:[0-9]+' | grep -oE '[0-9]+' | sort -u); do
     grep -qx "$p" "$seen" 2>/dev/null && continue
-    echo "$p" >> "$seen"
-    setsid nohup ssh -o BatchMode=yes -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 \\
-      -N -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host} </dev/null >/dev/null 2>&1 &
-    echo $! >> "$pids"
+    # attach to the master; only remember ports whose forward actually bound
+    if ssh -S "$ctl" -O forward -o BatchMode=yes \\
+        -L 127.0.0.1:$p:127.0.0.1:$p {user}@{jobmanager_host} >/dev/null 2>&1; then
+      echo "$p" >> "$seen"
+    fi
   done
   sleep 2
 done
@@ -219,8 +223,8 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
                     [
                         *ssh_to(ssh_user, worker.host),
                         "pkill -f 'relmedner-dynwatch[.]sh' 2>/dev/null; "
-                        "xargs -r kill 2>/dev/null < " + DYN_PIDS_REMOTE + " 2>/dev/null; "
-                        "rm -f " + DYN_WATCHER_REMOTE + " " + DYN_PIDS_REMOTE + " " + DYN_SEEN_REMOTE + "; true",
+                        "ssh -S " + DYN_CTL_SOCKET + " -O exit " + ssh_user + "@" + jobmanager_host + " 2>/dev/null; "
+                        "rm -f " + DYN_WATCHER_REMOTE + " " + DYN_SEEN_REMOTE + " " + DYN_CTL_SOCKET + "; true",
                     ],
                     dry_run,
                 )
