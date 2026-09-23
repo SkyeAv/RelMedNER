@@ -35,7 +35,7 @@ def test_live_streamed_chemprot_rows_dispatch_end_to_end(split: str) -> None:
     """
     from relmedner.huggingface import HuggingFaceDataStream
     from relmedner.ingests import YamlIngestsParser
-    from relmedner.pipeline import dispatch_row
+    from relmedner.pipeline import dispatch_args, dispatch_row
     from relmedner.registry import build_stream
     from relmedner.scripts import ChemprotScript  # noqa: F401  imports populate Script.REGISTRY
 
@@ -55,7 +55,6 @@ def test_live_streamed_chemprot_rows_dispatch_end_to_end(split: str) -> None:
     Task: tuple
     Values: tuple
     relation_rows = 0
-    weights = Ingests.weights_by_source()
     # one rows() iterator: calling next(stream.rows()) per row would restart the stream and
     # dispatch the first row over and over
     Rows = stream.rows()
@@ -88,7 +87,7 @@ def test_live_streamed_chemprot_rows_dispatch_end_to_end(split: str) -> None:
             assert relation.evidence == "asserted"  # gold relations, native-gold stance
 
         # the pipeline's own dispatch wrapper must agree with the direct registry call above
-        PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), weights)
+        PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
         assert PipelineOutputs == Outputs
         assert PipelineExample == Example
 

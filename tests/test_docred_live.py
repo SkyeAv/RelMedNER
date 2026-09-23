@@ -30,7 +30,7 @@ def test_a_live_streamed_docred_row_dispatches_end_to_end() -> None:
     """
     from relmedner.hf_json import HuggingFaceJsonDataStream
     from relmedner.ingests import YamlIngestsParser
-    from relmedner.pipeline import dispatch_row
+    from relmedner.pipeline import dispatch_args, dispatch_row
     from relmedner.registry import build_stream
 
     Ingests = YamlIngestsParser().parse_ingests()
@@ -68,6 +68,6 @@ def test_a_live_streamed_docred_row_dispatches_end_to_end() -> None:
     assert Example.relations, "first train_annotated row unexpectedly produced no relations"
 
     # the pipeline's own dispatch wrapper must agree with the direct registry call above
-    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Ingests.weights_by_source())
+    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
     assert PipelineOutputs == Outputs
     assert PipelineExample == Example
