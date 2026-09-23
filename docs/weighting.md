@@ -151,10 +151,11 @@ Notes:
 
 ## Reweighting the existing datasets
 
-All 29 declared entries land on `weight: 1.0` today, by three routes: 8 alias the single
-`&weight 1.0` anchor outright, 14 inherit it through the `<<: *hf-train` merge from
-`x-defaults`, and the 7 reddit entries declare no `weight` at all and take the model
-default. Proposal: replace that one anchor with three tier anchors in `x-defaults`
+Every declared entry lands on `weight: 1.0` today, by three routes: some alias the single
+`&weight 1.0` anchor outright, most inherit it through the `<<: *hf-train` merge from
+`x-defaults`, and the reddit entries declare no `weight` at all and take the model default
+(the ingest table in README.md is the list that stays current as corpora are added).
+Proposal: replace that one anchor with three tier anchors in `x-defaults`
 (`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`) so tier membership is
 visible at a glance. The `trust` values below are **priors to confirm with
 `validate-trust`** -- run the validation, then replace priors with measured values.
@@ -173,6 +174,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | gold | 1.0 | 1.0 | curated fullmap mining base |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | gold | 1.0 | 1.0 | curated, class-balanced variant |
 | `interventions/interventions.avro` | gold | 1.0 | 1.0 | local curated intervention gazetteer |
+| `thunlp/docred` (three declared ingests, one row key) | gold | 1.0 | 1.0 | human-annotated document-level entity clusters and gold relations |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | silver | 0.7 | 0.8 | silver IOB annotations |
 | `knowledgator/sentence_rex` | silver | 0.7 | 0.8 | sentence-level RE, distant labels |
 | `Universal-NER/Pile-NER-type` | silver | 0.7 | 0.8 | LLM-generated type annotations |
