@@ -38,6 +38,19 @@ def weighted(example: TrainingExample, weight: float, edge_trusts: dict[str, flo
     return example.model_copy(update={"weight": example_weight(example, weight, edge_trusts or {})})
 
 
+def dispatch_args(ingests: YamlIngests) -> tuple[dict[str, float], dict[str, dict[str, float]]]:
+    """the (weights, edge_trusts) pair dispatch_row takes, built exactly as the run builds it.
+
+    weights are TRUST-ADJUSTED (validators.adjust_weight): declared weight * trust clamped to
+    the +-TRUST_RANGE band, trust==0 soft-dropping to 0. edge_trusts is the per-predicate edge
+    trust (validators.record_edge_factor), applied record-by-record at the stamp so only
+    records carrying a flagged predicate move. One builder, shared by pipeline.run and the live
+    smokes, so a smoke cannot drift from the run's dispatch signature again."""
+    trusts: dict[str, float] = ingests.trusts_by_source()
+    weights: dict[str, float] = {source: adjust_weight(weight, trusts.get(source, 1.0)) for source, weight in ingests.weights_by_source().items()}
+    return weights, ingests.trust_edges_by_source()
+
+
 def dispatch_row(row: StreamedRow, weights: dict[str, float], edge_trusts: dict[str, dict[str, float]]) -> DispatchedExample:
     """script tasks dispatch through the registry; the leading task value discriminates"""
     source, (task, values) = row
@@ -129,13 +142,9 @@ class BeamPipeline:
         # adjustment composes here -- not in a new Beam transform -- so the graph stays
         # identical and only the stamped values change. side effect, documented in
         # docs/weighting.md: adjusted weight feeds dedup priority, so between two near-
-        # duplicates the higher-trust source's record survives
-        Trusts: dict[str, float] = Ingests.trusts_by_source()
-        Weights: dict[str, float] = {source: adjust_weight(weight, Trusts.get(source, 1.0)) for source, weight in Ingests.weights_by_source().items()}
-        # per-predicate edge trust (validators.record_edge_factor): applied record-by-record
-        # at the stamp, so only records carrying a flagged predicate move; the dict rides the
-        # DoFns as pickled instance data exactly like Weights
-        EdgeTrusts: dict[str, dict[str, float]] = Ingests.trust_edges_by_source()
+        # duplicates the higher-trust source's record survives. both dicts ride the DoFns as
+        # pickled instance data
+        Weights, EdgeTrusts = dispatch_args(Ingests)
         Output: Path = output_path(self.options, config)
         Schema: dict[str, Any] = TrainingExample.avro_schema_to_python()
 

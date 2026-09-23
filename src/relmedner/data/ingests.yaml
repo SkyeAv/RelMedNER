@@ -12,7 +12,6 @@
 # Full field reference: docs/yaml-config.md.
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
-  hf-parquet: &hf-parquet {source: hf_parquet, split: train}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
   # bigbio/ehr_rel tier: human-rated concept pairs with no prose context (structured, not
   # prose), per docs/weighting.md's tier table as checked by the user
@@ -23,6 +22,7 @@ x-defaults:
   # newline-spam lists; see docs/quality-heuristics.md for the measured table
   reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
+  hf-parquet: &hf-parquet {source: hf_parquet, split: train}
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
     <<: *hf-train
@@ -301,36 +301,7 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
-  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
-    <<: *hf-parquet
-    weight: *weight
-    dataset: bigbio/chia
-    file: chia_bigbio_kb/train/0000.parquet
-    columns_out: [passages, entities, relations]
-  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
-    <<: *hf-parquet
-    weight: *weight
-    dataset: bigbio/chia
-    file: chia_fixed_source/train/0000.parquet
-    columns_out: [text, entities, relations]
-  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
-    <<: *hf-parquet
-    weight: *weight
-    dataset: bigbio/chia
-    file: chia_source/train/0000.parquet
-    columns_out: [text, entities, relations]
-  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
-    <<: *hf-parquet
-    weight: *weight
-    dataset: bigbio/chia
-    file: chia_without_scope_fixed_source/train/0000.parquet
-    columns_out: [text, entities, relations]
-  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
-    <<: *hf-parquet
-    weight: *weight
-    dataset: bigbio/chia
-    file: chia_without_scope_source/train/0000.parquet
-    columns_out: [text, entities, relations]
+    filters: *reddit-quality
   # bigbio/ehr_rel: EHR concept relatedness (Schulz et al., COLING 2020, apache-2.0). A script-era
   # hub repo: main carries only loading-script files, so each entry reads its config's parquet file
   # from the auto-convert refs/convert/parquet branch (hf_parquet source kind). The four subsets
@@ -394,7 +365,6 @@ datasets:
     split: test
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
-    filters: *reddit-quality
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner
@@ -460,3 +430,33 @@ datasets:
     source: local
     weight: *weight
     path: bc5cdr/test.avro
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_bigbio_kb/train/0000.parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_source/train/0000.parquet
+    columns_out: [text, entities, relations]

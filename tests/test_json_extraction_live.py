@@ -32,7 +32,7 @@ def test_live_streamed_json_extraction_rows_dispatch_end_to_end() -> None:
     """
     from relmedner.huggingface import HuggingFaceDataStream
     from relmedner.ingests import YamlIngestsParser
-    from relmedner.pipeline import dispatch_row
+    from relmedner.pipeline import dispatch_args, dispatch_row
     from relmedner.registry import build_stream
 
     Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
@@ -70,6 +70,6 @@ def test_live_streamed_json_extraction_rows_dispatch_end_to_end() -> None:
                     assert field.value in Example.text, f"relation endpoint {field.value!r} does not occur in the text"
 
             # the pipeline's own dispatch wrapper must agree with the direct registry call above
-            PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Ingests.weights_by_source())
+            PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
             assert PipelineOutputs == RowOutputs
             assert PipelineExample == Example

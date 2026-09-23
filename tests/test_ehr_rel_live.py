@@ -29,7 +29,7 @@ def test_a_live_streamed_ehr_rel_row_dispatches_end_to_end() -> None:
     """
     from relmedner.hf_parquet import HuggingFaceParquetDataStream
     from relmedner.ingests import YamlIngestsParser
-    from relmedner.pipeline import dispatch_row
+    from relmedner.pipeline import dispatch_args, dispatch_row
     from relmedner.registry import build_stream
 
     Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
@@ -72,8 +72,8 @@ def test_a_live_streamed_ehr_rel_row_dispatches_end_to_end() -> None:
     # the pipeline's own dispatch wrapper must agree with the direct registry call above, and it
     # stamps the DECLARED weight (0.5 here, the corpus's first non-1.0 source) onto the example;
     # compare on the stamped copy, then pin the stamp itself
-    Weights: dict[str, float] = Ingests.weights_by_source()
-    PipelineOutputs, PipelineExample = dispatch_row((Name, Streamed), Weights)
+    Weights, EdgeTrusts = dispatch_args(Ingests)
+    PipelineOutputs, PipelineExample = dispatch_row((Name, Streamed), Weights, EdgeTrusts)
     assert PipelineOutputs == ("relations",)
     assert PipelineExample == Example.model_copy(update={"weight": Weights[Name]})
     assert PipelineExample.weight == 0.5

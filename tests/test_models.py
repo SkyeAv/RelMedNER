@@ -444,6 +444,8 @@ def test_huggingface_parquet_dataset_pins_the_positional_payload_contract() -> N
     assert list(HuggingFaceParquetDataset.model_fields) == [
         "task",
         "weight",
+        "trust",
+        "trust_edges",
         "filters",
         "source",
         "dataset",
