@@ -484,3 +484,24 @@ datasets:
     dataset: bigbio/chia
     file: chia_without_scope_source/train/0000.parquet
     columns_out: [text, entities, relations]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/train/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/validation/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/test/0000.parquet
+    split: train
+    columns_out: [text, labels]
