@@ -165,10 +165,7 @@ def iter_declared(entry_key: str, limit: int) -> tuple[tuple[str, ...], list[Any
     ingests = YamlIngestsParser().parse_ingests()
     match = None
     columns: tuple[str, ...] = ()
-    for dataset in ingests.datasets:
-        source, payload = dataset.to_tuple()
-        discriminator = payload[3] if len(payload) > 3 else None
-        key = f"{payload[2]}:{discriminator}" if isinstance(discriminator, str) else str(payload[2])
+    for dataset, _source, _payload, key, _base in declared_entry_keys(ingests):
         if key == entry_key:
             match = dataset.to_stream_args()
             # read the projection off the model, never off a payload position: local_delimited packs
