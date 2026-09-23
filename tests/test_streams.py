@@ -9,8 +9,9 @@ from typing import Any, ClassVar, Self
 import pytest
 from fastavro import parse_schema, writer
 
-from relmedner import hf_json
+from relmedner import hf_json, hf_parquet
 from relmedner.hf_json import HuggingFaceJsonDataStream
+from relmedner.hf_parquet import HuggingFaceParquetDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
@@ -167,6 +168,136 @@ def test_build_stream_constructs_the_hf_json_source_positionally() -> None:
     assert Stream.weight == 1.0
     assert Stream.file == "train.json"
     assert Stream.columns_out == ("tokenized_text", "ner")
+
+
+def test_build_stream_constructs_the_hf_parquet_source_positionally() -> None:
+    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced must
+    land in HuggingFaceParquetDataStream.__init__ in model field order minus source"""
+    Source, Payload = (
+        "hf_parquet",
+        (
+            ("script", "ChiaScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chia",
+            "chia_bigbio_kb/train/0000.parquet",
+            "refs/convert/parquet",
+            "train",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    )
+
+    Stream: DataStream = build_stream(Source, Payload)
+
+    assert isinstance(Stream, HuggingFaceParquetDataStream)
+    assert Stream.name == "bigbio/chia"
+    assert Stream.task == ("script", "ChiaScript", ("entities", "relations"))
+    assert Stream.weight == 1.0
+    assert Stream.file == "chia_bigbio_kb/train/0000.parquet"
+    assert Stream.revision == "refs/convert/parquet"
+    assert Stream.columns_out == ("passages", "entities", "relations")
+
+
+def test_registry_keys_the_hf_parquet_source() -> None:
+    assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
+
+
+def test_hf_parquet_rows_load_the_parquet_builder_with_the_revision_pinned_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the revision-pinned hf:// URL is the only load route for a builder-script repo (bigbio/chia
+    carries chia.py, which datasets>=3 refuses), so the exact data_files/split/streaming call is
+    pinned here; match_on still filters and rows still project onto columns_out"""
+    Calls: dict[str, Any] = {}
+
+    def FakeLoadDataset(builder: str, **kwargs: Any) -> list[dict[str, Any]]:
+        Calls["builder"] = builder
+        Calls["kwargs"] = kwargs
+        return [
+            {"passages": [{"text": ["criteria"]}], "entities": [1], "relations": [2], "domain": "Healthcare"},
+            {"passages": [{"text": ["other"]}], "entities": [3], "relations": [4], "domain": "Finance"},
+        ]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "ChiaScript", ("entities", "relations")),
+        1.0,
+        "bigbio/chia",
+        "chia_bigbio_kb/train/0000.parquet",
+        "refs/convert/parquet",
+        "train",
+        (("domain", ("Healthcare",)),),
+        ("passages", "entities", "relations"),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Calls == {
+        "builder": "parquet",
+        "kwargs": {
+            "data_files": "hf://datasets/bigbio/chia@refs/convert/parquet/chia_bigbio_kb/train/0000.parquet",
+            "split": "train",
+            "streaming": True,
+        },
+    }
+    assert len(Streamed) == 1
+    assert Streamed[0][0] == "bigbio/chia"
+    assert Streamed[0][1] == (
+        ("script", "ChiaScript", ("entities", "relations")),
+        (
+            [{"text": ["criteria"]}],
+            [1],
+            [2],
+        ),
+    )
+
+
+def test_hf_parquet_rows_without_a_match_declaration_yield_every_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """no match_on means no filtering: every streamed row ships, projected onto columns_out"""
+
+    def FakeLoadDataset(builder: str, **kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {"passages": [1], "entities": [2], "relations": [3]},
+            {"passages": [4], "entities": [5], "relations": [6]},
+        ]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "ChiaScript", ("entities", "relations")),
+        1.0,
+        "bigbio/chia",
+        "chia_bigbio_kb/train/0000.parquet",
+        "refs/convert/parquet",
+        "train",
+        None,
+        ("passages", "entities", "relations"),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert len(Streamed) == 2
+    assert Streamed[1][1] == (("script", "ChiaScript", ("entities", "relations")), ([4], [5], [6]))
+
+
+def test_hf_parquet_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a hub-side load failure (missing file, bad revision) must surface, never become an empty
+    stream: the silent-empty-training-set bug this repo already shipped once"""
+
+    def Boom(builder: str, **kwargs: Any) -> None:
+        raise FileNotFoundError("no such parquet")
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", Boom)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "ChiaScript", ("entities", "relations")),
+        1.0,
+        "bigbio/chia",
+        "missing/train/0000.parquet",
+        "refs/convert/parquet",
+        "train",
+        None,
+        ("passages", "entities", "relations"),
+    )
+
+    with pytest.raises(FileNotFoundError):
+        list(Stream.rows())
 
 
 def test_registry_keys_the_hf_json_source() -> None:

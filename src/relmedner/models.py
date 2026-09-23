@@ -221,8 +221,34 @@ class HuggingFaceJsonDataset(DatasetBase):
         return self.dataset
 
 
+class HuggingFaceParquetDataset(DatasetBase):
+    """parquet-builder ingest over one revision-pinned hf:// URL inside a hub repo; see
+    relmedner.hf_parquet for why builder-script corpora (bigbio/chia) need this route instead of
+    the "hf" source under datasets>=3"""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "file", "revision", "split", "match_on", "columns_out")
+
+    source: Literal["hf_parquet"] = Field(...)
+    dataset: str = Field(...)
+    file: str = Field(..., min_length=1)
+    """path under the revision, e.g. chia_bigbio_kb/train/0000.parquet; min_length keeps the
+    hf://datasets/{dataset}@{revision}/{file} URL well formed"""
+    revision: str = Field(..., min_length=1)
+    """git ref the file loads from, e.g. refs/convert/parquet (the hub's auto-converted branch)"""
+    split: str | None = Field(None)
+    match_on: list[MatchOn] | None = Field(None)
+    columns_out: list[str] = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        """the stream stamps rows with the repo id alone, so the five bigbio/chia subset entries
+        share one weight slot and must declare the same weight; weights_by_source raises if they
+        disagree"""
+        return self.dataset
+
+
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset,
+    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset | HuggingFaceParquetDataset,
     Field(discriminator="source"),
 ]
 

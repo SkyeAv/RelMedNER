@@ -23,7 +23,8 @@ the loader does not accept it.
 ## Discriminators
 
 - `task.type` selects the task block: `script` -> `ScriptTask`, `fullmap` -> `FullmapTask`.
-- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `local` -> `LocalDataset`.
+- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `hf_parquet` ->
+  `HuggingFaceParquetDataset`, `local` -> `LocalDataset`.
 - Any other value for either key is a validation error.
 
 ## ingests.yaml
@@ -180,6 +181,20 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | `match_on` | no | absent | list of `MatchOn` (see below) | row filter: keep only rows whose `column` value is in `values` |
 | `columns_out` | yes | none | list of column names | the columns streamed to the task, in declaration order |
 
+`HuggingFaceParquetDataset` (`source: hf_parquet`):
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `source` | yes | none | literal `hf_parquet` | selects `HuggingFaceParquetDataset` |
+| `dataset` | yes | none | hub repo id | the HuggingFace dataset; doubles as the row key for weight stamping (every subset entry of one repo shares the slot and must declare the same weight) |
+| `file` | yes | none | path under `revision`, non-empty | the parquet file inside the repo, e.g. `chia_bigbio_kb/train/0000.parquet` |
+| `revision` | yes | none | git ref, non-empty | the ref to load from; builder-script repos stream the hub's auto-converted `refs/convert/parquet` branch because `datasets` >= 3 refuses dataset scripts |
+| `split` | no | absent | hub split name | which split streams; absent = the dataset default |
+| `match_on` | no | absent | list of `MatchOn` (see below) | row filter: keep only rows whose `column` value is in `values` |
+| `columns_out` | yes | none | list of column names | the columns streamed to the task, in declaration order |
+
+The load call is `load_dataset("parquet", data_files="hf://datasets/{dataset}@{revision}/{file}", split=..., streaming=True)`: one pinned URL per entry. `bigbio/chia` is the worked example (all five subsets), measured end to end through this route.
+
 `LocalDataset` (`source: local`):
 
 | field | required? | default | constraint | meaning |
@@ -314,6 +329,23 @@ datasets:
     source: local
     path: interventions/interventions.avro
 ```
+
+(e) hf dataset from a builder-script repo via the auto-converted parquet branch (needs the
+`hf_parquet` source because `datasets` >= 3 refuses dataset scripts):
+
+```yaml
+x-defaults:
+  hf-parquet: &hf-parquet {source: hf_parquet, revision: refs/convert/parquet, split: train}
+datasets:
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    dataset: bigbio/chia
+    file: chia_bigbio_kb/train/0000.parquet
+    columns_out: [passages, entities, relations]
+```
+
+On a repo whose parquet branch is absent or stale, this entry fails at `rows()` with the
+hub-side error (fail loud, never an empty stream).
 
 `path` is used as declared when it names an existing file -- absolute, `~`-expanded via
 `expanduser`, or relative to the caller's CWD -- and resolves against the package data dir
