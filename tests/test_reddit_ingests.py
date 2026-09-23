@@ -97,3 +97,22 @@ def test_apply_match_keeps_allowlisted_communities_and_drops_everything_else() -
     assert Stream.apply_match(Kept) is True
     assert Stream.apply_match(WrongCase) is False
     assert Stream.apply_match(Dropped) is False
+
+
+def test_the_reddit_qc_thresholds_apply_to_exactly_the_seven_reddit_entries() -> None:
+    """the measured web-corpus QC filters (the &reddit-quality anchor: stop-word floor plus
+    short-line ceiling) are calibrated on reddit prose and must reach exactly the seven reddit
+    entries. A merge once displaced the `filters: *reddit-quality` line from reddit_dataset_237
+    onto the BioRED test entry, which silently unfiltered one reddit corpus and made the BioRED
+    stream raise ZeroYieldError (its passages column is not flat text); both halves fail here"""
+    Reddit: set[str] = set(reddit_datasets())
+    Parsed = YamlIngestsParser().parse_ingests()
+    Filtered: dict[str, Any] = {
+        getattr(Entry, "dataset", None) or getattr(Entry, "path", ""): Entry.filters
+        for Entry in Parsed.datasets
+        if Entry.filters is not None and Entry.filters.min_stop_word_ratio is not None
+    }
+    assert set(Filtered) == Reddit
+    # one entry merges the anchor and adds its own extra threshold, so the lock is on the two
+    # shared anchor values, not on whole-object equality
+    assert {(Filters.min_stop_word_ratio, Filters.max_short_line_ratio) for Filters in Filtered.values()} == {(0.02, 0.9)}

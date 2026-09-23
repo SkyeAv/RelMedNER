@@ -76,19 +76,20 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.git' --exclude='.venv' --exclude='.ralph' \
         --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.ruff_cache' \
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
-        --exclude='synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv' \
+        --exclude='/src/relmedner/data/synthetic-ner-ade-tweets' \
+        --exclude='/src/relmedner/data/interventions' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
 fi
 
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
-#    history are never touched). The replacement must be the REMOTE shell's $HOME (escaped so the
-#    laptop shell does not expand it) because remote-runner.sh exports RELMEDNER_FULLMAP_DIR as
-#    "$HOME/Desktop/fullmap": constants.py captures the env at import and tests/test_constants.py
-#    reloads against the envless literal, so a literal that disagrees with the env (/home/sgoetz
-#    vs /users/sgoetz on the box) fails those tests deterministically. The grep line printed back
-#    is the receipt.
+#    history are never touched). The grep line printed back is the receipt.
 echo "== remote FULLMAP_DIR patch"
-remote "cd '$REMOTE_REL' && sed -i s#/home/skyeav/Desktop/fullmap#\$HOME/Desktop/fullmap# src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
+# the replacement is the REMOTE $HOME form (wenceslaus HOME=/users/sgoetz, /home/sgoetz is the
+# same tree) so the exported RELMEDNER_FULLMAP_DIR matches the patched literal TEXTUALLY --
+# tests/test_constants.py compares the env value and the envless default as strings, so a
+# /home/sgoetz literal under a /users/sgoetz HOME fails two FULLMAP_DIR tests (measured
+# 2026-09-22 on the untouched main checkout too)
+remote "cd '$REMOTE_REL' && sed -i \"s#/home/skyeav/Desktop/fullmap#\$HOME/Desktop/fullmap#\" src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
 
 # 3. run the mode. Long jobs go in remote tmux because the gateway idle-kills raw ssh masters.
 if [ "$MODE" = "smoke" ]; then

@@ -15,6 +15,7 @@ from relmedner.models import (
     Entity,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
+    HuggingFaceParquetDataset,
     LocalAvroDataset,
     LocalDelimitedDataset,
     Relation,
@@ -309,7 +310,7 @@ def test_x_defaults_declared_after_datasets() -> None:
 
 @pytest.mark.parametrize(
     "model",
-    (HuggingFaceDataset, HuggingFaceJsonDataset, LocalAvroDataset, LocalDelimitedDataset),
+    (HuggingFaceDataset, HuggingFaceJsonDataset, HuggingFaceParquetDataset, LocalAvroDataset, LocalDelimitedDataset),
     ids=lambda model: model.__name__,
 )
 def test_dataset_tuple_fields_freeze_the_packing_order(model: type[DatasetBase]) -> None:
@@ -421,6 +422,84 @@ def test_huggingface_json_dataset_rejects_an_empty_file_name() -> None:
             split="train",
             match_on=None,
             columns_out=["tokenized_text"],
+        )
+
+
+def test_huggingface_parquet_dataset_pins_the_positional_payload_contract() -> None:
+    """registry.build_stream splats to_tuple positionally into HuggingFaceParquetDataStream.__init__, so the
+    model field order minus source IS the stream constructor order; the packing order mirrors HuggingFaceJsonDataset
+    exactly so both builder-backed sources stay interchangeable"""
+    Entry: HuggingFaceParquetDataset = HuggingFaceParquetDataset(
+        task=ScriptTask(type=ProcessingTypes.SCRIPT, name="GlinerBiomedScript", outputs=[OutputShapes.ENTITIES, OutputShapes.RELATIONS]),
+        source="hf_parquet",
+        dataset="bigbio/ehr_rel",
+        file="ehr_rel_bigbio_pairs/train/0000.parquet",
+        split="train",
+        match_on=None,
+        columns_out=["text", "relations"],
+    )
+
+    # "filters" sits in NON_PAYLOAD_FIELDS, so an appended field cannot shift a payload position:
+    # model_fields carries it, tuple_fields (the packing order asserted below) does not.
+    assert list(HuggingFaceParquetDataset.model_fields) == [
+        "task",
+        "weight",
+        "trust",
+        "trust_edges",
+        "filters",
+        "source",
+        "dataset",
+        "file",
+        "split",
+        "match_on",
+        "columns_out",
+    ]
+    assert HuggingFaceParquetDataset.tuple_fields == ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
+    assert Entry.to_tuple() == (
+        "hf_parquet",
+        (
+            ("script", "GlinerBiomedScript", ("entities", "relations")),
+            1.0,
+            "bigbio/ehr_rel",
+            "ehr_rel_bigbio_pairs/train/0000.parquet",
+            "train",
+            None,
+            ("text", "relations"),
+        ),
+    )
+    assert Entry.row_key == "bigbio/ehr_rel"
+
+
+def test_the_dataset_discriminated_union_accepts_the_hf_parquet_variant() -> None:
+    """the annotated Dataset union is what ingests.yaml validation dispatches on; a missing arm would
+    reject the new source at yaml parse time"""
+    Parsed: HuggingFaceParquetDataset = TypeAdapter(Dataset).validate_python(
+        {
+            "task": {"type": "script", "name": "GlinerBiomedScript", "outputs": ["entities"]},
+            "source": "hf_parquet",
+            "dataset": "bigbio/ehr_rel",
+            "file": "ehr_rel_bigbio_pairs/train/0000.parquet",
+            "split": "train",
+            "match_on": None,
+            "columns_out": ["text"],
+        }
+    )
+
+    assert isinstance(Parsed, HuggingFaceParquetDataset)
+
+
+def test_huggingface_parquet_dataset_rejects_an_empty_file_name() -> None:
+    """file rides into the hf://datasets/{dataset}@refs/convert/parquet/{file} URL; an empty name
+    would only fail deep inside the hub client, so the model gate fails loudly instead"""
+    with pytest.raises(ValidationError):
+        HuggingFaceParquetDataset(
+            task=ScriptTask(type=ProcessingTypes.SCRIPT, name="GlinerBiomedScript", outputs=[OutputShapes.ENTITIES]),
+            source="hf_parquet",
+            dataset="bigbio/ehr_rel",
+            file="",
+            split="train",
+            match_on=None,
+            columns_out=["text"],
         )
 
 

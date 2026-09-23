@@ -23,7 +23,6 @@ OUTPUTS_MOUNT: str = "/opt/outputs"  # in-container mount target the sdkworker w
 
 WORKER_IMAGE_NAME: str = "localhost/relmedner-worker"
 FLINK_IMAGE_NAME: str = "localhost/relmedner-flink"
-LOCAL_HOST: str = "local"
 
 PROJECT: str = "relmedner"
 JOBMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.jobmanager.yml"
@@ -31,9 +30,9 @@ TASKMANAGER_COMPOSE: Traversable = COMPOSE_DIR / "docker-compose.taskmanager.yml
 WORKER_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.worker"
 FLINK_DOCKERFILE: Traversable = COMPOSE_DIR / "Dockerfile.flink"
 
-# Local fullmap database directory for resolution on the driver (no cluster mount).
-# RELMEDNER_FULLMAP_DIR lets the beam sdkworker container point at its own mount
-# (/opt/fullmap); hosts resolve the literal Desktop path by default.
+# Local fullmap database directory for resolution on the driver (no cluster mount). Workers always
+# read the mounted bundle instead: the sdkworker containers get RELMEDNER_FULLMAP_DIR=/opt/fullmap
+# from the compose files, and the driver on the head host exports RELMEDNER_FULLMAP_DIR itself.
 FULLMAP_DIR: Path = Path(environ.get("RELMEDNER_FULLMAP_DIR") or "/home/skyeav/Desktop/fullmap")
 
 # ---------------------------------------------------------------- fullmap mining knobs ----
@@ -168,6 +167,23 @@ MAX_TEXT_TOKENS: int = 8192
 # overshoot still drops: floor division would round 32769 chars back to 8192 "tokens".
 CHARS_PER_TOKEN: int = 4
 
+# ------------------------------------------------- row-quality heuristic knobs ----
+# Web-corpus QC heuristics (C4 / Gopher document-level filter family), wired as opt-in
+# RowFilters rules by row_filters.first_drop_reason. The two knobs below are the shape
+# constants of the pure ratio primitives; every THRESHOLD is a per-dataset decision in
+# ingests.yaml, because every dropped record is supervised signal and repo convention fixes
+# defaults only by measurement. See docs/quality-heuristics.md for measured starting values.
+
+# Window (in words) of the duplicate-ngram repetition check (repeat_ngram_ratio). Gopher's
+# document-level repetition rule uses 10-gram duplicate fraction; short texts under one
+# window always pass.
+REPEAT_NGRAM_WORDS: int = 10
+
+# Line length under which a line counts as "short" for short_line_ratio (abnormal line
+# breaks: newline spam, OCR fragments, bullet walls). A 30-char bar separates prose lines
+# from fragments while leaving ordinary wrapped paragraphs at ratio 0.
+SHORT_LINE_CHARS: int = 30
+
 # ---------------------------------------------------------------- near-dedup knobs ----
 # MinHash LSH constants for near-duplicate detection, fixed by the LSH S-curve
 # P(pair shares >= 1 band) = 1 - (1 - s**r)**b for true shingle Jaccard s, r rows per band,
@@ -231,15 +247,8 @@ TRUST_RELATION_VERIFIED_HITS: int = 5
 TRUST_RELATION_PARTIAL_HITS: int = 1
 
 # NCBI E-utilities esearch endpoint (no key: 3 rps; NCBI_API_KEY env raises to 10 rps).
-# PubMed is the PRIMARY validator: biomedical domain fit is exact and it is free; the
-# self-hosted Firecrawl fallback (FIRECRAWL_BASE_URL env) covers non-biomedical sources.
 PUBMED_ESEARCH_URL: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 # 3.4 requests/second ceiling under the no-key 3 rps policy (the 0.1 headroom absorbs jitter
 # in NCBI's window accounting); with NCBI_API_KEY set the client uses a 0.11s delay for 9 rps.
 PUBMED_THROTTLE_SECONDS: float = 0.29
 PUBMED_THROTTLE_SECONDS_KEYED: float = 0.11
-
-# Self-hosted Firecrawl fallback for validate-trust (duckduckgo-search was REJECTED: the
-# library renamed and DDG's 202 rate-limit breakage makes it unreliable for a scored corpus
-# workflow). Base URL carries no path -- the client appends /v1/search.
-FIRECRAWL_BASE_URL: str = environ.get("FIRECRAWL_BASE_URL", "http://localhost:3002")

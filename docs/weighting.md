@@ -103,8 +103,8 @@ relmedner validate-trust
    and deterministic.
 
 Driver settings live in the optional top-level `x-trust:` section of `ingests.yaml`
-(`sample_size`, `backend`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
-Secrets (NCBI/Firecrawl keys) never go in the yaml, env only:
+(`sample_size`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
+Secrets (NCBI keys) never go in the yaml, env only:
 
 Notes:
 
@@ -116,9 +116,9 @@ Notes:
   source that scored nothing says which failure it hit: `all N queries errored` (fix the
   network or the key and re-run) versus `sampled records had no entities/relations to
   validate` (the source is not literature-validatable, keep its declared prior).
-- Backend: PubMed E-utilities (default; free, 3 req/s, 10 with a free `NCBI_API_KEY`).
-  For non-biomedical sources use `--backend firecrawl` against your self-hosted
-  instance (`FIRECRAWL_BASE_URL`, optional `FIRECRAWL_API_KEY`).
+- Backend: PubMed E-utilities only, the Firecrawl web-search fallback is gone. NCBI allows
+  3 req/s unauthenticated and 10 with a free `NCBI_API_KEY`; the client throttles itself to
+  about 3.4 and about 9 req/s to stay inside those windows.
 - Unauthenticated PubMed rate-limits at 3 req/s, and a small sample hits it: a 2-record run
   over `Pennlaine/Medical-Entity-JSON-Extraction` recorded `HTTP Error 429: Too Many
   Requests` on three of its queries (wenceslaus, 2026-09-23). Set `NCBI_API_KEY`, or lower
@@ -185,8 +185,15 @@ on the row key and refuses to stamp two entries that disagree.
 | `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` | silver | 0.7 | 0.8 | same tweet texts with no gold spans, fullmap-mined, so distant labels |
 | `ruslan/bioleaflets-biomedical-ner` (train + test, one row key) | silver | 0.7 | 0.8 | EMA regulatory leaflets; the card does not state annotation provenance |
 | `Pennlaine/Medical-Entity-JSON-Extraction` | silver | 0.7 | 0.8 | 50 instruction-tuned vignettes, hub card body empty |
+| `bc5cdr/train.avro` | gold | 1.0 | 1.0 | BioCreative V CDR, human-annotated gold chemical and disease spans |
+| `bc5cdr/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
+| `bc5cdr/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
+| `bigbio/chemprot` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioCreative VI ChemProt, expert-annotated chemical-protein relations |
+| `wcole3/biored-parquet` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioRED, expert-annotated biomedical relations |
+| `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
+| `bigbio/ehr_rel` (four declared ingests, one row key) | general | 0.5 | 0.7 | clinician-rated SNOMED concept-pair relatedness, no text context; 0.5 is the declared weight |
 | `nvidia/Nemotron-PII` (train + test, one row key -- weights must stay equal) | general | 0.4 | 0.6 | PII not biomedical, synthetic; kept for span diversity |
 | `aps/super_glue` multirc | general | 0.3 | 0.6 | classification task transfer, non-med |
 | `aps/super_glue` record | general | 0.3 | 0.6 | reading-comprehension transfer, non-med |

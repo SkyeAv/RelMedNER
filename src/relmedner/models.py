@@ -100,6 +100,24 @@ class RowFilters(StrictBase):
     """drop rows whose joined text does NOT match this pattern"""
     exclude_regex: str | None = Field(None)
     """drop rows whose joined text DOES match this pattern"""
+    min_words: int | None = Field(None, ge=0)
+    """drop rows whose joined text has fewer whitespace tokens than this (C4/Gopher-style
+    word-count floor); None keeps the rule off and the row costs no tokenization"""
+    min_stop_word_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of closed-class English function words (FUNCTION_WORDS) is
+    BELOW this -- the cheap deterministic language/degeneracy proxy; None keeps it off"""
+    max_symbol_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of non-alphanumeric non-space characters is ABOVE this
+    (markup/code noise); None keeps it off"""
+    max_upper_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of all-caps alphabetic words is ABOVE this (shouting-caps
+    noise); None keeps it off"""
+    max_repeat_ngram_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of duplicated REPEAT_NGRAM_WORDS-word windows is ABOVE this
+    (repeated words/phrases); None keeps it off"""
+    max_short_line_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of lines shorter than SHORT_LINE_CHARS is ABOVE this (abnormal
+    line breaks: newline spam, OCR fragments); None keeps it off"""
 
     @model_validator(mode="after")
     def min_within_max(self: Self) -> Self:
@@ -243,8 +261,33 @@ class HuggingFaceJsonDataset(DatasetBase):
         return self.dataset
 
 
+class HuggingFaceParquetDataset(DatasetBase):
+    """parquet-builder ingest over one per-config file on the hub's refs/convert/parquet branch; see
+    relmedner.hf_parquet for why a script-era hub repo needs this route (main branch has only
+    loading-script files, datasets refuses script datasets, whole-revision parquet load fails on
+    mixed per-config schemas)"""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
+
+    source: Literal["hf_parquet"] = Field(...)
+    dataset: str = Field(...)
+    file: str = Field(..., min_length=1)
+    """path to one auto-convert parquet file under the hub repo, relative to the refs/convert/parquet
+    branch root (e.g. "ehr_rel_bigbio_pairs/train/0000.parquet"); min_length keeps the
+    hf://datasets/{dataset}@refs/convert/parquet/{file} URL well formed"""
+    split: str | None = Field(None)
+    match_on: list[MatchOn] | None = Field(None)
+    columns_out: list[str] = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        """the stream stamps rows with the repo id alone, so entries over one repo share a weight
+        slot; weights_by_source raises if they disagree"""
+        return self.dataset
+
+
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset,
+    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset | HuggingFaceParquetDataset,
     Field(discriminator="source"),
 ]
 
@@ -354,25 +397,13 @@ class ValidateTrustConfig(StrictBase):
     """the optional top-level `x-trust:` section of ingests.yaml: driver settings for the
     offline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags
     override these one-for-one, so the yaml holds the per-repo default and the command line
-    holds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,
+    holds the one-off experiment. Secrets (NCBI keys) NEVER ride here -- env only,
     ingests.yaml is a committed artifact"""
 
     sample_size: int = Field(TRUST_SAMPLE_SIZE, ge=1)
     """records sampled per source"""
-    backend: str = Field("pubmed")
-    """'pubmed' (E-utilities esearch, primary) or 'firecrawl' (self-hosted general-web fallback)"""
     report: str = Field("trust-report.jsonl")
     """JSONL report path"""
-
-    @field_validator("backend")
-    @classmethod
-    def backend_is_known(cls, value: str) -> str:
-        # a plain str with an explicit membership check, not Literal: Literal renders fine in
-        # the pydantic JSON Schema but dataclasses-avroschema cannot map it for avro schema
-        # generation (mirrors GazetteerPredicate.name_is_a_biolink_predicate)
-        if value not in ("pubmed", "firecrawl"):
-            raise ValueError(f"backend {value!r} is not 'pubmed' or 'firecrawl'")
-        return value
 
 
 class YamlIngests(StrictBase):
@@ -585,10 +616,23 @@ class WorkerNode(StrictBase):
     outputs: str = Field(...)
     """host directory the sdkworker writes avro shards into; collected back to the laptop after a run"""
 
+    polars_runtime: Literal["32", "64", "compat"] = Field("32")
+    """POLARS_FORCE_PKG for this host's sdkworker: "compat" on CPUs without AVX2/FMA/BMI2, where the
+    default runtime dies with SIGILL; the image ships both via tablassert[rt]"""
+
 
 class Cluster(StrictBase):
     ssh_user: str = Field(...)
+    jobmanager: str = Field(...)
+    """head host running the jobmanager stack; deploy, the beam driver, and shard collection all
+    run from this host's checkout, and it also carries a taskmanager + sdkworker of its own"""
     workers: list[WorkerNode] = Field(...)
+
+    @model_validator(mode="after")
+    def _jobmanager_is_a_worker(self: Self) -> Self:
+        if self.jobmanager not in {worker.host for worker in self.workers}:
+            raise ValueError(f"jobmanager host {self.jobmanager!r} is not a declared worker")
+        return self
 
 
 class FlinkJob(BaseModel):

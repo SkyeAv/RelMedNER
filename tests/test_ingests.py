@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pathlib
 import re
+from collections import Counter
 
 import pytest
 
@@ -14,6 +15,7 @@ from relmedner.models import (
     GazetteerSpec,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
+    HuggingFaceParquetDataset,
     LocalAvroDataset,
     LocalDelimitedDataset,
     MatchOn,
@@ -175,10 +177,9 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("paragraph", "question", "answer", "label"),
         ),
     ),
-    # the local-source entries: no subset/split/match_on/columns_out, just the avro path, so their
-    # tuples are deliberately shorter than the hf ones above (each still carries the weight field,
-    # which DatasetBase declares for every source). The interventions block and the six fewrel
-    # blocks were printed by probe.py --freeze (generated, never hand-written) and pasted verbatim.
+    # the one local-source entry: no subset/split/match_on/columns_out, just the avro path, so its
+    # tuple is deliberately shorter than the hf ones above (it still carries the weight field, which
+    # DatasetBase declares for every source)
     "interventions/interventions.avro": (
         "local",
         (
@@ -187,29 +188,30 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "interventions/interventions.avro",
         ),
     ),
-    "fewrel/train_wiki.avro": (
+    # bc5cdr (US-001): one local avro container per split, each with its own row_key slot
+    "bc5cdr/train.avro": (
         "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/train_wiki.avro"),
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/train.avro",
+        ),
     ),
-    "fewrel/val_wiki.avro": (
+    "bc5cdr/dev.avro": (
         "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_wiki.avro"),
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/dev.avro",
+        ),
     ),
-    "fewrel/val_nyt.avro": (
+    "bc5cdr/test.avro": (
         "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_nyt.avro"),
-    ),
-    "fewrel/val_semeval.avro": (
-        "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_semeval.avro"),
-    ),
-    "fewrel/val_pubmed.avro": (
-        "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_pubmed.avro"),
-    ),
-    "fewrel/pubmed_unsupervised.avro": (
-        "local",
-        (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro"),
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/test.avro",
+        ),
     ),
     "knowledgator/sentence_rex": (
         "hf",
@@ -367,6 +369,45 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text", "spans"),
         ),
     ),
+    # wcole3/biored-parquet declares one ingest PER SPLIT off one repo id with no subset (the
+    # config-less load streams the default biored_bigbio_kb config), so entry_key split-qualifies
+    # the three locks exactly like nvidia/Nemotron-PII above
+    "wcole3/biored-parquet:train": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "train",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:validation": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "validation",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:test": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "test",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (
@@ -479,37 +520,220 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
         ),
     ),
+    # agentlans/json-extraction: one lock per source config; the six entries share the repo-id row
+    # key, so entry_key qualifies on the subset (the hub config is the real filter)
+    "agentlans/json-extraction:owkin-medical_knowledge_from_extracts": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "owkin-medical_knowledge_from_extracts",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:ProfessorBob-relation_extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "relations")),
+            1.0,
+            "agentlans/json-extraction",
+            "ProfessorBob-relation_extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:roborovski-dolly-entity-extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "roborovski-dolly-entity-extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:sandeeppanem-resume-json-extraction-5k": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "sandeeppanem-resume-json-extraction-5k",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:Jiraya-html_to_json_information_extraction_dataset": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "Jiraya-html_to_json_information_extraction_dataset",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:HenriqueGodoy-extract-0": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures",)),
+            1.0,
+            "agentlans/json-extraction",
+            "HenriqueGodoy-extract-0",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
     "Pennlaine/Medical-Entity-JSON-Extraction": (
         "hf",
         (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
     ),
+    "bigbio/chemprot:chemprot_full_source:train": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chemprot:chemprot_full_source:validation": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "validation",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "bigbio/chemprot:chemprot_full_source:test": (
+        "hf",
+        (
+            ("script", "ChemprotScript", ("entities", "relations")),
+            1.0,
+            "bigbio/chemprot",
+            "chemprot_full_source",
+            "test",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    # the four bigbio/ehr_rel entries share one repo-id row key and one weight (0.5); the file is
+    # the scalar discriminator, exactly like the hf_json train.json key above
+    "bigbio/ehr_rel:ehr_rel_a_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_a_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_b_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_b_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_bigbio_pairs/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_bigbio_pairs/train/0000.parquet",
+            "train",
+            None,
+            ("text_1", "text_2", "label"),
+        ),
+    ),
+    # which DatasetBase declares for every source). The interventions block and the six fewrel
+    "fewrel/train_wiki.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/train_wiki.avro")),
+    "fewrel/val_wiki.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_wiki.avro")),
+    "fewrel/val_nyt.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_nyt.avro")),
+    "fewrel/val_semeval.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_semeval.avro")),
+    "fewrel/val_pubmed.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_pubmed.avro")),
+    "fewrel/pubmed_unsupervised.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro")),
 }
 
 
-def entry_key(payload: tuple[object, ...], split_qualified: bool = False) -> str:
-    """one key per DECLARED INGEST, not per repo: the discriminator after the repo id (subset for
-    "hf", file for "hf_json") joins the key whenever one is declared, because two ingests read
-    different subsets of aps/super_glue and a bare repo id would collide in the EXPECTED literal --
-    split qualifies instead -- or the train and test locks would collide and one would silently
-    vanish. A repo id declared once per split (nvidia/Nemotron-PII, ruslan/bioleaflets-biomedical-ner)
-    therefore carries the split on BOTH keys, ':train' and ':test'."""
+def entry_base_key(payload: tuple[object, ...]) -> str:
+    """repo id plus a scalar discriminator (subset for "hf", file for "hf_json"): two ingests
+    reading different subsets of aps/super_glue already collide at this base, and a bare repo id
+    would silently lose one lock in the EXPECTED literal"""
     dataset = str(payload[2])
     discriminator = payload[3] if len(payload) > 3 else None
     # only a SCALAR discriminator qualifies the key: for the local sources payload position 3 is
     # columns_out (a tuple), and there the declared path is already unique per file
-    if split_qualified and not isinstance(discriminator, str) and len(payload) > 4 and isinstance(payload[4], str):
-        discriminator = payload[4]
     return f"{dataset}:{discriminator}" if isinstance(discriminator, str) else dataset
 
 
+def entry_key(payload: tuple[object, ...], colliding_bases: set[str]) -> str:
+    """one key per DECLARED INGEST, not per repo: a base key declared on more than one ingest
+    (nvidia/Nemotron-PII once PER SPLIT, bigbio/chemprot sharing dataset AND subset) gets the
+    split appended, so the locks coexist instead of one silently overwriting the other in
+    tuples_by_ingest -- the loser would vanish from both locks and the failure would be silent.
+    Kept identical to .pi/skills/add-dataset/scripts/probe.py (report_freeze, iter_declared),
+    which freezes and matches on these keys"""
+    base = entry_base_key(payload)
+    if base not in colliding_bases:
+        return base
+    split = payload[4] if len(payload) > 4 else None
+    if not isinstance(split, str):
+        raise ValueError(f"entry base {base!r} is declared on more than one ingest but its split {split!r} is not a str")
+    return f"{base}:{split}"
+
+
 def tuples_by_ingest() -> dict[str, tuple[object, ...]]:
-    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a repo id
-    # appearing on more than one declared ingest gets split-qualified keys (see entry_key)
+    # the repo id moved to payload position 2 when the weight field joined DatasetBase; a base
+    # key appearing on more than one declared ingest gets split-qualified keys (see entry_key)
     entries: list[tuple[str, tuple[object, ...]]] = list(YamlIngestsParser().generate_tuples())
-    declared: dict[str, int] = {}
-    for _, payload in entries:
-        declared[str(payload[2])] = declared.get(str(payload[2]), 0) + 1
-    return {entry_key(payload, split_qualified=declared[str(payload[2])] > 1): (source, payload) for source, payload in entries}
+    base_counts: Counter[str] = Counter(entry_base_key(payload) for _, payload in entries)
+    colliding: set[str] = {base for base, count in base_counts.items() if count > 1}
+    keyed: dict[str, tuple[object, ...]] = {}
+    for source, payload in entries:
+        key = entry_key(payload, colliding)
+        if key in keyed:
+            raise ValueError(f"entry key {key!r} is produced by more than one declared ingest")
+        keyed[key] = (source, payload)
+    return keyed
 
 
 @pytest.mark.parametrize("ingest", sorted(EXPECTED))
@@ -533,6 +757,7 @@ _DOC_MODELS = (
     FullmapTask,
     HuggingFaceDataset,
     HuggingFaceJsonDataset,
+    HuggingFaceParquetDataset,
     LocalAvroDataset,
     LocalDelimitedDataset,
     MatchOn,

@@ -9,8 +9,9 @@ from typing import Any, ClassVar, Self
 import pytest
 from fastavro import parse_schema, writer
 
-from relmedner import hf_json
+from relmedner import hf_json, hf_parquet
 from relmedner.hf_json import HuggingFaceJsonDataStream
+from relmedner.hf_parquet import HuggingFaceParquetDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
@@ -72,6 +73,7 @@ def test_build_stream_constructs_every_declared_ingest() -> None:
     assert {type(stream) for stream in Built} == {
         HuggingFaceDataStream,
         HuggingFaceJsonDataStream,
+        HuggingFaceParquetDataStream,
         LocalAvroDataStream,
         LocalDelimitedDataStream,
     }
@@ -123,6 +125,7 @@ def test_rebuild_task_round_trips_every_declared_task_type() -> None:
 
 def test_registry_keys_on_the_source_discriminator() -> None:
     assert SOURCE_REGISTRY["hf"] is HuggingFaceDataStream
+    assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
     assert all(Source == Stream.SOURCE for Source, Stream in SOURCE_REGISTRY.items())
 
 
@@ -255,6 +258,169 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
         "train",
         None,
         ("tokenized_text", "ner"),
+    )
+
+    with pytest.raises(RuntimeError, match="hub exploded"):
+        list(Stream.rows())
+
+
+# ----------------------------------------------------------------------- hf_parquet --
+
+
+def test_build_stream_constructs_the_hf_parquet_source_positionally() -> None:
+    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced must
+    land in HuggingFaceParquetDataStream.__init__ in model field order minus source"""
+    Source, Payload = (
+        "hf_parquet",
+        (
+            ("script", "GlinerBiomedScript", ("entities", "relations")),
+            1.0,
+            "bigbio/ehr_rel",
+            "ehr_rel_bigbio_pairs/train/0000.parquet",
+            "train",
+            None,
+            ("text", "relations"),
+        ),
+    )
+
+    Stream: DataStream = build_stream(Source, Payload)
+
+    assert isinstance(Stream, HuggingFaceParquetDataStream)
+    assert Stream.name == "bigbio/ehr_rel"
+    assert Stream.task == ("script", "GlinerBiomedScript", ("entities", "relations"))
+    assert Stream.weight == 1.0
+    assert Stream.file == "ehr_rel_bigbio_pairs/train/0000.parquet"
+    assert Stream.columns_out == ("text", "relations")
+
+
+def test_registry_keys_the_hf_parquet_source() -> None:
+    assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
+
+
+def test_hf_parquet_rows_load_the_convert_branch_file_and_honor_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the URL must pin the refs/convert/parquet revision and ONE per-config file: the main branch of a
+    script-era repo has only loading scripts (refused outright by datasets) and the whole-revision load
+    fails on mixed schemas, so only this exact route loads (proved end to end by the wenceslaus probes)"""
+    Calls: dict[str, Any] = {}
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        Calls["path"] = path
+        Calls["name"] = name
+        Calls["kwargs"] = kwargs
+        return [
+            {"text": "Aspirin treats headache.", "relations": ["treats"], "config": "ehr_rel_bigbio_pairs"},
+            {"text": "Placebo trial.", "relations": [], "config": "other_config"},
+        ]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text", "relations"),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Calls == {
+        "path": "parquet",
+        "name": None,
+        "kwargs": {
+            "data_files": "hf://datasets/bigbio/ehr_rel@refs/convert/parquet/ehr_rel_bigbio_pairs/train/0000.parquet",
+            "split": "train",
+        },
+    }
+    assert Streamed == [("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Aspirin treats headache.", ["treats"])))]
+
+
+def test_hf_parquet_rows_without_a_match_declaration_yield_every_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """an undeclared match_on takes the unfiltered fast path: every row yielded, no counting, no guard,
+    byte-identical to the hf_json unfiltered path"""
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"text": "Aspirin treats headache."}, {"text": "Placebo trial."}]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        None,
+        ("text",),
+    )
+
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Streamed == [
+        ("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Aspirin treats headache.",))),
+        ("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Placebo trial.",))),
+    ]
+
+
+def test_hf_parquet_filtered_path_counts_candidates_and_raises_zero_yield(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mirrors the hf_json counting semantics: match_on drops happen BEFORE the candidate count,
+    filter drops after it, and a filters block dropping 100% of a non-empty candidate set raises
+    ZeroYieldError naming the count instead of silently shipping an empty training set"""
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {"text": "match_on drop", "config": "other"},
+            {"text": "tiny", "config": "ehr_rel_bigbio_pairs"},
+            {"text": "kept row", "config": "ehr_rel_bigbio_pairs"},
+        ]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Kept: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text",),
+        filters=RowFilters(min_text_len=5),
+    )
+
+    Streamed: list[StreamedRow] = list(Kept.rows())
+
+    assert Streamed == [("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("kept row",)))]
+
+    Dropped: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text",),
+        filters=RowFilters(min_text_len=1000),
+    )
+
+    with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+        list(Dropped.rows())
+
+
+def test_hf_parquet_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a load_dataset error (hub outage, missing auto-convert file) is a real ingest failure; the
+    stream must surface it unwrapped"""
+
+    def Boom(path: str, name: Any = None, **kwargs: Any) -> Any:
+        raise RuntimeError("hub exploded")
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", Boom)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        None,
+        ("text",),
     )
 
     with pytest.raises(RuntimeError, match="hub exploded"):

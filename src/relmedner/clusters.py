@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from socket import AF_INET, SOCK_DGRAM, socket
 from typing import Self
 
 from apache_beam.options.pipeline_options import PipelineOptions
@@ -9,7 +8,6 @@ from relmedner.constants import (
     CLUSTER_YAML,
     FLINK_REST_PORT,
     FLINK_VERSION,
-    LOCAL_HOST,
     WORKER_IMAGE_NAME,
     WORKER_POOL_PORT,
 )
@@ -26,16 +24,16 @@ class YamlClusterParser(YamlParser):
         return Cluster.model_validate(self.parse())
 
     def remotes(self: Self) -> list[WorkerNode]:
-        return [worker for worker in self.parse_cluster().workers if worker.host != LOCAL_HOST]
+        """every worker that runs a taskmanager + sdkworker — all of them, including the head
 
-    def local_worker(self: Self) -> WorkerNode:
-        return next(worker for worker in self.parse_cluster().workers if worker.host == LOCAL_HOST)
+        compose stacks and image pushes always go through ssh (the head deploys to itself the same
+        way), so there is no local/remote split anymore
+        """
+        return list(self.parse_cluster().workers)
 
     def jobmanager(self: Self) -> str:
-        """laptop address as remotes see it — re-resolved per run because wifi and vpn move it"""
-        with socket(AF_INET, SOCK_DGRAM) as probe:
-            probe.connect((self.remotes()[0].host, 1))
-            return probe.getsockname()[0]
+        """head host from cluster.yaml — deploy, submit, and collection all run there"""
+        return self.parse_cluster().jobmanager
 
     def flink_master(self: Self) -> str:
         return f"{self.jobmanager()}:{FLINK_REST_PORT}"

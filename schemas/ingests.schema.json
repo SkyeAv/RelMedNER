@@ -411,6 +411,128 @@
       "title": "HuggingFaceJsonDataset",
       "type": "object"
     },
+    "HuggingFaceParquetDataset": {
+      "additionalProperties": false,
+      "description": "parquet-builder ingest over one per-config file on the hub's refs/convert/parquet branch; see\nrelmedner.hf_parquet for why a script-era hub repo needs this route (main branch has only\nloading-script files, datasets refuses script datasets, whole-revision parquet load fails on\nmixed per-config schemas)",
+      "properties": {
+        "task": {
+          "discriminator": {
+            "mapping": {
+              "fullmap": "#/$defs/FullmapTask",
+              "script": "#/$defs/ScriptTask"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ScriptTask"
+            },
+            {
+              "$ref": "#/$defs/FullmapTask"
+            }
+          ],
+          "title": "Task"
+        },
+        "weight": {
+          "default": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
+        },
+        "filters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RowFilters"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "const": "hf_parquet",
+          "title": "Source",
+          "type": "string"
+        },
+        "dataset": {
+          "title": "Dataset",
+          "type": "string"
+        },
+        "file": {
+          "minLength": 1,
+          "title": "File",
+          "type": "string"
+        },
+        "split": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Split"
+        },
+        "match_on": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/MatchOn"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Match On"
+        },
+        "columns_out": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Columns Out",
+          "type": "array"
+        }
+      },
+      "required": [
+        "task",
+        "source",
+        "dataset",
+        "file",
+        "columns_out"
+      ],
+      "title": "HuggingFaceParquetDataset",
+      "type": "object"
+    },
     "LocalAvroDataset": {
       "additionalProperties": false,
       "description": "an avro container built out-of-band and read from disk by LocalAvroDataStream\n\npath is resolved with expanduser at stream time; the whole avro record ships to the declared\nscript, which owns the record shape (there is no columns_out projection like the hf streams\nhave, because the file's own schema is already the contract)",
@@ -687,6 +809,89 @@
           ],
           "default": null,
           "title": "Exclude Regex"
+        },
+        "min_words": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Words"
+        },
+        "min_stop_word_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Stop Word Ratio"
+        },
+        "max_symbol_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Symbol Ratio"
+        },
+        "max_upper_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Upper Ratio"
+        },
+        "max_repeat_ngram_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Repeat Ngram Ratio"
+        },
+        "max_short_line_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Short Line Ratio"
         }
       },
       "title": "RowFilters",
@@ -723,18 +928,13 @@
     },
     "ValidateTrustConfig": {
       "additionalProperties": false,
-      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI/Firecrawl keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
+      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
       "properties": {
         "sample_size": {
           "default": 50,
           "minimum": 1,
           "title": "Sample Size",
           "type": "integer"
-        },
-        "backend": {
-          "default": "pubmed",
-          "title": "Backend",
-          "type": "string"
         },
         "report": {
           "default": "trust-report.jsonl",
@@ -755,6 +955,7 @@
           "mapping": {
             "hf": "#/$defs/HuggingFaceDataset",
             "hf_json": "#/$defs/HuggingFaceJsonDataset",
+            "hf_parquet": "#/$defs/HuggingFaceParquetDataset",
             "local": "#/$defs/LocalAvroDataset",
             "local_delimited": "#/$defs/LocalDelimitedDataset"
           },
@@ -772,6 +973,9 @@
           },
           {
             "$ref": "#/$defs/HuggingFaceJsonDataset"
+          },
+          {
+            "$ref": "#/$defs/HuggingFaceParquetDataset"
           }
         ]
       },

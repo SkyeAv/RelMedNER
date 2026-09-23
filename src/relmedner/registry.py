@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from relmedner.hf_json import HuggingFaceJsonDataStream
+from relmedner.hf_parquet import HuggingFaceParquetDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
 from relmedner.models import RowFilters
@@ -13,6 +14,7 @@ SOURCE_REGISTRY: dict[str, type[DataStream]] = {
     LocalAvroDataStream.SOURCE: LocalAvroDataStream,
     LocalDelimitedDataStream.SOURCE: LocalDelimitedDataStream,
     HuggingFaceJsonDataStream.SOURCE: HuggingFaceJsonDataStream,
+    HuggingFaceParquetDataStream.SOURCE: HuggingFaceParquetDataStream,
 }
 
 

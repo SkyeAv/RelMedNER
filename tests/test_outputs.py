@@ -85,8 +85,9 @@ def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_p
     for record in Records:
         Example: TrainingExample = TrainingExample(**record)
         assert Example.text and Example.text.strip()
-        # per-source mixing weight stamped from the ingest declaration (all datasets declare 1.0 today)
-        assert Example.weight == 1.0
+        # per-source mixing weight stamped from the ingest declaration; the corpus no longer declares
+        # one uniform weight (bigbio/ehr_rel declares 0.5), so assert against the declared set
+        assert Example.weight in set(Ingests.weights_by_source().values())
         Populated: frozenset[str] = Example.populated()
         # subset contract, not exact equality; every shipped record carries at least one output shape
         # (the sentence_rex ingest emits relations only, so pinning "entities" here would fail it)

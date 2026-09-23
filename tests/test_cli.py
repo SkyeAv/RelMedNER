@@ -68,7 +68,6 @@ def test_validate_trust_command_registers_with_defaults() -> None:
     assert Command.__name__ == "validate_trust_command"
     # all driver defaults are None at the CLI: an absent flag defers to the x-trust yaml
     # section (resolve_trust_settings owns the precedence, tested in test_trust.py)
-    assert Bound.arguments.get("backend") is None
     assert Bound.arguments.get("report") is None
     assert Bound.arguments.get("sample_size") is None
 

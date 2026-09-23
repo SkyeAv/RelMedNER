@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Self
 
 from fastavro import reader
 
-from relmedner.constants import DATA
+from relmedner.constants import DATA, FULLMAP_DIR
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
 from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
@@ -44,6 +44,16 @@ class LocalAvroDataStream(DataStream):
             # python 3.13 pathlib propagates PermissionError from is_file() probes; an
             # unreadable parent means the caller's path is not a usable file either way
             resolved = Path(str(DATA)) / path
+        # last resort on the cluster: nothing packaged and the declared path is a laptop path
+        # (~/Desktop/...). the sdkworker only mounts the fullmap bundle, so out-of-band sources
+        # are staged beside it; the row key stays the DECLARED path so mixing weights resolve
+        try:
+            found: bool = resolved.is_file()
+        except OSError:
+            found = False
+        staged: Path = FULLMAP_DIR / Path(path).name
+        if not found and staged.is_file():
+            resolved = staged
         self.path: Path = resolved
 
     def rows(self: Self) -> Iterator[StreamedRow]:
