@@ -221,8 +221,33 @@ class HuggingFaceJsonDataset(DatasetBase):
         return self.dataset
 
 
+class HuggingFaceParquetDataset(DatasetBase):
+    """parquet-builder ingest over one per-config file on the hub's refs/convert/parquet branch; see
+    relmedner.hf_parquet for why a script-era hub repo needs this route (main branch has only
+    loading-script files, datasets refuses script datasets, whole-revision parquet load fails on
+    mixed per-config schemas)"""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "file", "split", "match_on", "columns_out")
+
+    source: Literal["hf_parquet"] = Field(...)
+    dataset: str = Field(...)
+    file: str = Field(..., min_length=1)
+    """path to one auto-convert parquet file under the hub repo, relative to the refs/convert/parquet
+    branch root (e.g. "ehr_rel_bigbio_pairs/train/0000.parquet"); min_length keeps the
+    hf://datasets/{dataset}@refs/convert/parquet/{file} URL well formed"""
+    split: str | None = Field(None)
+    match_on: list[MatchOn] | None = Field(None)
+    columns_out: list[str] = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        """the stream stamps rows with the repo id alone, so entries over one repo share a weight
+        slot; weights_by_source raises if they disagree"""
+        return self.dataset
+
+
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset,
+    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset | HuggingFaceParquetDataset,
     Field(discriminator="source"),
 ]
 

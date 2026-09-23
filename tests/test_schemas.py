@@ -62,6 +62,7 @@ def test_datasets_carries_source_discriminator() -> None:
         "mapping": {
             "hf": "#/$defs/HuggingFaceDataset",
             "hf_json": "#/$defs/HuggingFaceJsonDataset",
+            "hf_parquet": "#/$defs/HuggingFaceParquetDataset",
             "local": "#/$defs/LocalAvroDataset",
             "local_delimited": "#/$defs/LocalDelimitedDataset",
         },
