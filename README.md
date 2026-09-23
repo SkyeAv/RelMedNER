@@ -61,6 +61,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_85` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 150,311 |
 | `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
+| `bigbio/ehr_rel` (4 subsets, see [docs/ehr-rel.md](docs/ehr-rel.md)) | `script` -> `EhrRelScript` | `snomed_label_1`, `snomed_label_2`, `mean_rating` / `text_1`, `text_2`, `label` | relations | 111 + 3,630 + 3,741 + 3,741 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
 
@@ -77,6 +78,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/super-glue-record.md](docs/super-glue-record.md) -- the `aps/super_glue` `record` ingest, the one that ships general-domain text.
 - [docs/trialpanorama-database.md](docs/trialpanorama-database.md) -- the TrialPanorama `studies` subset this ingest mines.
 - [docs/nemotron-pii.md](docs/nemotron-pii.md) -- the NVIDIA Nemotron-PII corpus, the one general-domain ingest.
+- [docs/ehr-rel.md](docs/ehr-rel.md) -- the `bigbio/ehr_rel` concept-pair ingests and the `hf_parquet` source kind they need.
 
 ## Reddit corpora
 
