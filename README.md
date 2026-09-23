@@ -55,6 +55,10 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `aps/super_glue` (`multirc`) | `script` -> `SuperGlueMultiRCScript` | `paragraph`, `question`, `answer`, `label` | classifications | 27,243 |
 | `aps/super_glue` (`record`) | `script` -> `SuperGlueRecordScript` | `passage`, `query`, `entities`, `entity_spans`, `answers` | entities, classifications | 100,730 |
 | `knowledgator/PubMedAbstractsNER` | `script` -> `PubmedAbstractsScript` | `tokenized_text`, `ner` | entities, relations | 35,000 |
+| `thunlp/docred` (`train_annotated`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 3,053 |
+| `thunlp/docred` (`train_distant`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 101,873 |
+| `thunlp/docred` (`dev`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities, relations | 998 |
+| `thunlp/docred` (`test`) | `script` -> `DocredScript` | `sents`, `vertexSet`, `labels` | entities | 1,000 |
 | `nvidia/Nemotron-PII` (train + test) | `script` -> `NemotronPiiScript` | `text`, `spans` | entities | 200,000 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
@@ -75,6 +79,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/ingests.md](docs/ingests.md) -- ingest resolution chains and gates for every table row.
 - [docs/ctkp-interventions.md](docs/ctkp-interventions.md) -- the `source: local` avro-container ingest and its schema.
 - [docs/deduplication.md](docs/deduplication.md) -- the dedup stage every merged `TrainingExample` passes through before Avro write.
+- [docs/docred.md](docs/docred.md) -- the `thunlp/docred` document-level relation ingests over the raw hub `json.gz` files.
 - [docs/output.md](docs/output.md) -- the Avro `TrainingExample` records and their provenance fields.
 - [docs/fullmap-mining.md](docs/fullmap-mining.md) -- how fullmap tasks mine n-gram spans against the local redb per batch.
 - [docs/qualifiers.md](docs/qualifiers.md) -- the six DAKP qualifier slots on gazetteer relations and negation.
