@@ -8,7 +8,7 @@ import cyclopts
 
 from relmedner.clusters import YamlClusterParser
 from relmedner.collect import collect_outputs
-from relmedner.constants import DEFAULT_OUTPUT, LOCAL_HOST
+from relmedner.constants import DEFAULT_OUTPUT
 from relmedner.deploy import deploy_cluster, run_cmd
 from relmedner.enums import DedupMode
 from relmedner.ingests import YamlIngestsParser
@@ -16,6 +16,7 @@ from relmedner.models import RunConfig
 from relmedner.monitor import fetch_jobs, job_ids, watch_jobs
 from relmedner.pipeline import BeamPipeline
 from relmedner.schemas import cluster_schema, ingests_schema
+from relmedner.validate import PubMedClient, resolve_trust_settings, suggested_yaml, validate_sources, write_report
 
 APP: cyclopts.App = cyclopts.App()
 
@@ -43,7 +44,30 @@ def build_dataset(
     before: frozenset[str] = job_ids(fetch_jobs(rest_url))
     BeamPipeline(options=Parser.runner_options(parallelism)).run(Config)
     watch_jobs(rest_url, before)
-    collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, LOCAL_HOST, run_cmd)
+    # the driver runs on the head host, whose worker entry is the collection source this process
+    # can read directly; every other worker's shards arrive over ssh (gateway hop from off-LAN)
+    collect_outputs(tuple(ClusterSpec.workers), ClusterSpec.ssh_user, Config.artifact_name(), output, Parser.jobmanager(), run_cmd)
+
+
+@APP.command(name="validate-trust")
+def validate_trust_command(
+    sample_size: Annotated[int | None, cyclopts.Parameter("--sample-size", alias="-n")] = None,
+    source: Annotated[str | None, cyclopts.Parameter("--source", alias="-s")] = None,
+    report: Annotated[str | None, cyclopts.Parameter("--report", alias="-o")] = None,
+    test_run: Annotated[bool, cyclopts.Parameter(alias="-t")] = False,
+) -> None:
+    """offline literature validation suggesting per-source trust values (docs/weighting.md).
+    Samples records through the real dispatch path, queries PubMed E-utilities, writes the
+    per-record JSONL report to --report and prints the suggested `trust:` yaml for
+    hand-committing to ingests.yaml. Settings come from the optional top-level `x-trust:`
+    section of ingests.yaml, overridden flag-by-flag; secrets (NCBI_API_KEY) come from env only"""
+    Ingests = YamlIngestsParser().parse_ingests()
+    Size, Report = resolve_trust_settings(sample_size, report, Ingests.x_trust)
+    client = PubMedClient()
+    Config: RunConfig = RunConfig.from_flags(test_run, Report, DedupMode.OFF)
+    summaries, records = validate_sources(Ingests, Config, client, Size, source)
+    write_report(Path(Report), summaries, records)
+    print(suggested_yaml(summaries))
 
 
 @APP.command(name="schema")

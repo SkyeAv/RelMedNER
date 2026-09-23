@@ -125,13 +125,28 @@ class ResolutionGate:
             "chemical drug compound substance molecule medication nutrient metabolite reagent hormone toxin ingredient pharmac",
             "ChemicalEntity MolecularEntity Drug Food ChemicalMixture Treatment Protein Polypeptide",
         ),
+        # generic/brand (BioLeaflets generic_name/brand_name drug labels) added by measurement:
+        # 'brand name' triggered no bucket and let Protein (368 spans) and other non-chemical
+        # classes land on drug labels; this bucket demands chemical compatibility. 'generic name'
+        # keeps a residual hole: the gene bucket's 'gene' key substring-matches inside 'generic'
+        # and is_label_compatible accepts when ANY triggered bucket allows, so Protein/GeneFamily
+        # stay reachable there (585 measured spans) -- closing it needs an any->all change to the
+        # bucket composition rule, which is not an additive bucket change
+        "drugname": _bucket(
+            "generic brand",
+            "Drug ChemicalMixture MolecularEntity ChemicalEntity Food Treatment",
+        ),
         "gene": _bucket(
             "gene protein enzyme peptide receptor transcript rna dna cytokine antibody antigen kinase mutation genetic variation variant allele",
             "GenomicEntity Gene Protein Polypeptide NucleicAcidEntity MacromolecularComplex"
             " ChemicalEntity GeneFamily ProteinFamily ProteinDomain SequenceVariant",
         ),
         "disease": _bucket(
-            "disease disorder condition syndrome symptom illness pathology injury infection cancer tumor psychopathology phenotype sign",
+            # dx/problem (BioLeaflets dx_name/problem, normalized) added by measurement: with no
+            # bucket opinion those labels let fullmap land InformationContentEntity (2,274 spans),
+            # AnatomicalEntity (220), Gene (257: 226 dx + 31 problem), and Publication (87) on
+            # disease-labeled spans
+            "disease disorder condition syndrome symptom illness pathology injury infection cancer tumor psychopathology phenotype sign dx problem",
             "DiseaseOrPhenotypicFeature Disease PhenotypicFeature PathologicalProcess"
             " ClinicalFinding BiologicalProcess OrganismTaxon Phenomenon ClinicalAttribute",
         ),
@@ -400,6 +415,15 @@ class ScriptUtils:
         if not isinstance(decoded, list) or any(not isinstance(item, str) for item in decoded):
             return []
         return decoded
+
+    @classmethod
+    def parse_literal_dict(cls, value: Any) -> dict[str, Any]:
+        """safely decode python-repr string columns that carry a dict (ast.literal_eval, no code
+        execution); real dicts pass through and anything else (None, junk strings, lists, quoted
+        strings, malformed reprs) yields {} so callers skip the section instead of crashing or
+        coercing (skip-don't-coerce, mirroring parse_literal_list)"""
+        decoded: Any = cls._decode_container(value)
+        return decoded if isinstance(decoded, dict) else {}
 
     @staticmethod
     def _decode_container(value: Any) -> Any:

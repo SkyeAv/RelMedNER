@@ -13,6 +13,8 @@ dependencies = [
     "dataclasses-avroschema[pydantic]>=0.70.9",
     "datasets>=5.0.1",
     "fastavro>=1.12.2",
+    # runtime, not dev: fullmap mining loads gliner2's word splitter inside the sdkworkers. the base
+    # install is light (pydantic/requests/tqdm); torch only arrives via its local/train extras
     "gliner2>=0.1.0",
     "pydantic>=2.13.5",
     "pyyaml>=6.0.3",

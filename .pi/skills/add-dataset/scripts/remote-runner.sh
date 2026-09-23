@@ -23,10 +23,11 @@ MODE="${3:?usage: remote-runner.sh TREE LOG MODE [extra args...]}"
 shift 3
 
 UV_BIN="${UV_BIN:-$HOME/bin/uv}"
+# default must string-equal the literal the remote-gate.sh sed patch writes into constants.py:
+# tests/test_constants.py captures FULLMAP_DIR (this export) at collection and reloads it envless
+# against the patched literal, so a diverging default fails the envless-stability tests ($HOME on
+# this box is /users/sgoetz, but sed writes /home/sgoetz)
 FULLMAP="${RELMEDNER_FULLMAP_DIR:-/home/sgoetz/Desktop/fullmap}"
-# pinned to the literal the gate sed bakes into constants.py: $HOME here is /users/sgoetz
-# while the sed writes /home/sgoetz, and tests/test_constants.py captures the env value at
-# import and reloads against the baked default, so the two strings must match exactly
 SKILL_DIR="$TREE/.pi/skills/add-dataset"
 
 # the remote environment block from references/remote-wenceslaus.md: absolute uv (the snap uv on

@@ -125,6 +125,7 @@ def test_rebuild_task_round_trips_every_declared_task_type() -> None:
 
 def test_registry_keys_on_the_source_discriminator() -> None:
     assert SOURCE_REGISTRY["hf"] is HuggingFaceDataStream
+    assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
     assert all(Source == Stream.SOURCE for Source, Stream in SOURCE_REGISTRY.items())
 
 
@@ -245,7 +246,7 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
     """a load_dataset error (e.g. the KeyError: 'feature' from a stale dataset_infos.json) is a real
     ingest failure; the stream must surface it unwrapped"""
 
-    def Boom(path: str, name: str | None = None, **kwargs: Any) -> Any:
+    def Boom(path: str, name: Any = None, **kwargs: Any) -> Any:
         raise RuntimeError("hub exploded")
 
     monkeypatch.setattr(hf_json, "load_dataset", Boom)
@@ -263,130 +264,166 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
         list(Stream.rows())
 
 
-# ------------------------------------------------------------------ hf_parquet source kind --
+# ----------------------------------------------------------------------- hf_parquet --
 
 
 def test_build_stream_constructs_the_hf_parquet_source_positionally() -> None:
-    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced
-    must land in HuggingFaceParquetDataStream.__init__ in model field order minus source
-    (task, weight, dataset, subset, split, match_on, columns_out). Construction is offline-safe:
-    the shard listing and the parquet download happen in rows(), never in the ctor."""
-    Stream: DataStream = build_stream(
+    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced must
+    land in HuggingFaceParquetDataStream.__init__ in model field order minus source"""
+    Source, Payload = (
         "hf_parquet",
         (
-            ("script", "GadBlurbScript", ("classifications",)),
+            ("script", "GlinerBiomedScript", ("entities", "relations")),
             1.0,
-            "bigbio/gad",
-            "gad_blurb_bigbio_text",
+            "bigbio/ehr_rel",
+            "ehr_rel_bigbio_pairs/train/0000.parquet",
             "train",
             None,
-            ("text", "labels"),
+            ("text", "relations"),
         ),
     )
 
+    Stream: DataStream = build_stream(Source, Payload)
+
     assert isinstance(Stream, HuggingFaceParquetDataStream)
-    assert Stream.name == "bigbio/gad"
-    assert Stream.task == ("script", "GadBlurbScript", ("classifications",))
+    assert Stream.name == "bigbio/ehr_rel"
+    assert Stream.task == ("script", "GlinerBiomedScript", ("entities", "relations"))
     assert Stream.weight == 1.0
-    assert Stream.subset == "gad_blurb_bigbio_text"
-    assert Stream.split == "train"
-    assert Stream.columns_out == ("text", "labels")
+    assert Stream.file == "ehr_rel_bigbio_pairs/train/0000.parquet"
+    assert Stream.columns_out == ("text", "relations")
 
 
 def test_registry_keys_the_hf_parquet_source() -> None:
     assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
 
 
-def _parquet_stream(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, Any]], **overrides: Any) -> HuggingFaceParquetDataStream:
-    """a parquet stream over in-memory rows: shard discovery and load_dataset are patched out, so
-    the production rows() loop (match_on -> evaluator -> counters) is what the test exercises"""
-    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", lambda dataset, subset, split: ["https://example.test/0000.parquet"])
-    monkeypatch.setattr(hf_parquet, "load_dataset", lambda *args, **kwargs: rows)
-    declared: dict[str, Any] = dict(
-        task=_QUALITY_TASK,
-        weight=1.0,
-        dataset="bigbio/gad",
-        subset="gad_blurb_bigbio_text",
-        split="train",
-        match_on=None,
-        columns_out=("text",),
-    )
-    declared.update(overrides)
-    return HuggingFaceParquetDataStream(**declared)  # type: ignore[arg-type]
+def test_hf_parquet_rows_load_the_convert_branch_file_and_honor_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the URL must pin the refs/convert/parquet revision and ONE per-config file: the main branch of a
+    script-era repo has only loading scripts (refused outright by datasets) and the whole-revision load
+    fails on mixed schemas, so only this exact route loads (proved end to end by the wenceslaus probes)"""
+    Calls: dict[str, Any] = {}
 
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        Calls["path"] = path
+        Calls["name"] = name
+        Calls["kwargs"] = kwargs
+        return [
+            {"text": "Aspirin treats headache.", "relations": ["treats"], "config": "ehr_rel_bigbio_pairs"},
+            {"text": "Placebo trial.", "relations": [], "config": "other_config"},
+        ]
 
-def test_hf_parquet_rows_list_shards_then_request_one_train_split(monkeypatch: pytest.MonkeyPatch) -> None:
-    """the builder must receive the LISTING's shard URLs as data_files and request the generated
-    'train' split (a data_files list has no hub split names); the subset/split addressing happens
-    at the listing, before the builder is ever involved"""
-    Seen: dict[str, Any] = {}
-
-    def FakeShards(dataset: str, subset: str, split: str) -> list[str]:
-        Seen["shard_args"] = (dataset, subset, split)
-        return ["https://example.test/0000.parquet"]
-
-    def FakeLoadDataset(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
-        Seen["builder_args"] = (args, kwargs)
-        return [{"text": "a"}]
-
-    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", FakeShards)
     monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
     Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
-        _QUALITY_TASK, 1.0, "bigbio/gad", "gad_blurb_bigbio_text", "train", None, ("text",)
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text", "relations"),
     )
 
-    list(Stream.rows())
+    Streamed: list[StreamedRow] = list(Stream.rows())
 
-    assert Seen["shard_args"] == ("bigbio/gad", "gad_blurb_bigbio_text", "train")
-    args, kwargs = Seen["builder_args"]
-    assert args == ("parquet",)
-    assert kwargs == {"data_files": ["https://example.test/0000.parquet"], "split": "train"}
-
-
-def test_hf_parquet_rows_project_declared_columns_and_honor_match_on(monkeypatch: pytest.MonkeyPatch) -> None:
-    Rows: list[dict[str, Any]] = [
-        {"text": "kept", "labels": ["1"], "domain": "ok"},
-        {"text": "dropped", "labels": ["0"], "domain": "other"},
-    ]
-    Stream: HuggingFaceParquetDataStream = _parquet_stream(monkeypatch, Rows, match_on=(("domain", ("ok",)),), columns_out=("text", "labels"))
-
-    Yielded: list[StreamedRow] = list(Stream.rows())
-
-    assert Yielded == [("bigbio/gad", (_QUALITY_TASK, ("kept", ["1"])))]
-    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 1
-    assert Stream.stats.dropped_by == {"match_on": 1}
+    assert Calls == {
+        "path": "parquet",
+        "name": None,
+        "kwargs": {
+            "data_files": "hf://datasets/bigbio/ehr_rel@refs/convert/parquet/ehr_rel_bigbio_pairs/train/0000.parquet",
+            "split": "train",
+        },
+    }
+    assert Streamed == [("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Aspirin treats headache.", ["treats"])))]
 
 
-def test_hf_parquet_zero_yield_guard_fires_and_the_quality_line_lands(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    """the fail-loud guard and the US-009 accounting are copied structure from the hf stream; both
-    must survive the copy, including the quality line landing BEFORE the guard raises"""
-    Rows: list[dict[str, Any]] = [{"text": "short"}, {"text": "tiny"}]
-    Stream: HuggingFaceParquetDataStream = _parquet_stream(monkeypatch, Rows, filters=RowFilters(min_text_len=1000))
+def test_hf_parquet_rows_without_a_match_declaration_yield_every_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """an undeclared match_on takes the unfiltered fast path: every row yielded, no counting, no guard,
+    byte-identical to the hf_json unfiltered path"""
 
-    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
-        with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
-            list(Stream.stream(RunConfig()))
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        return [{"text": "Aspirin treats headache."}, {"text": "Placebo trial."}]
 
-    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
-    assert len(Quality) == 1
-    assert Quality[0].getMessage() == "ingest quality bigbio/gad: rows_in=2 rows_out=0 dropped={min_text_len:2}"
-
-
-def test_hf_parquet_shard_discovery_fails_loud_on_an_empty_listing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """a typo'd subset/split matches zero listed shards; that is a declaration bug and must raise
-    at stream time, never silently stream an empty prefix"""
-    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", lambda *args: (_ for _ in ()).throw(ValueError("no parquet shards listed")))
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
     Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
-        _QUALITY_TASK,
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
         1.0,
-        "bigbio/gad",
-        "typoed_subset",
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
         "train",
         None,
         ("text",),
     )
 
-    with pytest.raises(ValueError, match="no parquet shards listed"):
+    Streamed: list[StreamedRow] = list(Stream.rows())
+
+    assert Streamed == [
+        ("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Aspirin treats headache.",))),
+        ("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("Placebo trial.",))),
+    ]
+
+
+def test_hf_parquet_filtered_path_counts_candidates_and_raises_zero_yield(monkeypatch: pytest.MonkeyPatch) -> None:
+    """mirrors the hf_json counting semantics: match_on drops happen BEFORE the candidate count,
+    filter drops after it, and a filters block dropping 100% of a non-empty candidate set raises
+    ZeroYieldError naming the count instead of silently shipping an empty training set"""
+
+    def FakeLoadDataset(path: str, name: Any = None, **kwargs: Any) -> list[dict[str, Any]]:
+        return [
+            {"text": "match_on drop", "config": "other"},
+            {"text": "tiny", "config": "ehr_rel_bigbio_pairs"},
+            {"text": "kept row", "config": "ehr_rel_bigbio_pairs"},
+        ]
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Kept: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text",),
+        filters=RowFilters(min_text_len=5),
+    )
+
+    Streamed: list[StreamedRow] = list(Kept.rows())
+
+    assert Streamed == [("bigbio/ehr_rel", (("script", "GlinerBiomedScript", ("entities", "relations")), ("kept row",)))]
+
+    Dropped: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        (("config", ("ehr_rel_bigbio_pairs",)),),
+        ("text",),
+        filters=RowFilters(min_text_len=1000),
+    )
+
+    with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+        list(Dropped.rows())
+
+
+def test_hf_parquet_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a load_dataset error (hub outage, missing auto-convert file) is a real ingest failure; the
+    stream must surface it unwrapped"""
+
+    def Boom(path: str, name: Any = None, **kwargs: Any) -> Any:
+        raise RuntimeError("hub exploded")
+
+    monkeypatch.setattr(hf_parquet, "load_dataset", Boom)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        ("script", "GlinerBiomedScript", ("entities", "relations")),
+        1.0,
+        "bigbio/ehr_rel",
+        "ehr_rel_bigbio_pairs/train/0000.parquet",
+        "train",
+        None,
+        ("text",),
+    )
+
+    with pytest.raises(RuntimeError, match="hub exploded"):
         list(Stream.rows())
 
 
@@ -532,3 +569,79 @@ def test_local_unfiltered_pass_counts_without_dropping(tmp_path: Path) -> None:
     assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["a", "b"]
     assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 2
     assert Stream.stats.dropped_by == {}
+
+
+# ------------------------------------------------- US-002 always-on cap on every source --
+
+_OVER_CAP: str = "word " * 7000  # 35000 joined chars > MAX_TEXT_TOKENS * CHARS_PER_TOKEN (32768)
+
+
+def test_hf_filters_none_source_still_drops_over_cap_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the cap is ALWAYS-ON: with no declared filters the stream must still drop an over-cap row
+    and attribute it to max_tokens, while a short row yields unchanged -- before effective_filters
+    the evaluator only ran when filters were declared, so unfiltered sources leaked over-cap rows"""
+    Rows: list[dict[str, Any]] = [{"text": "aspirin trial"}, {"text": _OVER_CAP}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows)
+
+    Yielded: list[StreamedRow] = list(Stream.rows())
+
+    assert Yielded == [("fake/quality", (_QUALITY_TASK, ("aspirin trial",)))]
+    assert Stream.filters is None and Stream.effective_filters == RowFilters()
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
+
+
+def test_hf_json_filters_none_pass_is_counted_and_drops_over_cap_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the removed fast path: a filters-None hf_json pass must populate stats and apply the cap
+    exactly like the other three sources. Before, None skipped the evaluator AND the counters AND
+    the quality line, so an over-cap row streamed through with no accounting anywhere"""
+    monkeypatch.setattr(hf_json, "load_dataset", lambda *args, **kwargs: [{"text": "aspirin trial"}, {"text": _OVER_CAP}])
+    Stream: HuggingFaceJsonDataStream = HuggingFaceJsonDataStream(
+        _QUALITY_TASK, 1.0, "knowledgator/PubMedAbstractsNER", "train.json", "train", None, ("text",)
+    )
+
+    Yielded: list[StreamedRow] = list(Stream.rows())
+
+    assert Yielded == [("knowledgator/PubMedAbstractsNER", (_QUALITY_TASK, ("aspirin trial",)))]
+    assert Stream.filters is None and Stream.effective_filters == RowFilters()
+    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 1
+    assert Stream.stats.dropped_by == {"max_tokens": 1}
+
+
+def test_local_avro_filters_none_source_still_drops_over_cap_records(tmp_path: Path) -> None:
+    """same always-on guarantee for the local avro source: the unfiltered path attributes an
+    over-cap record to max_tokens while short records stay byte-identical"""
+    Target: Path = _write_avro(tmp_path / "cap.avro", [{"name": "aspirin trial"}, {"name": _OVER_CAP}])
+    Stream: LocalAvroDataStream = LocalAvroDataStream(_QUALITY_TASK, 1.0, str(Target))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert [values[0]["name"] for _source, (_task, values) in Yielded] == ["aspirin trial"]
+    assert Stream.stats.dropped_by == {"max_tokens": 1} and Stream.stats.rows_out == 1
+
+
+def test_quality_line_counts_max_tokens_when_the_cap_empties_a_source(caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the cap's drops are first-class US-009 counters: a source emptied ONLY by the cap (filters
+    None) must report dropped={max_tokens: N} on the quality line, and the guard raise must not
+    swallow it (stream()'s finally lands the line first)"""
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, [{"text": _OVER_CAP}, {"text": _OVER_CAP + "a"}])
+
+    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
+        with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+            list(Stream.stream(RunConfig()))
+
+    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
+    assert len(Quality) == 1
+    assert Quality[0].getMessage() == "ingest quality fake/quality: rows_in=2 rows_out=0 dropped={max_tokens:2}"
+
+
+def test_a_match_on_emptied_source_stays_recorded_not_guarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """negative test for the now-unconditional guard: it arms on the post-match_on candidate
+    count, so a source emptied only by match_on is a recorded drop, never a ZeroYieldError,
+    even though the guard no longer checks whether filters were declared"""
+    Rows: list[dict[str, Any]] = [{"domain": "Finance", "text": "aspirin trial"}, {"domain": "Finance", "text": "metformin study"}]
+    Stream: HuggingFaceDataStream = _hf_stream(monkeypatch, Rows, match_on=(("domain", ("ok",)),))
+
+    Yielded: list[StreamedRow] = list(Stream.stream(RunConfig()))
+
+    assert Yielded == []
+    assert Stream.stats.dropped_by == {"match_on": 2}

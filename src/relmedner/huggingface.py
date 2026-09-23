@@ -59,15 +59,15 @@ class HuggingFaceDataStream(DataStream):
                 continue
             candidates += 1
             values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
-            if self.filters is not None:
-                reason: str | None = first_drop_reason(values, self.filters)
-                if reason is not None:
-                    self.stats.drop(reason)
-                    continue
+            reason: str | None = first_drop_reason(values, self.effective_filters)
+            if reason is not None:
+                self.stats.drop(reason)
+                continue
             self.stats.rows_out += 1
             yield (self.name, (self.task, values))
-        # fail-loud zero-yield guard (US-008, unchanged): a filter that drops every candidate
-        # row of a non-empty source is the silent-empty-training-set bug; a genuinely empty
-        # source (0 candidates, e.g. everything match_on-dropped) is recorded, not guarded
-        if self.filters is not None and candidates > 0 and self.stats.rows_out == 0:
+        # fail-loud zero-yield guard (US-008, now covering the ALWAYS-ON cap): a declared filter
+        # OR the token cap that drops every candidate row of a non-empty source is the
+        # silent-empty-training-set bug; a genuinely empty source (0 candidates, e.g. everything
+        # match_on-dropped) is recorded, not guarded
+        if candidates > 0 and self.stats.rows_out == 0:
             raise ZeroYieldError(f"filters {self.filters} dropped 100% of {candidates} rows from {self.name}")
