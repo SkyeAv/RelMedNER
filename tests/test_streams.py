@@ -9,8 +9,9 @@ from typing import Any, ClassVar, Self
 import pytest
 from fastavro import parse_schema, writer
 
-from relmedner import hf_json
+from relmedner import hf_json, hf_parquet
 from relmedner.hf_json import HuggingFaceJsonDataStream
+from relmedner.hf_parquet import HuggingFaceParquetDataStream
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.ingests import YamlIngestsParser
 from relmedner.local import LocalAvroDataStream, LocalDelimitedDataStream
@@ -243,7 +244,7 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
     """a load_dataset error (e.g. the KeyError: 'feature' from a stale dataset_infos.json) is a real
     ingest failure; the stream must surface it unwrapped"""
 
-    def Boom(path: str, name: Any = None, **kwargs: Any) -> Any:
+    def Boom(path: str, name: str | None = None, **kwargs: Any) -> Any:
         raise RuntimeError("hub exploded")
 
     monkeypatch.setattr(hf_json, "load_dataset", Boom)
@@ -258,6 +259,133 @@ def test_hf_json_load_failure_propagates_unchanged(monkeypatch: pytest.MonkeyPat
     )
 
     with pytest.raises(RuntimeError, match="hub exploded"):
+        list(Stream.rows())
+
+
+# ------------------------------------------------------------------ hf_parquet source kind --
+
+
+def test_build_stream_constructs_the_hf_parquet_source_positionally() -> None:
+    """build_stream splats the payload into __init__ by position, so the payload to_tuple produced
+    must land in HuggingFaceParquetDataStream.__init__ in model field order minus source
+    (task, weight, dataset, subset, split, match_on, columns_out). Construction is offline-safe:
+    the shard listing and the parquet download happen in rows(), never in the ctor."""
+    Stream: DataStream = build_stream(
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text",
+            "train",
+            None,
+            ("text", "labels"),
+        ),
+    )
+
+    assert isinstance(Stream, HuggingFaceParquetDataStream)
+    assert Stream.name == "bigbio/gad"
+    assert Stream.task == ("script", "GadBlurbScript", ("classifications",))
+    assert Stream.weight == 1.0
+    assert Stream.subset == "gad_blurb_bigbio_text"
+    assert Stream.split == "train"
+    assert Stream.columns_out == ("text", "labels")
+
+
+def test_registry_keys_the_hf_parquet_source() -> None:
+    assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream
+
+
+def _parquet_stream(monkeypatch: pytest.MonkeyPatch, rows: list[dict[str, Any]], **overrides: Any) -> HuggingFaceParquetDataStream:
+    """a parquet stream over in-memory rows: shard discovery and load_dataset are patched out, so
+    the production rows() loop (match_on -> evaluator -> counters) is what the test exercises"""
+    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", lambda dataset, subset, split: ["https://example.test/0000.parquet"])
+    monkeypatch.setattr(hf_parquet, "load_dataset", lambda *args, **kwargs: rows)
+    declared: dict[str, Any] = dict(
+        task=_QUALITY_TASK,
+        weight=1.0,
+        dataset="bigbio/gad",
+        subset="gad_blurb_bigbio_text",
+        split="train",
+        match_on=None,
+        columns_out=("text",),
+    )
+    declared.update(overrides)
+    return HuggingFaceParquetDataStream(**declared)  # type: ignore[arg-type]
+
+
+def test_hf_parquet_rows_list_shards_then_request_one_train_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the builder must receive the LISTING's shard URLs as data_files and request the generated
+    'train' split (a data_files list has no hub split names); the subset/split addressing happens
+    at the listing, before the builder is ever involved"""
+    Seen: dict[str, Any] = {}
+
+    def FakeShards(dataset: str, subset: str, split: str) -> list[str]:
+        Seen["shard_args"] = (dataset, subset, split)
+        return ["https://example.test/0000.parquet"]
+
+    def FakeLoadDataset(*args: Any, **kwargs: Any) -> list[dict[str, Any]]:
+        Seen["builder_args"] = (args, kwargs)
+        return [{"text": "a"}]
+
+    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", FakeShards)
+    monkeypatch.setattr(hf_parquet, "load_dataset", FakeLoadDataset)
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        _QUALITY_TASK, 1.0, "bigbio/gad", "gad_blurb_bigbio_text", "train", None, ("text",)
+    )
+
+    list(Stream.rows())
+
+    assert Seen["shard_args"] == ("bigbio/gad", "gad_blurb_bigbio_text", "train")
+    args, kwargs = Seen["builder_args"]
+    assert args == ("parquet",)
+    assert kwargs == {"data_files": ["https://example.test/0000.parquet"], "split": "train"}
+
+
+def test_hf_parquet_rows_project_declared_columns_and_honor_match_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    Rows: list[dict[str, Any]] = [
+        {"text": "kept", "labels": ["1"], "domain": "ok"},
+        {"text": "dropped", "labels": ["0"], "domain": "other"},
+    ]
+    Stream: HuggingFaceParquetDataStream = _parquet_stream(monkeypatch, Rows, match_on=(("domain", ("ok",)),), columns_out=("text", "labels"))
+
+    Yielded: list[StreamedRow] = list(Stream.rows())
+
+    assert Yielded == [("bigbio/gad", (_QUALITY_TASK, ("kept", ["1"])))]
+    assert Stream.stats.rows_in == 2 and Stream.stats.rows_out == 1
+    assert Stream.stats.dropped_by == {"match_on": 1}
+
+
+def test_hf_parquet_zero_yield_guard_fires_and_the_quality_line_lands(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """the fail-loud guard and the US-009 accounting are copied structure from the hf stream; both
+    must survive the copy, including the quality line landing BEFORE the guard raises"""
+    Rows: list[dict[str, Any]] = [{"text": "short"}, {"text": "tiny"}]
+    Stream: HuggingFaceParquetDataStream = _parquet_stream(monkeypatch, Rows, filters=RowFilters(min_text_len=1000))
+
+    with caplog.at_level(logging.INFO, logger="relmedner.quality"):
+        with pytest.raises(ZeroYieldError, match=r"dropped 100% of 2 rows"):
+            list(Stream.stream(RunConfig()))
+
+    Quality: list[logging.LogRecord] = [record for record in caplog.records if record.name == "relmedner.quality"]
+    assert len(Quality) == 1
+    assert Quality[0].getMessage() == "ingest quality bigbio/gad: rows_in=2 rows_out=0 dropped={min_text_len:2}"
+
+
+def test_hf_parquet_shard_discovery_fails_loud_on_an_empty_listing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """a typo'd subset/split matches zero listed shards; that is a declaration bug and must raise
+    at stream time, never silently stream an empty prefix"""
+    monkeypatch.setattr(hf_parquet, "parquet_shard_urls", lambda *args: (_ for _ in ()).throw(ValueError("no parquet shards listed")))
+    Stream: HuggingFaceParquetDataStream = HuggingFaceParquetDataStream(
+        _QUALITY_TASK,
+        1.0,
+        "bigbio/gad",
+        "typoed_subset",
+        "train",
+        None,
+        ("text",),
+    )
+
+    with pytest.raises(ValueError, match="no parquet shards listed"):
         list(Stream.rows())
 
 

@@ -221,8 +221,31 @@ class HuggingFaceJsonDataset(DatasetBase):
         return self.dataset
 
 
+class HuggingFaceParquetDataset(DatasetBase):
+    """parquet-conversion ingest over a hub repo whose own builder is a loading script the
+    installed datasets can no longer execute ("Dataset scripts are no longer supported").
+    Rows stream from the hub's auto-generated refs/convert/parquet branch, one shard set per
+    (config, split); see relmedner.hf_parquet for the measured route and blockers."""
+
+    tuple_fields: ClassVar[tuple[str, ...]] = ("task", "weight", "dataset", "subset", "split", "match_on", "columns_out")
+
+    source: Literal["hf_parquet"] = Field(...)
+    dataset: str = Field(...)
+    subset: str = Field(..., min_length=1)
+    """REQUIRED: the conversion branch nests shards under <config>/<split>/, so there is no
+    meaningful default config to fall back to"""
+    split: str = Field(..., min_length=1)
+    """REQUIRED for the same reason: the shard listing is addressed per (config, split)"""
+    match_on: list[MatchOn] | None = Field(None)
+    columns_out: list[str] = Field(...)
+
+    @property
+    def row_key(self: Self) -> str:
+        return self.dataset
+
+
 Dataset: Annotated = Annotated[
-    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset,
+    HuggingFaceDataset | LocalAvroDataset | LocalDelimitedDataset | HuggingFaceJsonDataset | HuggingFaceParquetDataset,
     Field(discriminator="source"),
 ]
 

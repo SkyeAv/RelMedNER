@@ -23,7 +23,7 @@ the loader does not accept it.
 ## Discriminators
 
 - `task.type` selects the task block: `script` -> `ScriptTask`, `fullmap` -> `FullmapTask`.
-- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `local` -> `LocalDataset`.
+- `source` selects the dataset entry: `hf` -> `HuggingFaceDataset`, `hf_parquet` -> `HuggingFaceParquetDataset`, `local` -> `LocalDataset`.
 - Any other value for either key is a validation error.
 
 ## ingests.yaml
@@ -187,6 +187,24 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | `source` | yes | none | literal `local` | selects `LocalDataset` |
 | `path` | yes | none | filesystem path | avro container built out-of-band. Used as declared when it names an existing file (absolute, `~`-expanded, or relative to the caller's CWD); otherwise resolved against the package data dir (`relmedner.constants.DATA`). The whole record ships to the declared script; there is no `columns_out` projection because the file's own schema is the contract. Doubles as the row key for weight stamping |
 
+`HuggingFaceParquetDataset` (`source: hf_parquet`):
+
+A hub repo whose own builder is a loading script (for example bigbio/gad's `gad.py`) cannot stream
+through `source: hf` once `datasets` drops script-builder support: `load_dataset` fails with
+"Dataset scripts are no longer supported". This source streams the same rows from the hub's
+auto-generated `refs/convert/parquet` branch instead; shard URLs come from the datasets-server
+`parquet` listing for the declared repo, so a multi-shard split ships whole and a typo'd
+`subset`/`split` fails loud at stream time instead of silently yielding nothing.
+
+| field | required? | default | constraint | meaning |
+| --- | --- | --- | --- | --- |
+| `source` | yes | none | literal `hf_parquet` | selects `HuggingFaceParquetDataset` |
+| `dataset` | yes | none | hub repo id | the HuggingFace dataset; doubles as the row key for weight stamping |
+| `subset` | yes | none | hub config name | the conversion branch nests shards under `<config>/<split>/`, so there is no meaningful default |
+| `split` | yes | none | hub split name | addressed at the shard listing together with `subset` |
+| `match_on` | no | absent | list of `MatchOn` (see below) | row filter: keep only rows whose `column` value is in `values` |
+| `columns_out` | yes | none | list of column names | the columns streamed to the task, in declaration order |
+
 ### `match_on` entries (`MatchOn`)
 
 | field | required? | default | constraint | meaning |
@@ -341,6 +359,24 @@ On the pubmed-abstracts-ner branch this shape is `HuggingFaceJsonDataset`
 `columns_out`), a json-builder ingest over one hub repo file kept out of the
 `hf` source by two measured blockers (old-style `dataset_infos.json`,
 cold-cache streaming corruption).
+
+(e) hf_parquet over a script-builder repo (validates as-is against the current models):
+
+```yaml
+x-defaults:
+  hf-parquet: &hf-parquet {source: hf_parquet, weight: 1.0}
+datasets:
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    <<: *hf-parquet
+    dataset: bigbio/gad
+    subset: gad_blurb_bigbio_text
+    split: train
+    columns_out: [text, labels]
+```
+
+`HuggingFaceParquetDataset` is for repos whose own builder is a loading script the installed
+`datasets` refuses (bigbio/gad's `gad.py`); rows come from the hub's parquet conversion branch
+(one shard set per config/split), so `subset` and `split` are both required.
 
 ### Deliberately NOT configurable
 
