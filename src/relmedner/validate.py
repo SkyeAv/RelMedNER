@@ -33,7 +33,16 @@ from relmedner.models import RunConfig, TrainingExample, ValidateTrustConfig, Ya
 from relmedner.registry import build_stream
 from relmedner.streams import StreamedRow, rebuild_task
 from relmedner.types import Script
-from relmedner.validators import VERDICT_SCORE, Verdict, example_queries, grade_relation, grade_span, record_trust, source_trust
+from relmedner.validators import (
+    VERDICT_SCORE,
+    Verdict,
+    example_queries,
+    grade_relation,
+    grade_span,
+    query_outcomes,
+    record_trust,
+    source_trust,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,11 +195,16 @@ def validate_sources(
     for source, example in sampled_examples(ingests, config, sample_size, only):
         entry: dict[str, Any] = per_source.setdefault(
             source,
-            {"source": source, "sampled": 0, "record_trusts": [], "edge_verdicts": {}},
+            {"source": source, "sampled": 0, "record_trusts": [], "edge_verdicts": {}, "verdicted": 0, "errored": 0},
         )
         record: dict[str, Any] = validate_record(example, client)
         entry["sampled"] += 1
         entry["record_trusts"].append(record["trust"])
+        # the verdict/error split is what lets the printed suggestion tell "nothing to validate"
+        # apart from "every request failed"; both leave trust None
+        scored, failed = query_outcomes(record["queries"])
+        entry["verdicted"] += scored
+        entry["errored"] += failed
         records.append({"source": source, **record})
         logger.info("trust report %s: %s", source, json.dumps({"source": source, **record}))
         # per-predicate edge verdicts: the heuristic bridge from sample to whole dataset --
@@ -206,16 +220,45 @@ def validate_sources(
         edge_trusts: dict[str, float] = {
             predicate: sum(VERDICT_SCORE[verdict] for verdict in verdicts) / len(verdicts) for predicate, verdicts in entry["edge_verdicts"].items()
         }
-        summaries.append({"source": source, "sampled": entry["sampled"], "trust": trust, "edge_trusts": edge_trusts})
+        summary: dict[str, Any] = {
+            "source": source,
+            "sampled": entry["sampled"],
+            "trust": trust,
+            "edge_trusts": edge_trusts,
+            "queries": entry["verdicted"] + entry["errored"],
+            "errored": entry["errored"],
+        }
+        summaries.append(summary)
         logger.info(
-            "trust summary %s: sampled=%d scored=%d trust=%s edges=%s",
+            "trust summary %s: sampled=%d scored=%d queries=%d errored=%d trust=%s edges=%s",
             source,
             entry["sampled"],
             sum(1 for value in entry["record_trusts"] if value is not None),
-            f"{trust:.2f}" if trust is not None else "n/a (nothing to validate)",
+            summary["queries"],
+            summary["errored"],
+            f"{trust:.2f}" if trust is not None else f"n/a ({_unscored_reason(summary)})",
             json.dumps({k: round(v, 2) for k, v in edge_trusts.items()}),
         )
     return summaries, records
+
+
+def _unscored_reason(summary: dict[str, Any]) -> str:
+    """Why one source produced no trust suggestion.
+
+    `source_trust` returns None both when the sampled records carried nothing to query and when
+    every query errored, and the two need opposite responses: accept that the source is not
+    literature-validatable, or fix the network / rejected `NCBI_API_KEY` and re-run. Printing the
+    first reason for the second case is what sent a real run chasing a corpus that was fine
+    (12 of 12 queries answered `HTTP Error 400: Bad Request`). Summaries that predate the
+    `queries`/`errored` counters keep the old wording rather than raising.
+    """
+    errored: int = int(summary.get("errored") or 0)
+    total: int = int(summary.get("queries") or 0)
+    if errored and errored >= total:
+        return f"all {errored} queries errored (network, rate limit, or a rejected NCBI_API_KEY); see the report"
+    if errored:
+        return f"{errored} of {total} queries errored and nothing else scored; see the report"
+    return "sampled records had no entities/relations to validate"
 
 
 def suggested_yaml(summaries: list[dict[str, Any]]) -> str:
@@ -226,7 +269,7 @@ def suggested_yaml(summaries: list[dict[str, Any]]) -> str:
     for summary in summaries:
         trust: float | None = summary["trust"]
         lines.append(f"  # {summary['source']} (sampled {summary['sampled']})")
-        lines.append(f"  trust: {trust:.2f}" if trust is not None else "  # trust: n/a -- sampled records had no entities/relations to validate")
+        lines.append(f"  trust: {trust:.2f}" if trust is not None else f"  # trust: n/a -- {_unscored_reason(summary)}")
         flagged: list[tuple[str, float]] = sorted((predicate, score) for predicate, score in summary.get("edge_trusts", {}).items() if score < 0.99)
         if flagged:
             lines.append("  trust_edges:")

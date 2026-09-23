@@ -10,7 +10,7 @@ weight-stamp time in pipeline.run.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Final, Literal
+from typing import Any, Final, Literal
 
 from relmedner.constants import TRUST_RANGE, TRUST_RELATION_PARTIAL_HITS, TRUST_RELATION_VERIFIED_HITS
 from relmedner.models import TrainingExample
@@ -101,6 +101,26 @@ def source_trust(record_trusts: Iterable[float | None]) -> float | None:
     if not scored:
         return None
     return sum(scored) / len(scored)
+
+
+def query_outcomes(results: Iterable[dict[str, Any]]) -> tuple[int, int]:
+    """(verdicted, errored) over one validated record's query results.
+
+    `validate_record` stores either a graded verdict or an error with `hits=None`, never both,
+    so the two counts partition the record's queries. The split matters because a source's trust
+    is `None` in two very different situations: the sampled records carried nothing to query, or
+    every request failed. Only the error count says which, and the two need opposite responses
+    (accept the source as not literature-validatable, versus fix the network or the rejected
+    `NCBI_API_KEY` and re-run).
+    """
+    verdicted = 0
+    errored = 0
+    for result in results:
+        if result.get("verdict") is None:
+            errored += 1
+        else:
+            verdicted += 1
+    return verdicted, errored
 
 
 def record_edge_factor(example: TrainingExample, edge_trusts: dict[str, float]) -> float:

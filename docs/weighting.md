@@ -112,7 +112,10 @@ Notes:
   excluded from the average -- a classification source can't be literature-validated, so
   it gets no suggestion rather than a misleading 1.0.
 - Query/network failures are recorded with `hits: null` and **no verdict**; they neither
-  help nor hurt the source.
+  help nor hurt the source. The summary line counts them (`queries`, `errored`), and a
+  source that scored nothing says which failure it hit: `all N queries errored` (fix the
+  network or the key and re-run) versus `sampled records had no entities/relations to
+  validate` (the source is not literature-validatable, keep its declared prior).
 - Backend: PubMed E-utilities (default; free, 3 req/s, 10 with a free `NCBI_API_KEY`).
   For non-biomedical sources use `--backend firecrawl` against your self-hosted
   instance (`FIRECRAWL_BASE_URL`, optional `FIRECRAWL_API_KEY`).
