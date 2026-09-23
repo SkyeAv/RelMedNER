@@ -150,7 +150,9 @@ Nothing is written back to `ingests.yaml`. The command prints a suggested `trust
 source and writes the per-record JSONL report for review. Defaults come from the optional
 `x-trust:` section of `ingests.yaml` (50 records per source, `pubmed` backend,
 `trust-report.jsonl`), overridden flag-by-flag; an optional `NCBI_API_KEY` in the environment
-raises the PubMed rate limit from 3 to 10 req/s. Reading the report and turning it into a
+lifts the client's own throttle from 3.4 to about 9 req/s (NCBI allows 3 unauthenticated, 10
+authenticated). A key that is malformed or expired makes every query fail, and the printed
+snippet says so rather than blaming the corpus. Reading the report and turning it into a
 committed weight: [docs/weighting.md](docs/weighting.md).
 
 ## Testing
