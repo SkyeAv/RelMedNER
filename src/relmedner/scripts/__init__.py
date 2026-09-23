@@ -1,4 +1,5 @@
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
+from relmedner.scripts.ehr_rel import EhrRelScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
@@ -13,6 +14,7 @@ from relmedner.scripts.super_glue_record import SuperGlueRecordScript
 
 __all__ = [
     "CtkpInterventionsScript",
+    "EhrRelScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
     "GlinerMultilingualScript",

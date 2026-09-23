@@ -369,6 +369,56 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
         ),
     ),
+    # the four bigbio/ehr_rel entries share one repo-id row key and one weight (0.5); the file is
+    # the scalar discriminator, exactly like the hf_json train.json key above
+    "bigbio/ehr_rel:ehr_rel_a_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_a_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_b_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_b_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_source/train/0000.parquet",
+            "train",
+            None,
+            ("snomed_label_1", "snomed_label_2", "mean_rating"),
+        ),
+    ),
+    "bigbio/ehr_rel:ehr_rel_bigbio_pairs/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "EhrRelScript", ("relations",)),
+            0.5,
+            "bigbio/ehr_rel",
+            "ehr_rel_bigbio_pairs/train/0000.parquet",
+            "train",
+            None,
+            ("text_1", "text_2", "label"),
+        ),
+    ),
 }
 
 

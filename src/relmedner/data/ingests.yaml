@@ -13,6 +13,9 @@
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+  # bigbio/ehr_rel tier: human-rated concept pairs with no prose context (structured, not
+  # prose), per docs/weighting.md's tier table as checked by the user
+  ehrrel-weight: &ehrrel-weight 0.5
 
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
@@ -225,3 +228,45 @@ datasets:
     match_on: *biomed_communities
     columns_out:
       - text
+  # bigbio/ehr_rel: EHR concept relatedness (Schulz et al., COLING 2020, apache-2.0). A script-era
+  # hub repo: main carries only loading-script files, so each entry reads its config's parquet file
+  # from the auto-convert refs/convert/parquet branch (hf_parquet source kind). The four subsets
+  # overlap by construction (source == bigbio_pairs exactly; a + b == source, with 24 pairs shared
+  # between a and b), so every pair enters the stream up to four times and RunConfig's default NEAR
+  # dedup collapses the overlap to the 3,717 unique pairs at export. Human raters (5 in batch a,
+  # 3 in batch b) scored relatedness 0-3; only pairs with mean rating >= 1.0 ship as related_to
+  # (2,535 of 3,741 in the source/pairs rendering; the pipeline never emits negations, so a
+  # weak-mean pair can neither ship as a positive nor as a negation). All four entries share the
+  # repo-id row key, so they must (and do) declare one weight.
+  - task: {type: script, name: EhrRelScript, outputs: [relations]}
+    source: hf_parquet
+    weight: *ehrrel-weight
+    dataset: bigbio/ehr_rel
+    file: ehr_rel_a_source/train/0000.parquet
+    split: train
+    columns_out: [snomed_label_1, snomed_label_2, mean_rating]
+    filters: {drop_empty: true}
+  - task: {type: script, name: EhrRelScript, outputs: [relations]}
+    source: hf_parquet
+    weight: *ehrrel-weight
+    dataset: bigbio/ehr_rel
+    file: ehr_rel_b_source/train/0000.parquet
+    split: train
+    columns_out: [snomed_label_1, snomed_label_2, mean_rating]
+    filters: {drop_empty: true}
+  - task: {type: script, name: EhrRelScript, outputs: [relations]}
+    source: hf_parquet
+    weight: *ehrrel-weight
+    dataset: bigbio/ehr_rel
+    file: ehr_rel_source/train/0000.parquet
+    split: train
+    columns_out: [snomed_label_1, snomed_label_2, mean_rating]
+    filters: {drop_empty: true}
+  - task: {type: script, name: EhrRelScript, outputs: [relations]}
+    source: hf_parquet
+    weight: *ehrrel-weight
+    dataset: bigbio/ehr_rel
+    file: ehr_rel_bigbio_pairs/train/0000.parquet
+    split: train
+    columns_out: [text_1, text_2, label]
+    filters: {drop_empty: true}
