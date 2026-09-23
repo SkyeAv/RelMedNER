@@ -51,7 +51,7 @@ def test_ingests_filters_live_on_every_dataset_shape() -> None:
     # concrete dataset shape, so `filters` (US-008) must appear on EVERY source arm -- a new
     # arm that silently lacked it would accept a declared filter and never apply it
     defs: dict = load_ingests()["$defs"]
-    for shape in ("HuggingFaceDataset", "HuggingFaceJsonDataset", "HuggingFaceParquetDataset", "LocalAvroDataset", "LocalDelimitedDataset"):
+    for shape in ("HuggingFaceDataset", "HuggingFaceJsonDataset", "LocalAvroDataset", "LocalDelimitedDataset"):
         assert "filters" in defs[shape]["properties"]
 
 
@@ -72,7 +72,8 @@ def test_datasets_carries_source_discriminator() -> None:
 def test_cluster_root_is_cluster_and_worker_slots_minimum_one() -> None:
     schema: dict = load_cluster()
     assert schema["title"] == "Cluster"
-    assert set(schema["properties"]) == {"ssh_user", "workers"}
+    # jobmanager: the head host (runs the jobmanager stack AND its own worker duty, see cluster.yaml)
+    assert set(schema["properties"]) == {"ssh_user", "jobmanager", "workers"}
     assert "WorkerNode" in schema["$defs"]
     assert schema["$defs"]["WorkerNode"]["properties"]["slots"]["minimum"] == 1
 

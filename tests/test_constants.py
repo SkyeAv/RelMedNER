@@ -6,7 +6,6 @@ source literal to the host's Desktop path before the suite runs."""
 from __future__ import annotations
 
 import importlib
-import os
 import sys
 from collections.abc import Generator
 from pathlib import Path
@@ -14,15 +13,6 @@ from pathlib import Path
 import pytest
 
 import relmedner.constants  # noqa: F401  (the reload target must exist in sys.modules)
-
-# the capture itself must be envless: the remote gate exports RELMEDNER_FULLMAP_DIR pointing at
-# $HOME/Desktop/fullmap, and $HOME resolves to /users/sgoetz there while the synced source literal
-# reads /home/sgoetz -- the same tree under two names, so a polluting env would make every reload
-# comparison a string mismatch between two valid spellings of one path
-os.environ.pop("RELMEDNER_FULLMAP_DIR", None)
-# another test module may have imported constants while the gate's override was set, so the
-# capture must force a reload under the popped env instead of reading the cached attribute
-importlib.reload(sys.modules.setdefault("relmedner.constants", relmedner.constants))
 
 DEFAULT_WITHOUT_ENV: Path = relmedner.constants.FULLMAP_DIR
 

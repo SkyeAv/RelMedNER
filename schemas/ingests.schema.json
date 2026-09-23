@@ -185,9 +185,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -289,9 +313,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -365,7 +413,7 @@
     },
     "HuggingFaceParquetDataset": {
       "additionalProperties": false,
-      "description": "parquet-builder ingest over one revision-pinned hf:// URL inside a hub repo; see\nrelmedner.hf_parquet for why builder-script corpora (bigbio/chia) need this route instead of\nthe \"hf\" source under datasets>=3",
+      "description": "parquet-builder ingest over one per-config file on the hub's refs/convert/parquet branch; see\nrelmedner.hf_parquet for why a script-era hub repo needs this route (main branch has only\nloading-script files, datasets refuses script datasets, whole-revision parquet load fails on\nmixed per-config schemas)",
       "properties": {
         "task": {
           "discriminator": {
@@ -387,9 +435,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -414,11 +486,6 @@
         "file": {
           "minLength": 1,
           "title": "File",
-          "type": "string"
-        },
-        "revision": {
-          "minLength": 1,
-          "title": "Revision",
           "type": "string"
         },
         "split": {
@@ -461,7 +528,6 @@
         "source",
         "dataset",
         "file",
-        "revision",
         "columns_out"
       ],
       "title": "HuggingFaceParquetDataset",
@@ -491,9 +557,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -548,9 +638,33 @@
         },
         "weight": {
           "default": 1.0,
-          "exclusiveMinimum": 0.0,
+          "minimum": 0.0,
           "title": "Weight",
           "type": "number"
+        },
+        "trust": {
+          "default": 1.0,
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Trust",
+          "type": "number"
+        },
+        "trust_edges": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trust Edges"
         },
         "filters": {
           "anyOf": [
@@ -695,6 +809,89 @@
           ],
           "default": null,
           "title": "Exclude Regex"
+        },
+        "min_words": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Words"
+        },
+        "min_stop_word_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Stop Word Ratio"
+        },
+        "max_symbol_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Symbol Ratio"
+        },
+        "max_upper_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Upper Ratio"
+        },
+        "max_repeat_ngram_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Repeat Ngram Ratio"
+        },
+        "max_short_line_ratio": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Max Short Line Ratio"
         }
       },
       "title": "RowFilters",
@@ -727,6 +924,25 @@
         "outputs"
       ],
       "title": "ScriptTask",
+      "type": "object"
+    },
+    "ValidateTrustConfig": {
+      "additionalProperties": false,
+      "description": "the optional top-level `x-trust:` section of ingests.yaml: driver settings for the\noffline literature validation (relmedner validate-trust, docs/weighting.md). CLI flags\noverride these one-for-one, so the yaml holds the per-repo default and the command line\nholds the one-off experiment. Secrets (NCBI keys) NEVER ride here -- env only,\ningests.yaml is a committed artifact",
+      "properties": {
+        "sample_size": {
+          "default": 50,
+          "minimum": 1,
+          "title": "Sample Size",
+          "type": "integer"
+        },
+        "report": {
+          "default": "trust-report.jsonl",
+          "title": "Report",
+          "type": "string"
+        }
+      },
+      "title": "ValidateTrustConfig",
       "type": "object"
     }
   },
@@ -783,6 +999,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/GazetteerSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "x-trust": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ValidateTrustConfig"
         },
         {
           "type": "null"

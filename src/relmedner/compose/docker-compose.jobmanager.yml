@@ -1,5 +1,9 @@
 name: relmedner
 
+# jobmanager only — every worker (including the head) additionally gets the taskmanager+sdkworker
+# stack from docker-compose.taskmanager.yml. all advertised addresses are 127.0.0.1 because
+# cross-host ports are blocked: peers reach the jobmanager through ssh -L tunnels spawned by
+# deploy.py (see tunnel_spec there), which land on these bind-all ports.
 services:
   jobmanager:
     image: ${FLINK_IMAGE}
@@ -31,65 +35,4 @@ services:
       - rest.port=${FLINK_REST_PORT}
       - -D
       - rest.bind-address=0.0.0.0
-    restart: unless-stopped
-
-  taskmanager:
-    image: ${FLINK_IMAGE}
-    pull_policy: never
-    # host network + explicit -D flags: the entrypoint cannot rewrite config.yaml
-    # under rootless podman's uid mapping, so pass every setting on the command line
-    network_mode: host
-    command:
-      - taskmanager
-      - -D
-      - jobmanager.rpc.address=${JOBMANAGER_HOST}
-      - -D
-      - jobmanager.rpc.port=${JOBMANAGER_RPC_PORT}
-      - -D
-      - blob.server.port=${BLOB_SERVER_PORT}
-      - -D
-      - blob.client.socket.timeout=1800000
-      - -D
-      - taskmanager.host=${TASKMANAGER_HOST}
-      - -D
-      - taskmanager.data.port=${TASKMANAGER_DATA_PORT}
-      - -D
-      - taskmanager.data.bind-port=${TASKMANAGER_DATA_BIND_PORT}
-      - -D
-      - taskmanager.numberOfTaskSlots=${SLOTS}
-      - -D
-      - taskmanager.memory.process.size=${MEMORY}
-      # beam's per-slot grpc fn servers (netty epoll direct buffers) live outside flink's own
-      # memory pools; task off-heap defaults to 0 and the JVM then caps direct memory near the
-      # 128m framework off-heap, which OOMs mid-job (OutOfMemoryError: Direct buffer memory)
-      - -D
-      - taskmanager.memory.task.off-heap.size=2g
-    depends_on:
-      - jobmanager
-    # rootless podman: keep the flink JVM off host root without needing any host mounts
-    userns_mode: keep-id
-    user: "${HOST_UID}:${HOST_GID}"
-    restart: unless-stopped
-
-  sdkworker:
-    # beam sdk worker pool (EXTERNAL environment) — python user code runs HERE, not in
-    # taskmanager-spawned containers, so this is the only place the fullmap mount can live;
-    # pool port 50000 is hardcoded by beam's container boot.go, host net shares loopback
-    # with the taskmanager, which the pool assumes
-    image: ${WORKER_IMAGE}
-    pull_policy: never
-    network_mode: host
-    command: ["--worker_pool"]
-    # beam writes pipeline_options.json and scratch files into the cwd; the outputs mount is the
-    # one writable place available under the mapped host uid
-    working_dir: /opt/outputs
-    # rootless podman maps the host uid in, and that uid cannot create beam's venv under /opt/apache/beam
-    environment:
-      RUN_PYTHON_SDK_IN_DEFAULT_ENVIRONMENT: "1"
-    volumes:
-      - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
-      # avro shards land here; the host side is collected back to --output when the job finishes
-      - ${OUTPUTS_DIR}:${OUTPUTS_MOUNT}
-    userns_mode: keep-id
-    user: "${HOST_UID}:${HOST_GID}"
     restart: unless-stopped

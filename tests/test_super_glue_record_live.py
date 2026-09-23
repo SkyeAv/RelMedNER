@@ -31,6 +31,7 @@ def test_a_live_streamed_record_row_dispatches_end_to_end() -> None:
     from relmedner.ingests import YamlIngestsParser
     from relmedner.pipeline import dispatch_row
     from relmedner.registry import build_stream
+    from relmedner.validators import adjust_weight
 
     # select on the declared script NAME, not the repo id: aps/super_glue carries two declared
     # ingests (multirc and record), and the weight field moved the repo id to payload position 2
@@ -66,7 +67,14 @@ def test_a_live_streamed_record_row_dispatches_end_to_end() -> None:
     for classification in Example.classifications:
         assert set(classification.true_label) <= set(classification.labels)
 
-    # the pipeline's own dispatch wrapper must agree with the direct registry call above
-    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Ingests.weights_by_source())
+    # the pipeline's own dispatch wrapper must agree with the direct registry call above, so it
+    # gets exactly what pipeline.run builds: trust-adjusted weights plus the per-predicate edge
+    # trusts. dispatch_row has taken edge_trusts since trust landed, and this call drifted to a
+    # TypeError that stayed invisible because the whole test is skipped unless RELMEDNER_LIVE_HF=1.
+    # The comprehension key is `row_key`, not `source`, so it cannot read as rebinding the
+    # stream's own source name bound above.
+    Trusts: dict[str, float] = Ingests.trusts_by_source()
+    Weights: dict[str, float] = {row_key: adjust_weight(weight, Trusts.get(row_key, 1.0)) for row_key, weight in Ingests.weights_by_source().items()}
+    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Weights, Ingests.trust_edges_by_source())
     assert PipelineOutputs == Outputs
     assert PipelineExample == Example

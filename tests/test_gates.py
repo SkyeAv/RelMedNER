@@ -38,6 +38,19 @@ def test_is_model_organism_mismatch(curie: str | None, label: str, expected: boo
         ("system", "Publication", True),  # OPEN: electronic medical record stays
         ("totally-unmapped-label", "Gene", True),  # no bucket, no opinion
         ("medical condition", "NotARealBiolinkClass", True),  # raw categories carry no ancestors
+        ("dx name", "AnatomicalEntity", False),  # measured: 'vomiting' landed anatomy over a dx label
+        ("dx name", "PhenotypicFeature", True),  # the disease bucket's own phenotypic refinement
+        ("problem", "InformationContentEntity", False),  # measured: 'allergic' landed ICE over a problem label
+        ("problem", "Disease", True),
+        # measured hole: 'gene' inside 'generic' triggers the gene bucket; ANY-bucket
+        # allowance keeps protein classes reachable
+        ("generic name", "Protein", True),
+        ("generic name", "GeneFamily", True),  # same any()-allowance hole, measured 85 spans
+        ("generic name", "Publication", False),  # classes outside BOTH gene and drugname allowances still reject
+        ("generic name", "SmallMolecule", True),  # chemical classes stay compatible with a drug label
+        ("brand name", "Protein", False),  # measured: 368 brand spans landed Protein
+        ("brand name", "Drug", True),
+        ("drug name", "Protein", True),  # without generic/brand markers the chemical bucket's Protein allowance stands
     ],
 )
 def test_is_label_compatible(label: str, category: str, expected: bool) -> None:
