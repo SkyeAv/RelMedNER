@@ -76,13 +76,14 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.git' --exclude='.venv' --exclude='.ralph' \
         --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.ruff_cache' \
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
+        --exclude='synthetic-ner-ade-tweets' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
 fi
 
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
 #    history are never touched). The grep line printed back is the receipt.
 echo "== remote FULLMAP_DIR patch"
-remote "cd '$REMOTE_REL' && sed -i 's#/home/skyeav/Desktop/fullmap#/home/sgoetz/Desktop/fullmap#' src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
+remote "cd '$REMOTE_REL' && sed -i 's#/home/skyeav/Desktop/fullmap#/users/sgoetz/Desktop/fullmap#' src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
 
 # 3. run the mode. Long jobs go in remote tmux because the gateway idle-kills raw ssh masters.
 if [ "$MODE" = "smoke" ]; then
