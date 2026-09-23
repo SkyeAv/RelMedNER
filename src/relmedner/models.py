@@ -100,6 +100,24 @@ class RowFilters(StrictBase):
     """drop rows whose joined text does NOT match this pattern"""
     exclude_regex: str | None = Field(None)
     """drop rows whose joined text DOES match this pattern"""
+    min_words: int | None = Field(None, ge=0)
+    """drop rows whose joined text has fewer whitespace tokens than this (C4/Gopher-style
+    word-count floor); None keeps the rule off and the row costs no tokenization"""
+    min_stop_word_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of closed-class English function words (FUNCTION_WORDS) is
+    BELOW this -- the cheap deterministic language/degeneracy proxy; None keeps it off"""
+    max_symbol_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of non-alphanumeric non-space characters is ABOVE this
+    (markup/code noise); None keeps it off"""
+    max_upper_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of all-caps alphabetic words is ABOVE this (shouting-caps
+    noise); None keeps it off"""
+    max_repeat_ngram_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of duplicated REPEAT_NGRAM_WORDS-word windows is ABOVE this
+    (repeated words/phrases); None keeps it off"""
+    max_short_line_ratio: float | None = Field(None, ge=0.0, le=1.0)
+    """drop rows whose share of lines shorter than SHORT_LINE_CHARS is ABOVE this (abnormal
+    line breaks: newline spam, OCR fragments); None keeps it off"""
 
     @model_validator(mode="after")
     def min_within_max(self: Self) -> Self:
