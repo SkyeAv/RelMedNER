@@ -78,6 +78,35 @@ datasets:
     dataset: knowledgator/PubMedAbstractsNER
     file: train.json
     columns_out: [tokenized_text, ner]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_annotated.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_distant.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/dev.json.gz
+    columns_out: [sents, vertexSet, labels]
+  # test rows carry no labels key at all, so this split ships entities only
+  - task: {type: script, name: DocredScript, outputs: [entities]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/test.json.gz
+    columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: SuperGlueRecordScript, outputs: [entities, classifications]}
     <<: *hf-train
     dataset: aps/super_glue

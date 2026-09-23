@@ -234,6 +234,54 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "thunlp/docred:data/train_annotated.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_annotated.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/train_distant.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_distant.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/dev.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/dev.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/test.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities",)),
+            1.0,
+            "thunlp/docred",
+            "data/test.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
     "aps/super_glue:record": (
         "hf",
         (
