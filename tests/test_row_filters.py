@@ -8,6 +8,7 @@ import pytest
 from fastavro import parse_schema, writer
 from pydantic import ValidationError
 
+from relmedner import row_filters as row_filters_module
 from relmedner.constants import CHARS_PER_TOKEN, MAX_TEXT_TOKENS
 from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.local import LocalAvroDataStream
@@ -319,6 +320,123 @@ def test_short_line_ratio_measures_short_lines_over_multi_line_texts() -> None:
     assert short_line_ratio("\n\n") == 1.0
     # trailing newline: splitlines yields no phantom empty tail line
     assert short_line_ratio("this line is definitely longer than thirty characters\n") == 0.0
+
+
+# ---------------------------------------------------- heuristic drop rules (US-002) --
+# The six opt-in RowFilters knobs compose the US-001 primitives into drop rules at the
+# single evaluator chokepoint. Every boundary test here pins strict comparisons (< for the
+# min-* rules, > for the max-* rules): exactly-at-threshold rows must KEEP, because every
+# dropped record is supervised signal and an off-by-one at a threshold silently changes
+# what ships as training data.
+
+
+def test_heuristic_fields_validate_bounds() -> None:
+    """ratio knobs are fractions in [0.0, 1.0] and min_words is a non-negative count: a
+    declaration outside those bounds is a typo and must fail validation, never clamp"""
+    Knobs = ("min_stop_word_ratio", "max_symbol_ratio", "max_upper_ratio", "max_repeat_ngram_ratio", "max_short_line_ratio")
+    for knob in Knobs:
+        with pytest.raises(ValidationError):
+            RowFilters(**{knob: -0.1})
+        with pytest.raises(ValidationError):
+            RowFilters(**{knob: 1.1})
+    assert RowFilters(min_stop_word_ratio=0.0).min_stop_word_ratio == 0.0
+    assert RowFilters(max_symbol_ratio=1.0).max_symbol_ratio == 1.0
+    assert RowFilters(min_words=0).min_words == 0
+    with pytest.raises(ValidationError):
+        RowFilters(min_words=-1)
+
+
+def test_min_words_rule_drops_low_word_count_rows() -> None:
+    assert first_drop_reason(("aspirin trial",), RowFilters(min_words=3)) == "min_words"
+    assert first_drop_reason(("aspirin trial of",), RowFilters(min_words=3)) is None
+
+
+def test_min_stop_word_ratio_rule_drops_language_degenerate_rows() -> None:
+    """the language proxy: a jargon-only row (gene symbols, table fragments) has a ~0
+    English function-word share and drops under a positive threshold; the strict < keeps a
+    row exactly at the threshold"""
+    Filters: RowFilters = RowFilters(min_stop_word_ratio=0.5)
+    assert first_drop_reason(("BRCA1 mutation analysis",), Filters) == "min_stop_word_ratio"
+    assert first_drop_reason(("the of",), Filters) is None
+    assert first_drop_reason(("the BRCA1",), Filters) is None  # 0.5 == threshold keeps
+
+
+def test_max_symbol_ratio_rule_drops_markup_noise_rows() -> None:
+    Filters: RowFilters = RowFilters(max_symbol_ratio=0.5)
+    assert first_drop_reason(("a!!",), Filters) == "max_symbol_ratio"
+    assert first_drop_reason(("a!",), Filters) is None  # exactly 0.5 keeps
+
+
+def test_max_upper_ratio_rule_drops_shouting_rows() -> None:
+    Filters: RowFilters = RowFilters(max_upper_ratio=0.5)
+    assert first_drop_reason(("ASAP NOW",), Filters) == "max_upper_ratio"
+    assert first_drop_reason(("aspirin ASAP",), Filters) is None  # exactly 0.5 keeps
+
+
+def test_max_repeat_ngram_ratio_rule_drops_repetition_spam_rows() -> None:
+    Filters: RowFilters = RowFilters(max_repeat_ngram_ratio=0.5)
+    assert first_drop_reason((" ".join(["word"] * 20),), Filters) == "max_repeat_ngram_ratio"
+    assert first_drop_reason(("the quick brown fox jumps over the lazy dog near",), Filters) is None
+
+
+def test_max_short_line_ratio_rule_drops_line_break_spam_rows() -> None:
+    Filters: RowFilters = RowFilters(max_short_line_ratio=0.5)
+    assert first_drop_reason(("short\nlines",), Filters) == "max_short_line_ratio"
+    Long: str = "this line is definitely longer than thirty characters\nshort"
+    assert first_drop_reason((Long,), Filters) is None  # exactly 0.5 keeps
+
+
+def test_the_heuristic_reasons_evaluate_in_the_fixed_order() -> None:
+    """the first failing heuristic wins the attribution: min_words -> min_stop_word_ratio ->
+    max_symbol_ratio -> max_upper_ratio -> max_repeat_ngram_ratio -> max_short_line_ratio;
+    the always-on cap still precedes ALL of them and the regexes still follow, so the
+    US-009 per-reason counts stay deterministic for a fixed input"""
+    All: RowFilters = RowFilters(
+        min_words=100,
+        min_stop_word_ratio=0.9,
+        max_symbol_ratio=0.1,
+        max_upper_ratio=0.1,
+        max_repeat_ngram_ratio=0.1,
+        max_short_line_ratio=0.1,
+    )
+    assert first_drop_reason(("short row",), All) == "min_words"
+    Stop: RowFilters = RowFilters(min_stop_word_ratio=0.9, max_symbol_ratio=0.1, max_upper_ratio=0.1)
+    assert first_drop_reason(("BRCA1 !!!",), Stop) == "min_stop_word_ratio"
+    Symbol: RowFilters = RowFilters(max_symbol_ratio=0.1, max_upper_ratio=0.1)
+    assert first_drop_reason(("the of ASAP !!!",), Symbol) == "max_symbol_ratio"
+    Upper: RowFilters = RowFilters(max_upper_ratio=0.1, max_repeat_ngram_ratio=0.1)
+    assert first_drop_reason((" ".join(["ASAP"] * 20),), Upper) == "max_upper_ratio"
+    Repeat: RowFilters = RowFilters(max_repeat_ngram_ratio=0.1, max_short_line_ratio=0.1)
+    assert first_drop_reason((" ".join(["word"] * 20),), Repeat) == "max_repeat_ngram_ratio"
+    Last: RowFilters = RowFilters(max_short_line_ratio=0.5)
+    assert first_drop_reason(("the of and to in\non at by for with",), Last) == "max_short_line_ratio"
+    # the cap outranks the heuristics: an over-cap row never attributes to a heuristic
+    assert first_drop_reason(("a" * (MAX_TEXT_TOKENS * CHARS_PER_TOKEN + 1),), RowFilters(min_words=1)) == "max_tokens"
+    # and a failing heuristic outranks the regexes: an over-threshold row never attributes
+    # to include/exclude even when the regex would also decide the row
+    assert first_drop_reason(("aspirin",), RowFilters(min_words=5, include_regex="aspirin")) == "min_words"
+    assert first_drop_reason(("BRCA1 mutation analysis",), RowFilters(min_stop_word_ratio=0.5, exclude_regex="zzz")) == "min_stop_word_ratio"
+
+
+def test_unset_heuristics_never_tokenize_the_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the efficiency contract: every declared ingest leaves the six knobs unset today, so
+    the default path must do ZERO tokenization work (no split, no lines) -- _tokenize is the
+    single tokenize chokepoint and a spy proves the unset path never reaches it while a set
+    knob does"""
+    Calls: list[str] = []
+    Original = row_filters_module._tokenize
+
+    def Spy(text: str) -> list[str]:
+        Calls.append(text)
+        return Original(text)
+
+    monkeypatch.setattr(row_filters_module, "_tokenize", Spy)
+    assert first_drop_reason(("aspirin trial",), RowFilters()) is None
+    assert first_drop_reason(("aspirin trial",), RowFilters(min_text_len=5)) is None
+    assert first_drop_reason(("aspirin trial",), RowFilters(exclude_regex="metformin")) is None
+    assert Calls == []
+    assert first_drop_reason(("aspirin trial",), RowFilters(min_words=2)) is None
+    assert Calls == ["aspirin trial"]
 
 
 # ------------------------------------------------------------------ envelope plumbing --
