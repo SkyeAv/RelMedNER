@@ -186,6 +186,31 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "interventions/interventions.avro",
         ),
     ),
+    # bc5cdr (US-001): one local avro container per split, each with its own row_key slot
+    "bc5cdr/train.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/train.avro",
+        ),
+    ),
+    "bc5cdr/dev.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/dev.avro",
+        ),
+    ),
+    "bc5cdr/test.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/test.avro",
+        ),
+    ),
     "knowledgator/sentence_rex": (
         "hf",
         (

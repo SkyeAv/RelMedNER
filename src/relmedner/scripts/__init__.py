@@ -1,3 +1,4 @@
+from relmedner.scripts.bc5cdr import Bc5CdrScript
 from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.docred import DocredScript
@@ -17,6 +18,7 @@ from relmedner.scripts.super_glue_record import SuperGlueRecordScript
 from relmedner.scripts.synthetic_ner_ade_tweets import SyntheticNerAdeTweetsScript
 
 __all__ = [
+    "Bc5CdrScript",
     "BioleafletsScript",
     "CtkpInterventionsScript",
     "DocredScript",
