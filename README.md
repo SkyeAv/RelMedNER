@@ -1,9 +1,11 @@
 # relmedner
 
 Apache Beam pipeline that builds gliner2 training data from biomedical text corpora.
-Datasets come from the HuggingFace hub (`source: hf`) or from a local avro container built
-out-of-band (`source: local`, see [CTKP interventions](docs/ctkp-interventions.md)). Two ingest
-types share one declarative pipeline:
+Datasets come from the HuggingFace hub (`source: hf`, or `hf_json` for one JSON file inside a
+hub repo) or from files built out-of-band and shipped in the package data dir (`source: local`
+for an avro container, see [CTKP interventions](docs/ctkp-interventions.md), and
+`local_delimited` for a header-delimited TSV/CSV). Two task types share one declarative
+pipeline:
 
 - **script tasks** -- datasets that already carry gold spans
   (every `script` row in the [ingest table](#ingests), which is the list that stays current as
@@ -25,7 +27,8 @@ types share one declarative pipeline:
 - **local sources** -- files on disk instead of a hub dataset. `source: local` reads an avro
   container and ships each record whole (see [CTKP interventions](docs/ctkp-interventions.md));
   `source: local_delimited` reads a header-delimited TSV/CSV with a `columns_out` projection
-  (`src/relmedner/data/qualifiers/qualifier_corpus.tsv`, read by `LocalDelimitedDataStream`).
+  (`LocalDelimitedDataStream`); both declared files of that kind, the qualifier corpus and the
+  unannotated ADE tweets, are fullmap-mined.
   Relative paths resolve against the CWD first, then the package data dir, so in-repo corpora
   work from any CWD and inside the worker container.
 
