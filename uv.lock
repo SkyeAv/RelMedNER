@@ -2162,6 +2162,7 @@ dependencies = [
     { name = "dataclasses-avroschema", extra = ["pydantic"] },
     { name = "datasets" },
     { name = "fastavro" },
+    { name = "gliner2" },
     { name = "pydantic" },
     { name = "pyyaml" },
     { name = "tablassert" },
@@ -2169,7 +2170,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "gliner2" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -2184,6 +2184,7 @@ requires-dist = [
     { name = "dataclasses-avroschema", extras = ["pydantic"], specifier = ">=0.70.9" },
     { name = "datasets", specifier = ">=5.0.1" },
     { name = "fastavro", specifier = ">=1.12.2" },
+    { name = "gliner2", specifier = ">=0.1.0" },
     { name = "pydantic", specifier = ">=2.13.5" },
     { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "tablassert", specifier = ">=19.2.0" },
@@ -2191,7 +2192,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "gliner2", specifier = ">=0.1.0" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
