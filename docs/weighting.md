@@ -103,8 +103,8 @@ relmedner validate-trust
    and deterministic.
 
 Driver settings live in the optional top-level `x-trust:` section of `ingests.yaml`
-(`sample_size`, `backend`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
-Secrets (NCBI/Firecrawl keys) never go in the yaml, env only:
+(`sample_size`, `report`), overridden flag-by-flag -- see `docs/yaml-config.md`.
+Secrets (NCBI keys) never go in the yaml, env only:
 
 Notes:
 
@@ -112,10 +112,24 @@ Notes:
   excluded from the average -- a classification source can't be literature-validated, so
   it gets no suggestion rather than a misleading 1.0.
 - Query/network failures are recorded with `hits: null` and **no verdict**; they neither
-  help nor hurt the source.
-- Backend: PubMed E-utilities (default; free, 3 req/s, 10 with a free `NCBI_API_KEY`).
-  For non-biomedical sources use `--backend firecrawl` against your self-hosted
-  instance (`FIRECRAWL_BASE_URL`, optional `FIRECRAWL_API_KEY`).
+  help nor hurt the source. The summary line counts them (`queries`, `errored`), and a
+  source that scored nothing says which failure it hit: `all N queries errored` (fix the
+  network or the key and re-run) versus `sampled records had no entities/relations to
+  validate` (the source is not literature-validatable, keep its declared prior).
+- Backend: PubMed E-utilities only, the Firecrawl web-search fallback is gone. NCBI allows
+  3 req/s unauthenticated and 10 with a free `NCBI_API_KEY`; the client throttles itself to
+  about 3.4 and about 9 req/s to stay inside those windows.
+- Unauthenticated PubMed rate-limits at 3 req/s, and a small sample hits it: a 2-record run
+  over `Pennlaine/Medical-Entity-JSON-Extraction` recorded `HTTP Error 429: Too Many
+  Requests` on three of its queries (wenceslaus, 2026-09-23). Set `NCBI_API_KEY`, or lower
+  `--sample-size`, before believing a score built on that many silent no-verdicts.
+- On synthetic or fictional text the measurement scores the FICTION, not the labels. That
+  same run suggested `trust: 0.23` for a corpus whose spans are correct, because invented
+  details (`Name`, `Specialty`, `FocusArea`) return zero PubMed hits and count as
+  unverified, while the numeric span `"39"` matched 275,775 unrelated records and counted
+  as verified. Keep the declared prior for such a source; do not commit the measurement.
+  Short numeric and generic spans are the usual culprit, so check the per-query rows before
+  lowering anything.
 
 ## Picking a weight for a NEW dataset
 
@@ -137,11 +151,20 @@ Notes:
 
 ## Reweighting the existing datasets
 
-All 25 entries today share one anchor (`&weight 1.0`). Proposal: replace it with three
-tier anchors in `x-defaults` (`&weight-gold 1.0`, `&weight-silver 0.7`,
-`&weight-general 0.4`) so tier membership is visible at a glance. The `trust` values
-below are **priors to confirm with `validate-trust`** -- run the validation, then replace
-priors with measured values.
+Every declared entry lands on `weight: 1.0` today, by three routes: some alias the single
+`&weight 1.0` anchor outright, most inherit it through the `<<: *hf-train` merge from
+`x-defaults`, and the reddit entries declare no `weight` at all and take the model default
+(the ingest table in README.md is the list that stays current as corpora are added).
+Proposal: replace that one anchor with three tier anchors in `x-defaults`
+(`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`) so tier membership is
+visible at a glance. The `trust` values below are **priors to confirm with
+`validate-trust`** -- run the validation, then replace priors with measured values.
+
+Every row key in `src/relmedner/data/ingests.yaml` must appear in this table
+(`tests/test_docs.py` fails otherwise), so adding an ingest means adding its tier here in
+the same PR. Rows sharing one row key (two splits of one repo, or one local avro plus its
+fullmap-mine tsv) are listed once, with the split note, because `weights_by_source` keys
+on the row key and refuses to stamp two entries that disagree.
 
 | Dataset(s) | Tier | Weight | Trust prior | Why |
 | --- | --- | --- | --- | --- |
@@ -151,17 +174,26 @@ priors with measured values.
 | `anthonyyazdaniml/gliner-biomed-curated-corpus` | gold | 1.0 | 1.0 | curated fullmap mining base |
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | gold | 1.0 | 1.0 | curated, class-balanced variant |
 | `interventions/interventions.avro` | gold | 1.0 | 1.0 | local curated intervention gazetteer |
+| `thunlp/docred` (three declared ingests, one row key) | gold | 1.0 | 1.0 | human-annotated document-level entity clusters and gold relations |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | silver | 0.7 | 0.8 | silver IOB annotations |
 | `knowledgator/sentence_rex` | silver | 0.7 | 0.8 | sentence-level RE, distant labels |
 | `Universal-NER/Pile-NER-type` | silver | 0.7 | 0.8 | LLM-generated type annotations |
 | `anthonyyazdaniml/gliner-biomed-post-training` | silver | 0.7 | 0.8 | synthetic post-training corpus |
 | `knowledgator/gliner-multilingual-synthetic` | silver | 0.7 | 0.8 | synthetic, multilingual |
 | `qualifiers/qualifier_corpus.tsv` | silver | 0.7 | 0.8 | local qualifier text, unverified provenance |
+| `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` | silver | 0.7 | 0.8 | same tweet texts with no gold spans, fullmap-mined, so distant labels |
+| `ruslan/bioleaflets-biomedical-ner` (train + test, one row key) | silver | 0.7 | 0.8 | EMA regulatory leaflets; the card does not state annotation provenance |
+| `Pennlaine/Medical-Entity-JSON-Extraction` | silver | 0.7 | 0.8 | 50 instruction-tuned vignettes, hub card body empty |
+| `bc5cdr/train.avro` | gold | 1.0 | 1.0 | BioCreative V CDR, human-annotated gold chemical and disease spans |
+| `bc5cdr/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
+| `bc5cdr/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
+| `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
+| `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
 | `nvidia/Nemotron-PII` (train + test, one row key -- weights must stay equal) | general | 0.4 | 0.6 | PII not biomedical, synthetic; kept for span diversity |
 | `aps/super_glue` multirc | general | 0.3 | 0.6 | classification task transfer, non-med |
 | `aps/super_glue` record | general | 0.3 | 0.6 | reading-comprehension transfer, non-med |
-| `tensorshield/reddit_dataset_*` (all 8 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
+| `tensorshield/reddit_dataset_*` (all 7 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
 
 Worked example (one entry, gold tier):
 

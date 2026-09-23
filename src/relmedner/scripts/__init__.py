@@ -1,9 +1,11 @@
 from relmedner.scripts.bc5cdr import Bc5CdrScript
 from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
+from relmedner.scripts.docred import DocredScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
+from relmedner.scripts.json_extraction import JsonExtractionScript
 from relmedner.scripts.knowledgator_biomed import KnowledgatorBiomedScript
 from relmedner.scripts.medical_entity_json import MedicalEntityJsonScript
 from relmedner.scripts.nemotron_pii import NemotronPiiScript
@@ -19,9 +21,11 @@ __all__ = [
     "Bc5CdrScript",
     "BioleafletsScript",
     "CtkpInterventionsScript",
+    "DocredScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
     "GlinerMultilingualScript",
+    "JsonExtractionScript",
     "KnowledgatorBiomedScript",
     "MedicalEntityJsonScript",
     "NemotronPiiScript",

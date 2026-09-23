@@ -154,6 +154,35 @@ def test_suggested_yaml_omits_the_edges_block_when_nothing_is_flagged() -> None:
     assert "n/a" in snippet
 
 
+def test_suggested_yaml_blames_the_failed_queries_when_every_request_errored() -> None:
+    """trust is None for two opposite reasons, and the printed snippet must name the right one.
+    A real run with a quoted NCBI_API_KEY got `HTTP Error 400` on all 12 queries and the old
+    wording told the operator the corpus had nothing to validate, which points at the dataset
+    instead of the credential. Verified with the CLI on main, 2026-09-23."""
+    snippet: str = suggested_yaml([{"source": "org/repo", "sampled": 2, "trust": None, "edge_trusts": {}, "queries": 12, "errored": 12}])
+    assert "all 12 queries errored" in snippet
+    assert "NCBI_API_KEY" in snippet
+    assert "no entities/relations" not in snippet
+
+
+def test_suggested_yaml_reports_a_partial_error_storm_that_scored_nothing() -> None:
+    """Some queries errored and the rest produced no record score: the snippet must not claim a
+    clean nothing-to-validate, because re-running with a working key could still yield a number."""
+    snippet: str = suggested_yaml([{"source": "org/repo", "sampled": 2, "trust": None, "edge_trusts": {}, "queries": 12, "errored": 3}])
+    assert "3 of 12 queries errored" in snippet
+
+
+def test_suggested_yaml_keeps_the_corpus_reason_when_nothing_errored() -> None:
+    """The classification-only source: zero queries, zero errors, so the honest reason is that
+    the sample carried nothing to validate. Also proves summaries without the counters (older
+    reports, hand-built dicts) fall back to this wording instead of raising KeyError."""
+    with_counters: str = suggested_yaml([{"source": "org/repo", "sampled": 2, "trust": None, "edge_trusts": {}, "queries": 0, "errored": 0}])
+    without_counters: str = suggested_yaml([{"source": "org/repo", "sampled": 5, "trust": None, "edge_trusts": {}}])
+    for snippet in (with_counters, without_counters):
+        assert "no entities/relations to validate" in snippet
+        assert "errored" not in snippet
+
+
 def test_suggested_yaml_is_parseable_yaml_per_source_block() -> None:
     import yaml
 
@@ -166,31 +195,30 @@ def test_suggested_yaml_is_parseable_yaml_per_source_block() -> None:
 
 
 def test_x_trust_section_parses_and_defaults_to_the_constants() -> None:
-    Config = ValidateTrustConfig.model_validate({"sample_size": 10, "backend": "firecrawl", "report": "out.jsonl"})
+    Config = ValidateTrustConfig.model_validate({"sample_size": 10, "report": "out.jsonl"})
     assert Config.sample_size == 10
-    assert Config.backend == "firecrawl"
     assert Config.report == "out.jsonl"
     assert ValidateTrustConfig().sample_size >= 1
 
 
-def test_unknown_backend_is_a_validation_error() -> None:
-    with pytest.raises(ValidationError, match="is not 'pubmed' or 'firecrawl'"):
+def test_unknown_x_trust_key_is_a_validation_error() -> None:
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         ValidateTrustConfig.model_validate({"backend": "duckduckgo"})
 
 
 def test_trust_settings_precedence_flag_over_yaml_over_constants() -> None:
-    Config = ValidateTrustConfig(sample_size=10, backend="firecrawl", report="x.jsonl")
-    assert resolve_trust_settings(None, None, None, Config) == (10, "firecrawl", "x.jsonl")
-    assert resolve_trust_settings(7, "pubmed", "y.jsonl", Config) == (7, "pubmed", "y.jsonl")
-    assert resolve_trust_settings(7, None, None, Config) == (7, "firecrawl", "x.jsonl")
-    assert resolve_trust_settings(None, None, None, None) >= (1, "pubmed", "")
+    Config = ValidateTrustConfig(sample_size=10, report="x.jsonl")
+    assert resolve_trust_settings(None, None, Config) == (10, "x.jsonl")
+    assert resolve_trust_settings(7, "y.jsonl", Config) == (7, "y.jsonl")
+    assert resolve_trust_settings(7, None, Config) == (7, "x.jsonl")
+    assert resolve_trust_settings(None, None, None) >= (1, "")
 
 
 def test_x_trust_attaches_to_yaml_ingests_under_the_aliased_key() -> None:
     Ingests = YamlIngests.model_validate(
         {
             "datasets": [],
-            "x-trust": {"sample_size": 3, "backend": "pubmed", "report": "r.jsonl"},
+            "x-trust": {"sample_size": 3, "report": "r.jsonl"},
         }
     )
     assert Ingests.x_trust is not None

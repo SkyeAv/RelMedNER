@@ -25,10 +25,6 @@ set -uo pipefail
 
 HOST="wenceslaus"
 BASE="Code/RelMedNER-worktrees"
-# one canonical remote fullmap path: the runner's RELMEDNER_FULLMAP_DIR env override and the
-# sed-patched constants.py fallback literal must name the SAME directory, or the env-capture
-# constants tests see two different paths and the suite fails on the box's $HOME spelling.
-REMOTE_FULLMAP="/home/sgoetz/Desktop/fullmap"
 DO_SYNC=1
 TMUX=0
 SESSION=""
@@ -72,10 +68,7 @@ if [ ! -f "$ROOT/$SKILL_REL/remote-runner.sh" ]; then
 fi
 
 # 1. push the tree. --exclude='.venv' is load-bearing: shipping a laptop-platform venv makes uv
-#    rebuild the remote environment. --delete keeps the copy honest. --exclude='*.avro' keeps
-#    operator-built containers off the wire, and the sentinel file keeps --delete from wiping the
-#    whole package-data dir on a box where the containers have not been built yet (the runner
-#    syncs real containers from a sibling tree before the suite runs).
+#    rebuild the remote environment. --delete keeps the copy honest.
 if [ "$DO_SYNC" -eq 1 ]; then
     echo "== rsync push"
     remote "mkdir -p '$REMOTE_REL'" || exit 1
@@ -83,15 +76,20 @@ if [ "$DO_SYNC" -eq 1 ]; then
         --exclude='.git' --exclude='.venv' --exclude='.ralph' \
         --exclude='__pycache__' --exclude='.pytest_cache' --exclude='.ruff_cache' \
         --exclude='.coverage' --exclude='dist' --exclude='*.avro' \
-        --exclude='.rsync-dir-sentinel' \
+        --exclude='/src/relmedner/data/synthetic-ner-ade-tweets' \
+        --exclude='/src/relmedner/data/interventions' \
         "$ROOT/" "$HOST:$REMOTE_REL/" || exit 1
-    remote "mkdir -p '$REMOTE_REL/src/relmedner/data/bc5cdr' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets' '$REMOTE_REL/src/relmedner/data/interventions' '$REMOTE_REL/src/relmedner/data/medical-entity-json-extraction' && touch '$REMOTE_REL/src/relmedner/data/bc5cdr/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/synthetic-ner-ade-tweets/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/interventions/.rsync-dir-sentinel' '$REMOTE_REL/src/relmedner/data/medical-entity-json-extraction/.rsync-dir-sentinel'" || exit 1
 fi
 
 # 2. patch the REMOTE COPY's hardcoded laptop fullmap path (idempotent; the laptop tree and git
 #    history are never touched). The grep line printed back is the receipt.
 echo "== remote FULLMAP_DIR patch"
-remote "cd '$REMOTE_REL' && sed -i 's#/home/skyeav/Desktop/fullmap#$REMOTE_FULLMAP#' src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
+# the replacement is the REMOTE $HOME form (wenceslaus HOME=/users/sgoetz, /home/sgoetz is the
+# same tree) so the exported RELMEDNER_FULLMAP_DIR matches the patched literal TEXTUALLY --
+# tests/test_constants.py compares the env value and the envless default as strings, so a
+# /home/sgoetz literal under a /users/sgoetz HOME fails two FULLMAP_DIR tests (measured
+# 2026-09-22 on the untouched main checkout too)
+remote "cd '$REMOTE_REL' && sed -i \"s#/home/skyeav/Desktop/fullmap#\$HOME/Desktop/fullmap#\" src/relmedner/constants.py && grep -n 'FULLMAP_DIR' src/relmedner/constants.py | tr ':' '~'" || exit 1
 
 # 3. run the mode. Long jobs go in remote tmux because the gateway idle-kills raw ssh masters.
 if [ "$MODE" = "smoke" ]; then
@@ -104,7 +102,7 @@ fi
 
 if [ "$TMUX" -eq 1 ]; then
     echo "== launching remote tmux session '$SESSION'"
-    remote "tmux kill-session -t '$SESSION' 2>/dev/null; tmux new-session -d -s '$SESSION' \"cd '$REMOTE_REL' && RELMEDNER_FULLMAP_DIR='$REMOTE_FULLMAP' bash '$RUNNER' \\\$PWD \\\$HOME/'$LOG_REL' $MODE_ARG ${EXTRA[*]}\"" || exit 1
+    remote "tmux kill-session -t '$SESSION' 2>/dev/null; tmux new-session -d -s '$SESSION' \"cd '$REMOTE_REL' && bash '$RUNNER' \\\$PWD \\\$HOME/'$LOG_REL' $MODE_ARG ${EXTRA[*]}\"" || exit 1
     echo "   poll: ssh $HOST 'tmux capture-pane -p -t $SESSION | tail -30'"
     echo "   log:  ssh $HOST 'tail -40 ~/$LOG_REL | tr \":\" \"~\"'"
     if [ "$WAIT" -gt 0 ]; then
@@ -118,7 +116,7 @@ if [ "$TMUX" -eq 1 ]; then
     fi
 else
     echo "== remote run ($MODE)"
-    remote "cd '$REMOTE_REL' && RELMEDNER_FULLMAP_DIR='$REMOTE_FULLMAP' bash '$RUNNER' \"\$PWD\" \"\$HOME/$LOG_REL\" $MODE_ARG ${EXTRA[*]}"
+    remote "cd '$REMOTE_REL' && bash '$RUNNER' \"\$PWD\" \"\$HOME/$LOG_REL\" $MODE_ARG ${EXTRA[*]}"
     echo "== exit=$?"
 fi
 

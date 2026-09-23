@@ -16,6 +16,7 @@ from relmedner.validators import (
     example_weight,
     grade_relation,
     grade_span,
+    query_outcomes,
     record_edge_factor,
     record_trust,
     relation_query,
@@ -107,6 +108,26 @@ def test_source_trust_averages_scored_records_only() -> None:
 
 def test_source_trust_none_when_everything_unscored() -> None:
     assert source_trust([None, None]) is None
+
+
+def test_query_outcomes_partitions_verdicts_and_errors() -> None:
+    """A record's queries split into graded verdicts and transport failures, and the caller
+    needs the split: trust is None both for a corpus with nothing to query and for a run whose
+    every request was rejected, and only the error count distinguishes them. The error shape is
+    the one validate_record writes (hits None, no verdict key)."""
+    Results: list[dict[str, object]] = [
+        {"kind": "span", "feature": "Drug", "query": "q1", "hits": 12, "verdict": VERIFIED},
+        {"kind": "span", "feature": "Age", "query": "q2", "hits": None, "error": "HTTP Error 400: Bad Request"},
+        {"kind": "relation", "feature": "treats", "query": "q3", "hits": 3, "verdict": PARTIAL},
+        {"kind": "span", "feature": "Name", "query": "q4", "hits": None, "error": "HTTP Error 429: Too Many Requests"},
+    ]
+    assert query_outcomes(Results) == (2, 2)
+
+
+def test_query_outcomes_of_a_record_with_no_queries_is_zero_zero() -> None:
+    """The classification-only case: a record that emitted nothing to validate must report no
+    errors, so the suggestion keeps blaming the corpus instead of a network that was never used."""
+    assert query_outcomes([]) == (0, 0)
 
 
 # ------------------------------------------------------------------------ weight adjustment --

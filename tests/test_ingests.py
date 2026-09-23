@@ -259,6 +259,54 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "thunlp/docred:data/train_annotated.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_annotated.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/train_distant.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_distant.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/dev.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/dev.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/test.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities",)),
+            1.0,
+            "thunlp/docred",
+            "data/test.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
     "aps/super_glue:record": (
         "hf",
         (
@@ -429,6 +477,80 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "test",
             None,
             ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    # agentlans/json-extraction: one lock per source config; the six entries share the repo-id row
+    # key, so entry_key qualifies on the subset (the hub config is the real filter)
+    "agentlans/json-extraction:owkin-medical_knowledge_from_extracts": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "owkin-medical_knowledge_from_extracts",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:ProfessorBob-relation_extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "relations")),
+            1.0,
+            "agentlans/json-extraction",
+            "ProfessorBob-relation_extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:roborovski-dolly-entity-extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "roborovski-dolly-entity-extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:sandeeppanem-resume-json-extraction-5k": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "sandeeppanem-resume-json-extraction-5k",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:Jiraya-html_to_json_information_extraction_dataset": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "Jiraya-html_to_json_information_extraction_dataset",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:HenriqueGodoy-extract-0": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures",)),
+            1.0,
+            "agentlans/json-extraction",
+            "HenriqueGodoy-extract-0",
+            "train",
+            None,
+            ("text", "json", "source"),
         ),
     ),
     "Pennlaine/Medical-Entity-JSON-Extraction": (
