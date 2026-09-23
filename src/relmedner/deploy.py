@@ -291,7 +291,9 @@ def deploy_cluster(teardown: bool = False, dry_run: bool = False) -> None:
                 Popen(
                     [
                         *ssh_to(ssh_user, host),
-                        f"setsid nohup ssh {inner} </dev/null >/dev/null 2>&1 & echo $! > {pid_file}",
+                        # inner already starts with `ssh` (see tunnel_spec) — prefixing another one ran
+                        # `ssh ssh ...`, which died instantly and left every host tunnel-less
+                        f"setsid nohup {inner} </dev/null >/dev/null 2>&1 & echo $! > {pid_file}",
                     ],
                     start_new_session=True,
                     stdout=DEVNULL,
