@@ -167,7 +167,9 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `task` | yes | none | `script` or `fullmap` task block (see above) | what happens to each row of this dataset |
-| `weight` | no | 1.0 | must be > 0 | per-source mixing weight stamped onto every `TrainingExample` the source emits; stock gliner2 has no per-example weight channel, so consumption is weighted duplication at avro->JSONL export. Two entries sharing one row key (hub repo id, or local path) must agree on the weight or stamping would be ambiguous |
+| `weight` | no | 1.0 | 0 <= w (0 = soft drop) | per-source mixing weight stamped onto every `TrainingExample` the source emits; stock gliner2 has no per-example weight channel, so consumption is weighted duplication at avro->JSONL export. 0 soft-drops: the record still ships to avro but duplicates zero times at export (discouraged, see docs/weighting.md). Two entries sharing one row key (hub repo id, or local path) must agree on the weight or stamping would be ambiguous |
+| `trust` | no | 1.0 | 0..1 | source-level trust score suggested by the offline `relmedner validate-trust` run; folds into the stamped weight as `weight * trust`, clamped to a fixed +-20% band (only `trust: 0` lands outside it, as the explicit soft drop). 1.0 = no adjustment. Review the JSONL report before committing a value (workflow: docs/weighting.md) |
+| `trust_edges` | no | none | map of relation name -> 0..1 | per-predicate edge trust: the heuristic application of sampled validation to the WHOLE dataset. Every record carrying a relation whose name is in this map gets its stamped weight scaled by the weakest flagged predicate's trust (records without flagged relations keep the source weight untouched; `0` soft-drops those records). Keyword-only, like `trust` and `filters` |
 
 `HuggingFaceDataset` (`source: hf`):
 
@@ -194,6 +196,21 @@ Selected by `source`. Both shapes inherit two fields from `DatasetBase`:
 | `column` | yes | none | string | dataset column to test |
 | `values` | yes | none | list of strings | accepted values; rows whose `column` is not in this list are skipped |
 
+### `x-trust` (validate-trust driver settings)
+
+Optional top-level section (model field `x_trust`, YAML key `x-trust`, same aliasing
+convention as `x-defaults`) holding the `relmedner validate-trust` defaults; CLI flags
+(`--sample-size`, `--report`) override these one-for-one:
+
+```yaml
+x-trust:
+  sample_size: 50      # records sampled per source (>= 1)
+  report: trust-report.jsonl
+```
+
+Secrets never belong here (`ingests.yaml` is committed): `NCBI_API_KEY` comes from the
+environment only.
+
 ### Row filters (`filters` / `RowFilters`)
 
 Every dataset entry (hf and local) accepts an optional `filters` block: declarative row-quality
@@ -206,8 +223,19 @@ Drop reasons evaluate in this fixed order; the first match drops the row:
 1. `drop_empty` - every projected value is None, `""`, or an empty list/tuple/dict
 2. `min_text_len` - the joined text is shorter than this
 3. `max_text_len` - the joined text is longer than this
-4. `include_regex` - the joined text does NOT match this pattern
-5. `exclude_regex` - the joined text DOES match this pattern
+4. `max_tokens` - the joined text is longer than the always-on platform token cap (see below)
+5. `min_words` - the joined text has fewer whitespace tokens than this
+6. `min_stop_word_ratio` - the share of English function words is BELOW this (language/degeneracy proxy)
+7. `max_symbol_ratio` - the share of non-alphanumeric non-space characters is ABOVE this
+8. `max_upper_ratio` - the share of all-caps alphabetic words is ABOVE this
+9. `max_repeat_ngram_ratio` - the share of duplicated 10-word windows is ABOVE this
+10. `max_short_line_ratio` - the share of lines under 30 chars is ABOVE this (abnormal line breaks)
+11. `include_regex` - the joined text does NOT match this pattern
+12. `exclude_regex` - the joined text DOES match this pattern
+
+The first match drops the row and owns the attribution in the quality line. The six
+heuristic rules (5-10) are the C4/Gopher web-corpus QC family; all default to off (see the
+table), cost zero tokenization while off, and share one tokenization pass when any is on.
 
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
@@ -216,6 +244,24 @@ Drop reasons evaluate in this fixed order; the first match drops the row:
 | `max_text_len` | no | absent | int >= 0 | drop rows whose joined text is longer than this; must be >= `min_text_len` when both are set |
 | `include_regex` | no | absent | string | drop rows whose joined text does not match (unanchored `re.search` semantics) |
 | `exclude_regex` | no | absent | string | drop rows whose joined text matches |
+| `min_words` | no | absent | int >= 0 | drop rows with fewer whitespace tokens than this |
+| `min_stop_word_ratio` | no | absent | float 0.0-1.0 | drop rows whose English function-word share (over `FUNCTION_WORDS`, case-folded) is below this; the language/degeneracy guard |
+| `max_symbol_ratio` | no | absent | float 0.0-1.0 | drop rows whose non-alphanumeric non-space character share is above this; the markup/code guard |
+| `max_upper_ratio` | no | absent | float 0.0-1.0 | drop rows whose all-caps alphabetic-word share is above this; the shouting-caps guard |
+| `max_repeat_ngram_ratio` | no | absent | float 0.0-1.0 | drop rows whose duplicated 10-word sliding-window share is above this; the repetition guard |
+| `max_short_line_ratio` | no | absent | float 0.0-1.0 | drop rows whose share of lines under 30 chars is above this; the abnormal-line-breaks guard |
+
+The always-on `max_tokens` cap: a platform constant, NOT a field you declare. Every source,
+even one with no `filters` block at all, drops rows whose joined text is longer than the cap.
+Estimated tokens = `len(joined_text) // 4` (the ~4 chars-per-token rule of thumb for English
+prose, https://help.openai.com/en/articles/4936856-understanding-and-counting-tokens); the row
+drops iff `len(joined_text) > MAX_TEXT_TOKENS * CHARS_PER_TOKEN = 8192 * 4 = 32768` chars.
+Medical text runs denser than average prose, so the estimate carries roughly a one-token-in-four
+error margin in either direction. Semantics are drop, never truncate: an over-cap row is dropped
+whole so no partial context ever reaches a task. The cap needs no YAML declaration and cannot be
+waived per dataset; it sits after the declared length rules (a row that already fires
+`max_text_len` keeps that attribution) and before the regexes (an over-cap row never attributes
+to a regex).
 
 The text rule: the text every length/regex filter measures is `" ".join` over the projected
 payload values in order. A value contributes as itself when it is a str, as its elements joined
@@ -226,10 +272,16 @@ A row whose values carry no str at all has text `""`.
 Tripwires:
 
 - Unknown keys inside `filters` fail validation (`extra="forbid"` applies there too), as does
-  `min_text_len` > `max_text_len`.
+  `min_text_len` > `max_text_len`; ratio knobs outside [0.0, 1.0] and negative `min_words`
+  fail validation too.
+- The heuristic thresholds are measured-first, never guessed: run a probe with candidate
+  values and read the `dropped={...}` attribution before committing a threshold (every
+  dropped row is supervised signal). All six default to off, so adding the fields changed
+  nothing for existing declarations.
 - An invalid regex fails at stream construction with `re.error`, before any row streams.
-- Fail-loud zero-yield guard: when a `filters` block drops 100% of the rows of a non-empty
-  source, the run raises `ZeroYieldError` instead of silently shipping an empty training set.
+- Fail-loud zero-yield guard: when a declared filter OR the always-on `max_tokens` cap
+  drops 100% of the rows of a non-empty source, the run raises `ZeroYieldError` instead of
+  silently shipping an empty training set.
   A genuinely empty source (0 rows in) is not an error. A dataset with no `filters` block keeps
   the historical unfiltered behavior exactly.
 
@@ -242,6 +294,26 @@ Copy-paste example (keep only the rows longer than 20 chars, drop empties):
   split: train
   columns_out: [tokenized_text]
   filters: {drop_empty: true, min_text_len: 20}
+```
+
+Copy-paste example (web-corpus QC heuristics on a noisy source: floor the word count,
+require some English function words, bound symbols/shouting/repetition; every value here
+is a placeholder to replace from a measured probe, not a recommendation):
+
+```yaml
+- task: {type: fullmap, outputs: [entities, relations]}
+  source: hf
+  dataset: some/noisy-reddit-corpus
+  split: train
+  columns_out: [text]
+  filters:
+    drop_empty: true
+    min_words: 20
+    min_stop_word_ratio: 0.05
+    max_symbol_ratio: 0.3
+    max_upper_ratio: 0.5
+    max_repeat_ngram_ratio: 0.3
+    max_short_line_ratio: 0.5
 ```
 
 ### Reading ingest quality numbers
@@ -361,21 +433,19 @@ cold-cache streaming corruption).
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `ssh_user` | yes | none | login name | ssh user on every worker |
-| `workers` | yes | none | non-empty list of `WorkerNode` | the Flink worker nodes; the laptop entry hosts the jobmanager |
+| `jobmanager` | yes | none | hostname or IP | head host: runs the jobmanager stack AND its own worker duty; deploy, `build-dataset`, and shard collection all run from this host |
+| `workers` | yes | none | non-empty list of `WorkerNode` | the Flink worker nodes; the head-host model gives every listed host worker duty |
 
 ### Worker entries (`WorkerNode`)
 
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
-| `host` | yes | none | hostname or IP; `local` means the laptop | worker address (taskmanagers connect back to the laptop's jobmanager ports, so every worker needs a VPN route to it) |
+| `host` | yes | none | hostname or IP | worker address; all inter-host flink traffic rides ssh tunnels, so only :22 must be reachable |
 | `slots` | yes | none | >= 1 | Beam SDK worker slots on this node |
 | `memory` | yes | none | string like `16g` | memory given to the worker container |
 | `fullmap` | yes | none | host directory | directory holding the fullmap redb bundle (primary redb plus `<stem>.s<N>.redb` shards); bind-mounted read-only into the sdkworker at `/opt/fullmap` |
-| `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards on remotes are collected back to the laptop when the job finishes |
-
-The shared path pair (`fullmap` + `outputs`) can be anchored once and merged
-into sibling workers, as the wenceslaus/hypatia blocks in `cluster.yaml` do
-with `<<: &wenceslaus-paths ...`.
+| `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards are collected onto the head host when the job finishes |
+| `polars_runtime` | no | `"32"` | `"32"`, `"64"`, or `"compat"` | `POLARS_FORCE_PKG` for this host's sdkworker: `"compat"` on CPUs without AVX2/FMA/BMI2, where the default runtime dies with SIGILL (the image ships both via `tablassert[rt]`) |
 
 ## How the loader reads these files
 

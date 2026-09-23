@@ -6,25 +6,45 @@ from urllib.error import URLError
 
 import httpx
 import pytest
+from apache_beam.options.pipeline_options import PipelineOptions
 from fastavro import reader
 from huggingface_hub.errors import OfflineModeIsEnabled
 from requests.exceptions import ConnectionError as RequestsConnectionError
 from requests.exceptions import Timeout as RequestsTimeout
 
-from relmedner.constants import TEST_ROW_LIMIT
+from relmedner.constants import OUTPUTS_MOUNT, TEST_ROW_LIMIT
 from relmedner.ingests import YamlIngestsParser
 from relmedner.models import RunConfig, TrainingExample, YamlIngests
-from relmedner.pipeline import BeamPipeline
+from relmedner.pipeline import BeamPipeline, output_path
 from relmedner.types import Script
 from relmedner.utils import ScriptUtils
 
 TRANSPORT_ERRORS = (OfflineModeIsEnabled, httpx.NetworkError, httpx.TimeoutException, RequestsConnectionError, RequestsTimeout, URLError)
 
 
+def test_output_path_flips_to_the_worker_mount_only_for_flink() -> None:
+    """options presence must not decide the output location: local prism runs carry worker-count
+    options yet keep the caller's path; only a declared flink runner writes into /opt/outputs"""
+    Config: RunConfig = RunConfig.from_flags(True, "test.avro")
+    assert output_path(None, Config) == Path("test.avro")
+    assert output_path(PipelineOptions(["--direct_num_workers=1"]), Config) == Path("test.avro")
+    assert output_path(PipelineOptions(["--runner=FlinkRunner"]), Config) == Path(OUTPUTS_MOUNT) / Config.artifact_name()
+
+
 def run_smoke_pipeline(output: Path) -> None:
-    """skip only unavailable Hugging Face transport, preserving pipeline failures"""
+    """skip only unavailable Hugging Face transport, preserving pipeline failures.
+    One worker, one thread: twelve ingests streamed concurrently trip the unauthenticated
+    Hugging Face rate limiter and push single bundles past the prism result deadline."""
+    Options: PipelineOptions = PipelineOptions(
+        [
+            "--direct_num_workers=1",
+            # prism's result stream inherits the 300s job_server_timeout default; a throttled
+            # Hugging Face run (unauthenticated rate limiting) legitimately exceeds that
+            "--job_server_timeout=1800",
+        ]
+    )
     try:
-        BeamPipeline().run(RunConfig.from_flags(True, str(output)))
+        BeamPipeline(options=Options).run(RunConfig.from_flags(True, str(output)))
     except TRANSPORT_ERRORS as exc:
         pytest.skip(f"huggingface is unreachable: {exc}")
 

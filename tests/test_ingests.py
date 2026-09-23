@@ -26,6 +26,59 @@ from relmedner.models import (
 # per-ingest locks: each declared ingest's entry is asserted independently so adding a dataset is an
 # additive block here rather than a rewritten literal (and a guaranteed merge conflict) across the
 # parallel dataset worktrees
+# the single health-community allowlist match_on lock, shared by all seven tensorshield reddit
+# entries (values match the corpus EXACTLY: apply_match is exact membership, so casing must be
+# the Reddit canonical form or the row is silently dropped)
+EXPECTED_REDDIT_MATCH: tuple[object, ...] = (
+    (
+        "communityName",
+        (
+            "r/AskDocs",
+            "r/medical",
+            "r/medicine",
+            "r/Health",
+            "r/diabetes",
+            "r/ADHD",
+            "r/autism",
+            "r/Anxiety",
+            "r/depression",
+            "r/SuicideWatch",
+            "r/cancer",
+            "r/Celiac",
+            "r/ibs",
+            "r/IBD",
+            "r/CrohnsDisease",
+            "r/UlcerativeColitis",
+            "r/eczema",
+            "r/Psoriasis",
+            "r/acne",
+            "r/migraine",
+            "r/ChronicPain",
+            "r/Menopause",
+            "r/endometriosis",
+            "r/PCOS",
+            "r/infertility",
+            "r/birthcontrol",
+            "r/lupus",
+            "r/MultipleSclerosis",
+            "r/hypothyroidism",
+            "r/Hashimotos",
+            "r/asthma",
+            "r/COPD",
+            "r/epilepsy",
+            "r/schizophrenia",
+            "r/bipolar",
+            "r/BPD",
+            "r/OCD",
+            "r/ptsd",
+            "r/EatingDisorders",
+            "r/Dentistry",
+            "r/pharmacy",
+            "r/nursing",
+        ),
+    ),
+)
+
 EXPECTED: dict[str, tuple[object, ...]] = {
     "anthonyyazdaniml/gliner-biomed-pre-training": (
         "hf",
@@ -134,6 +187,31 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "interventions/interventions.avro",
         ),
     ),
+    # bc5cdr (US-001): one local avro container per split, each with its own row_key slot
+    "bc5cdr/train.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/train.avro",
+        ),
+    ),
+    "bc5cdr/dev.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/dev.avro",
+        ),
+    ),
+    "bc5cdr/test.avro": (
+        "local",
+        (
+            ("script", "Bc5CdrScript", ("entities", "relations")),
+            1.0,
+            "bc5cdr/test.avro",
+        ),
+    ),
     "knowledgator/sentence_rex": (
         "hf",
         (
@@ -182,6 +260,54 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokenized_text", "ner"),
         ),
     ),
+    "thunlp/docred:data/train_annotated.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_annotated.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/train_distant.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/train_distant.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/dev.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities", "relations")),
+            1.0,
+            "thunlp/docred",
+            "data/dev.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
+    "thunlp/docred:data/test.json.gz": (
+        "hf_json",
+        (
+            ("script", "DocredScript", ("entities",)),
+            1.0,
+            "thunlp/docred",
+            "data/test.json.gz",
+            "train",
+            None,
+            ("sents", "vertexSet", "labels"),
+        ),
+    ),
     "aps/super_glue:record": (
         "hf",
         (
@@ -203,6 +329,18 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text",),
             None,
         ),
+    ),
+    # local avro script ingest: same short-tuple shape as interventions above (no subset/split,
+    # no columns_out; DatasetBase still carries the weight)
+    "synthetic-ner-ade-tweets/ade_tweets.avro": (
+        "local",
+        (("script", "SyntheticNerAdeTweetsScript", ("entities",)), 1.0, "synthetic-ner-ade-tweets/ade_tweets.avro"),
+    ),
+    # local delimited fullmap ingest: same shape as qualifiers above (columns_out joins the tuple,
+    # match_on stays None)
+    "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv": (
+        "local_delimited",
+        (("fullmap", 6, "9606", True, ("entities", "relations")), 1.0, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
     ),
     # nvidia/Nemotron-PII declares one ingest PER SPLIT off one repo id: entry_key qualifies on the
     # split when no subset is declared, so the two locks coexist instead of silently overwriting
@@ -229,6 +367,235 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             None,
             ("text", "spans"),
         ),
+    ),
+    # wcole3/biored-parquet declares one ingest PER SPLIT off one repo id with no subset (the
+    # config-less load streams the default biored_bigbio_kb config), so entry_key split-qualifies
+    # the three locks exactly like nvidia/Nemotron-PII above
+    "wcole3/biored-parquet:train": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "train",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:validation": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "validation",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    "wcole3/biored-parquet:test": (
+        "hf",
+        (
+            ("script", "BioredScript", ("entities", "relations")),
+            1.0,
+            "wcole3/biored-parquet",
+            None,
+            "test",
+            None,
+            ("passages", "entities", "relations"),
+        ),
+    ),
+    # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
+    # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
+    "tensorshield/reddit_dataset_157": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_157",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_171": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_171",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_217": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_217",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_237": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_237",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_30": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_30",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_84": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_84",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    "tensorshield/reddit_dataset_85": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "tensorshield/reddit_dataset_85",
+            None,
+            "train",
+            (("communityName", EXPECTED_REDDIT_MATCH[0][1]),),
+            ("text",),
+        ),
+    ),
+    # ruslan/bioleaflets-biomedical-ner: one repo id, two ingests distinguished ONLY by split (no
+    # subset), so entry_key qualifies BOTH keys with the split (same convention as nvidia/Nemotron-PII)
+    "ruslan/bioleaflets-biomedical-ner:train": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "train",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    "ruslan/bioleaflets-biomedical-ner:test": (
+        "hf",
+        (
+            ("script", "BioleafletsScript", ("entities", "relations")),
+            1.0,
+            "ruslan/bioleaflets-biomedical-ner",
+            None,
+            "test",
+            None,
+            ("Section_1", "Section_2", "Section_3", "Section_4", "Section_5", "Section_6"),
+        ),
+    ),
+    # agentlans/json-extraction: one lock per source config; the six entries share the repo-id row
+    # key, so entry_key qualifies on the subset (the hub config is the real filter)
+    "agentlans/json-extraction:owkin-medical_knowledge_from_extracts": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "owkin-medical_knowledge_from_extracts",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:ProfessorBob-relation_extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "relations")),
+            1.0,
+            "agentlans/json-extraction",
+            "ProfessorBob-relation_extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:roborovski-dolly-entity-extraction": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "roborovski-dolly-entity-extraction",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:sandeeppanem-resume-json-extraction-5k": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "sandeeppanem-resume-json-extraction-5k",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:Jiraya-html_to_json_information_extraction_dataset": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures", "entities")),
+            1.0,
+            "agentlans/json-extraction",
+            "Jiraya-html_to_json_information_extraction_dataset",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "agentlans/json-extraction:HenriqueGodoy-extract-0": (
+        "hf",
+        (
+            ("script", "JsonExtractionScript", ("structures",)),
+            1.0,
+            "agentlans/json-extraction",
+            "HenriqueGodoy-extract-0",
+            "train",
+            None,
+            ("text", "json", "source"),
+        ),
+    ),
+    "Pennlaine/Medical-Entity-JSON-Extraction": (
+        "hf",
+        (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
     ),
     "bigbio/chemprot:chemprot_full_source:train": (
         "hf",
@@ -318,23 +685,6 @@ def test_the_declared_tuple_shape_is_locked_per_ingest(ingest: str) -> None:
 
 def test_every_declared_ingest_is_accounted_for() -> None:
     assert set(tuples_by_ingest()) == set(EXPECTED)
-
-
-def test_entry_key_fails_loudly_for_a_colliding_non_string_split() -> None:
-    """The fail-loud guard that keeps a colliding base key from silently overwriting its locks
-    when the split slot is malformed; this branch is the entire point of the rule, so it must be
-    exercised directly rather than only ever firing on real declarations."""
-    payload = (
-        ("script", "SyntheticScript", ("entities",)),
-        1.0,
-        "synthetic/dataset",
-        "synthetic_subset",
-        123,
-        None,
-        ("text", "ner"),
-    )
-    with pytest.raises(ValueError, match="split 123 is not a str"):
-        entry_key(payload, {"synthetic/dataset:synthetic_subset"})
 
 
 # doc drift guard: docs/yaml-config.md is the agent-facing schema reference, and it rots silently

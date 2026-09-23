@@ -13,6 +13,11 @@
 x-defaults:
   hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
+  # shared QC thresholds for the reddit fullmap ingests, measured on wenceslaus 2026-09-23
+  # (1500-row grid probe per source, samples audited by hand): the stop-word floor drops
+  # 0.9-4.9 percent link-only/degenerate posts, the short-line ceiling 0.1 percent
+  # newline-spam lists; see docs/quality-heuristics.md for the measured table
+  reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
@@ -43,6 +48,10 @@ datasets:
     source: local
     weight: *weight
     path: interventions/interventions.avro
+  - task: {type: script, name: SyntheticNerAdeTweetsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: synthetic-ner-ade-tweets/ade_tweets.avro
   - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-post-training
@@ -74,6 +83,35 @@ datasets:
     dataset: knowledgator/PubMedAbstractsNER
     file: train.json
     columns_out: [tokenized_text, ner]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_annotated.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/train_distant.json.gz
+    columns_out: [sents, vertexSet, labels]
+  - task: {type: script, name: DocredScript, outputs: [entities, relations]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/dev.json.gz
+    columns_out: [sents, vertexSet, labels]
+  # test rows carry no labels key at all, so this split ships entities only
+  - task: {type: script, name: DocredScript, outputs: [entities]}
+    source: hf_json
+    split: train
+    weight: *weight
+    dataset: thunlp/docred
+    file: data/test.json.gz
+    columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: SuperGlueRecordScript, outputs: [entities, classifications]}
     <<: *hf-train
     dataset: aps/super_glue
@@ -83,6 +121,11 @@ datasets:
     source: local_delimited
     weight: *weight
     path: qualifiers/qualifier_corpus.tsv
+    columns_out: [text]
+  - task: *fullmap-task
+    source: local_delimited
+    weight: *weight
+    path: synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv
     columns_out: [text]
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     <<: *hf-train
@@ -113,3 +156,231 @@ datasets:
     dataset: bigbio/chemprot
     subset: chemprot_full_source
     columns_out: [text, entities, relations]
+  # tensorshield reddit corpora: general Reddit, MIT, all >= 100k rows (226 at 22,572 rows is
+  # excluded -- projected yield after the health filter is noise). match_on keeps only
+  # biomedical/health communities; values match the corpus EXACTLY (apply_match is exact
+  # membership, so casing must be the Reddit canonical form). Casing measured against the
+  # live corpus (400k-row streaming probe of reddit_dataset_157, 2026-09-22): the four
+  # case-sensitive names r/SuicideWatch, r/Menopause, r/Dentistry, r/ptsd are the corpus
+  # canonical forms; zero-hit entries are kept (the corpus is 7.1M rows and they may
+  # appear later in the stream).
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_157
+    split: train
+    # anchor sits on the LIST node (match_on: list[MatchOn], src/relmedner/models.py:95) so
+    # match_on: *biomed_communities in the sibling entries resolves to a valid list
+    match_on: &biomed_communities
+      - column: communityName
+        values:
+          - r/AskDocs
+          - r/medical
+          - r/medicine
+          - r/Health
+          - r/diabetes
+          - r/ADHD
+          - r/autism
+          - r/Anxiety
+          - r/depression
+          - r/SuicideWatch
+          - r/cancer
+          - r/Celiac
+          - r/ibs
+          - r/IBD
+          - r/CrohnsDisease
+          - r/UlcerativeColitis
+          - r/eczema
+          - r/Psoriasis
+          - r/acne
+          - r/migraine
+          - r/ChronicPain
+          - r/Menopause
+          - r/endometriosis
+          - r/PCOS
+          - r/infertility
+          - r/birthcontrol
+          - r/lupus
+          - r/MultipleSclerosis
+          - r/hypothyroidism
+          - r/Hashimotos
+          - r/asthma
+          - r/COPD
+          - r/epilepsy
+          - r/schizophrenia
+          - r/bipolar
+          - r/BPD
+          - r/OCD
+          - r/ptsd
+          - r/EatingDisorders
+          - r/Dentistry
+          - r/pharmacy
+          - r/nursing
+    columns_out:
+      - text
+    # 157 is the noisiest of the seven: a 5-word floor drops another 7.1 percent of
+    # one-liner posts (the other six sources measure 1.4 percent, under the enable bar)
+    filters:
+      <<: *reddit-quality
+      min_words: 5
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_30
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+    filters: *reddit-quality
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_84
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+    filters: *reddit-quality
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_171
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+    filters: *reddit-quality
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_85
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+    filters: *reddit-quality
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_217
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+    filters: *reddit-quality
+  - task:
+      type: fullmap
+      outputs:
+        - entities
+        - relations
+    source: hf
+    dataset: tensorshield/reddit_dataset_237
+    split: train
+    match_on: *biomed_communities
+    columns_out:
+      - text
+  # BioRED gold (wcole3/biored-parquet): the verified parquet conversion of bigbio/biored, whose
+  # script-only hub loading is unsupported on datasets 5.x. The hub config is biored_bigbio_kb and
+  # the config-less default load streams it, so no subset is declared: entry_key then split-qualifies
+  # the three locks (wcole3/biored-parquet:train/:validation/:test) because one repo id carries one
+  # ingest per split and a declared subset would collide them.
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: BioredScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: test
+    dataset: wcole3/biored-parquet
+    columns_out: [passages, entities, relations]
+    filters: *reddit-quality
+  - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: ruslan/bioleaflets-biomedical-ner
+    columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
+  # the test split cannot merge *hf-train (that anchor pins split: train), so it spells its hf
+  # source out and aliases only the &weight scalar -- alias depth stays one level
+  - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
+    source: hf
+    split: test
+    weight: *weight
+    dataset: ruslan/bioleaflets-biomedical-ner
+    columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
+  # agentlans/json-extraction: six per-source script ingests off one repo id (shared row key, all
+  # weight 1.0 via the shared anchor). The hub `all` config is the exact union of these six and
+  # is deliberately NOT declared: it would double-stream every row.
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: owkin-medical_knowledge_from_extracts
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, relations]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: ProfessorBob-relation_extraction
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: roborovski-dolly-entity-extraction
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: sandeeppanem-resume-json-extraction-5k
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: Jiraya-html_to_json_information_extraction_dataset
+    columns_out: [text, json, source]
+  - task: {type: script, name: JsonExtractionScript, outputs: [structures]}
+    <<: *hf-train
+    dataset: agentlans/json-extraction
+    subset: HenriqueGodoy-extract-0
+    columns_out: [text, json, source]
+  - task: {type: script, name: MedicalEntityJsonScript, outputs: [entities]}
+    <<: *hf-train
+    split: test
+    dataset: Pennlaine/Medical-Entity-JSON-Extraction
+    columns_out: [text]
+  # BC5CDR (train/dev/test containers, US-001): three local avro ingests, one per split file.
+  # row_key is the path, so each file gets its own mixing-weight slot; measured min doc length
+  # 204 chars, so no filters block (nothing to drop).
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/train.avro
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/dev.avro
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/test.avro

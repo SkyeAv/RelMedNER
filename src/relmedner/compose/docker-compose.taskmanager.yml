@@ -1,4 +1,8 @@
 services:
+  # runs on EVERY worker in cluster.yaml (the head included) — each host gets its own data port
+  # (TASKMANAGER_DATA_PORT + worker index) so peers can tunnel to it over the :22-only path.
+  # all advertised hosts are 127.0.0.1: peers reach this node through the ssh -L tunnels deploy.py
+  # spawns, and same-host traffic is loopback anyway.
   taskmanager:
     image: ${FLINK_IMAGE}
     pull_policy: never
@@ -23,24 +27,38 @@ services:
       - taskmanager.numberOfTaskSlots=${SLOTS}
       - -D
       - taskmanager.memory.process.size=${MEMORY}
+      # beam's FnAPI data plane moves records over netty direct buffers that live outside
+      # flink's own memory pools: task off-heap defaults to 0 and the JVM then caps direct
+      # memory near the 128m framework off-heap, which OOMs mid-job once a dozen FnAPI
+      # channels shuffle concurrently ("OutOfMemoryError: Direct buffer memory")
+      - -D
+      - taskmanager.memory.framework.off-heap.size=2g
+      - -D
+      - taskmanager.memory.task.off-heap.size=2g
     user: "0:0"
     restart: unless-stopped
 
   sdkworker:
     # beam sdk worker pool (EXTERNAL environment) — python user code runs HERE, not in
     # taskmanager-spawned containers, so this is the only place the fullmap mount can live;
-    # rootful docker on remotes, so default root can read the host-owned redb; no socket needed,
+    # rootful docker on all hosts, so default root can read the host-owned redb; no socket needed,
     # the pool never launches containers
     image: ${WORKER_IMAGE}
     pull_policy: never
     network_mode: host
     command: ["--worker_pool"]
     working_dir: /opt/outputs
-    # the beam sdk image defaults to an unprivileged user that cannot create /opt/apache/beam-venv;
-    # root also reads the host-owned redb bundle under the fullmap mount
-    user: "0:0"
+    environment:
+      # the beam sdk image defaults to an unprivileged user that cannot create /opt/apache/beam-venv;
+      # root also reads the host-owned redb bundle under the fullmap mount
+      RUN_PYTHON_SDK_IN_DEFAULT_ENVIRONMENT: "1"
+      # pipeline code resolves the redb through relmedner.constants.FULLMAP_DIR, which honors this
+      # override — point it at the read-only bundle mount, not the host path (invisible in here)
+      RELMEDNER_FULLMAP_DIR: ${FULLMAP_MOUNT}
+      # which polars runtime to load: "compat" on CPUs without AVX2 (hypatia), else the fast default
+      POLARS_FORCE_PKG: "${POLARS_RUNTIME}"
     volumes:
       - ${FULLMAP_DIR}:${FULLMAP_MOUNT}:ro
-      # avro shards land here; the host side is collected back to --output when the job finishes
+      # avro shards land here; the host side is collected onto the head host when the job finishes
       - ${OUTPUTS_DIR}:${OUTPUTS_MOUNT}
     restart: unless-stopped

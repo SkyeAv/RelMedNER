@@ -17,3 +17,9 @@ dist/
 # fullmap bundle is handled the same out-of-band way. Rebuild steps: the "CTKP interventions"
 # section of README.md.
 src/relmedner/data/interventions/*.avro
+src/relmedner/data/synthetic-ner-ade-tweets/*.avro
+src/relmedner/data/synthetic-ner-ade-tweets/*.tsv
+# bc5cdr containers follow the same out-of-band policy: built on wenceslaus from the
+# NCBI CDR BioC XML corpus by /users/sgoetz/bc5cdr-staging/build_bc5cdr.py (rebuild
+# commands and builder receipts in docs/bc5cdr.md), so git carries the docs, not the blobs.
+src/relmedner/data/bc5cdr/*.avro
