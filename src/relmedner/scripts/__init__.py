@@ -2,6 +2,7 @@ from relmedner.scripts.bc5cdr import Bc5CdrScript
 from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.biored import BioredScript
 from relmedner.scripts.chemprot import ChemprotScript
+from relmedner.scripts.chia import ChiaScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.docred import DocredScript
 from relmedner.scripts.ehr_rel import EhrRelScript
@@ -25,6 +26,7 @@ __all__ = [
     "BioleafletsScript",
     "BioredScript",
     "ChemprotScript",
+    "ChiaScript",
     "CtkpInterventionsScript",
     "DocredScript",
     "EhrRelScript",
