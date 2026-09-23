@@ -251,3 +251,18 @@ datasets:
     split: test
     dataset: Pennlaine/Medical-Entity-JSON-Extraction
     columns_out: [text]
+  # BC5CDR (train/dev/test containers, US-001): three local avro ingests, one per split file.
+  # row_key is the path, so each file gets its own mixing-weight slot; measured min doc length
+  # 204 chars, so no filters block (nothing to drop).
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/train.avro
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/dev.avro
+  - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: bc5cdr/test.avro
