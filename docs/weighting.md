@@ -191,6 +191,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `bigbio/chia` (five declared ingests, one row key) | gold | 1.0 | 1.0 | CHIA, expert-annotated clinical-trial eligibility criteria (Kury et al., 2020) |
 | `wcole3/biored-parquet` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioRED, expert-annotated biomedical relations |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
+| `bigbio/gad` (train, validation, test; one row key) | silver | 0.7 | 0.8 | GAD gene-disease association labels, derived from database curation rather than span annotation |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
 | `bigbio/ehr_rel` (four declared ingests, one row key) | general | 0.5 | 0.7 | clinician-rated SNOMED concept-pair relatedness, no text context; 0.5 is the declared weight |

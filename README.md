@@ -76,6 +76,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
 | `bigbio/chia` (five subsets: `chia_bigbio_kb`, `chia_fixed_source`, `chia_source`, `chia_without_scope_fixed_source`, `chia_without_scope_source`) | `script` -> `ChiaScript` | `text`/`passages`, `entities`, `relations` | entities, relations | 10,000 |
+| `bigbio/gad` (`gad_blurb_bigbio_text`, train + validation + test) | `script` -> `GadBlurbScript` | `text`, `labels` | classifications | 5,330 |
 | `bigbio/ehr_rel` (4 subsets, see [docs/ehr-rel.md](docs/ehr-rel.md)) | `script` -> `EhrRelScript` | `snomed_label_1`, `snomed_label_2`, `mean_rating` / `text_1`, `text_2`, `label` | relations | 111 + 3,630 + 3,741 + 3,741 |
 | `ruslan/bioleaflets-biomedical-ner` (`train`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 1,068 |
 | `ruslan/bioleaflets-biomedical-ner` (`test`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 134 |
@@ -148,6 +149,29 @@ run on wenceslaus over the full 2,000-row train split of each subset (receipt st
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
 - [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
 - [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
+
+## GAD (bigbio/gad)
+
+Dataset-format notes (GadBlurbScript): bigbio/gad is the Genetic Association Database
+sentence corpus (cc-by-4.0, not gated). The repo's own builder is a loading script
+(`gad.py`) that the installed `datasets` refuses ("Dataset scripts are no longer
+supported"), so rows stream from the hub's auto parquet conversion branch
+(`refs/convert/parquet`) through the `hf_parquet` source. Each split is a single
+auto-convert shard, so each entry declares `file: gad_blurb_bigbio_text/<split>/0000.parquet`
+(checked against the datasets-server `parquet` listing, 2026-09-23). The declared subset is `gad_blurb_bigbio_text` only, all three
+splits: train 4,261 / validation 535 / test 534 rows (source: datasets-server
+`splits` listing plus a full-census probe over every parquet file, wenceslaus
+2026-09-23). A row is (`text`, `labels`): `text` is a short anonymized sentence
+(7-81 tokens, median 25) carrying literal `@GENE$` / `@DISEASE$` placeholders that
+ship as-is; `labels` is a one-element list of `"1"` (gene-disease association
+reported) or `"0"`, ~52.6% `"1"` corpus-wide, no third label, no nulls. Measured
+over the first 200 declared-stream rows per split: 100% emit exactly one
+classification, zero drops. The repo's other 21 subset-splits (10 cross-validation
+folds in two variants) re-partition the same 5,122 unique texts (111,930 rows
+total); declaring them would upweight GAD about 22x in the mix, so they stay out.
+Probe invocation: `probe.py --declared 'bigbio/gad:gad_blurb_bigbio_text/train/0000.parquet'
+--limit 200 --script GadBlurbScript --outputs classifications --text-column text`
+(plus the full-census throwaway probe kept at wenceslaus:~/probe_gad.py).
 
 ## Reddit corpora
 

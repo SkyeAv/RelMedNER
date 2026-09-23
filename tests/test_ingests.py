@@ -746,6 +746,42 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text", "entities", "relations"),
         ),
     ),
+    "bigbio/gad:gad_blurb_bigbio_text/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text/train/0000.parquet",
+            "train",
+            None,
+            ("text", "labels"),
+        ),
+    ),
+    "bigbio/gad:gad_blurb_bigbio_text/validation/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text/validation/0000.parquet",
+            "train",
+            None,
+            ("text", "labels"),
+        ),
+    ),
+    "bigbio/gad:gad_blurb_bigbio_text/test/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "GadBlurbScript", ("classifications",)),
+            1.0,
+            "bigbio/gad",
+            "gad_blurb_bigbio_text/test/0000.parquet",
+            "train",
+            None,
+            ("text", "labels"),
+        ),
+    ),
 }
 
 
