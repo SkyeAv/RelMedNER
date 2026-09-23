@@ -68,6 +68,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `nvidia/Nemotron-PII` (train + test) | `script` -> `NemotronPiiScript` | `text`, `spans` | entities | 200,000 |
 | `bigbio/chemprot` (`chemprot_full_source`, 3 splits) | `script` -> `ChemprotScript` | `text`, `entities`, `relations` | entities, relations | 2,432 |
 | `wcole3/biored-parquet` (train + validation + test) | `script` -> `BioredScript` | `passages`, `entities`, `relations` | entities, relations | 600 |
+| `OpenMed/drugprot-parquet` (train + validation) | `script` -> `DrugprotScript` | `text`, `entities`, `relations` | entities, relations | 4,250 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -169,6 +170,35 @@ Drug_Interaction 13 -> pharmacologically_interacts_with; Comparison 39, Cotreatm
 Conversion 4 stay native snake_case (biolink has no honest slot; resolve_predicate convention).
 Gold relations emit `evidence="asserted"`, never negated. Declared probes measured rows_in =
 rows_out and a 100% emit rate on every split.
+
+## DrugProt
+
+DrugProt gold (Krallinger et al. 2021, BioCreative VII; cc-by-4.0): 4,250 PubMed abstracts
+(3,500 train / 750 validation) with expert-annotated chemical and gene mentions plus gold
+mention-level chemical-gene relations. The declared source is `OpenMed/drugprot-parquet`, not
+`bigbio/drugprot` (script-only hub loading, the same datasets-5.x problem BioRED documents); the
+mirror's rows carry exactly the DrugProt tables and the license is stated on its card. Measured
+full-split census (wenceslaus, 2026-09-23): 108,387 entities, all end-EXCLUSIVE char offsets
+against the pre-joined `text` column with exact surface matches on 108,387/108,387, 0
+out-of-bounds, 0 self-loops, 0 dangling relation args. Entity census: train CHEMICAL 46,274 /
+GENE-Y 28,421 / GENE-N 14,834, validation CHEMICAL 9,853 / GENE 9,005; `DrugprotScript` maps
+CHEMICAL to ChemicalEntity, GENE-Y and the plain GENE twin to Gene, and GENE-N to GeneFamily per
+the ChemprotScript precedent (the -N mark names nonspecific mentions such as "kinase").
+
+Relations: 13 gold labels over 21,035 measured pairs (INHIBITOR 6,538, DIRECT-REGULATOR 2,705,
+SUBSTRATE 2,497, INDIRECT-UPREGULATOR 1,680, ACTIVATOR 1,674, INDIRECT-DOWNREGULATOR 1,661,
+PRODUCT-OF 1,078, PART-OF 1,142, ANTAGONIST 1,190, AGONIST 789, AGONIST-ACTIVATOR 39,
+SUBSTRATE_PRODUCT-OF 27, AGONIST-INHIBITOR 15). The corpus-native labels are the ChemProt CPR
+codes unabbreviated, so the directional families reuse the landed predicate choices (ACTIVATOR
+and INDIRECT-UPREGULATOR -> increases_amount_or_activity_of, INHIBITOR and
+INDIRECT-DOWNREGULATOR -> decreases_amount_or_activity_of, DIRECT-REGULATOR -> regulates,
+PART-OF -> part_of, SUBSTRATE -> is_substrate_of); AGONIST, AGONIST-ACTIVATOR,
+AGONIST-INHIBITOR, ANTAGONIST, PRODUCT-OF, and SUBSTRATE_PRODUCT-OF stay native snake_case
+(biolink has no honest slot; resolve_predicate convention). 1,275 of 4,250 rows (1,067 train /
+208 validation) carry entities with zero relations and ship entities-only under the
+permitted-shapes contract. Gold relations emit `evidence="asserted"`, never negated. Declared
+probe over the first 300 train rows: rows_in = rows_out = 300, 100% emit, 4,184 entity mentions,
+1,565 relations, 219 rows shipping the relations shape.
 
 ## Install
 

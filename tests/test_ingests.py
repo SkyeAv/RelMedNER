@@ -408,6 +408,33 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("passages", "entities", "relations"),
         ),
     ),
+    # OpenMed/drugprot-parquet declares one ingest PER SPLIT off one repo id with no subset (the
+    # config-less load streams the default config), so entry_key split-qualifies the two locks,
+    # the biored shape. Tuples frozen from live generate_tuples() output via probe --freeze.
+    "OpenMed/drugprot-parquet:train": (
+        "hf",
+        (
+            ("script", "DrugprotScript", ("entities", "relations")),
+            1.0,
+            "OpenMed/drugprot-parquet",
+            None,
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "OpenMed/drugprot-parquet:validation": (
+        "hf",
+        (
+            ("script", "DrugprotScript", ("entities", "relations")),
+            1.0,
+            "OpenMed/drugprot-parquet",
+            None,
+            "validation",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

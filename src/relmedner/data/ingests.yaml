@@ -364,6 +364,20 @@ datasets:
     split: test
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
+  # DrugProt gold (OpenMed/drugprot-parquet): the cc-by-4.0 parquet mirror of bigbio/drugprot,
+  # whose script-only hub loading is unsupported on this repo's datasets version. The config-less
+  # default load streams the hub's default config, so no subset is declared and entry_key
+  # split-qualifies the two locks (OpenMed/drugprot-parquet:train/:validation), the biored shape.
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner

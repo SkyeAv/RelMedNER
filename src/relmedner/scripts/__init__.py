@@ -4,6 +4,7 @@ from relmedner.scripts.biored import BioredScript
 from relmedner.scripts.chemprot import ChemprotScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.docred import DocredScript
+from relmedner.scripts.drugprot import DrugprotScript
 from relmedner.scripts.ehr_rel import EhrRelScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
@@ -27,6 +28,7 @@ __all__ = [
     "ChemprotScript",
     "CtkpInterventionsScript",
     "DocredScript",
+    "DrugprotScript",
     "EhrRelScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
