@@ -45,6 +45,8 @@ FANOUT: tuple[tuple[str, str], ...] = (
     ("docs/fullmap-mining.md", "Per batch of documents (Beam"),
     ("docs/reddit-corpora.md", "Seven general-Reddit dumps from the `tensorshield` hub org"),
     ("docs/biored.md", "BioRED gold (Luo et al. 2022"),
+    ("docs/chia.md", "`bigbio/chia` is the CHIA corpus (Kury et al., Sci Data 2020)"),
+    ("docs/gad.md", "Dataset-format notes (GadBlurbScript)"),
 )
 
 # the quick start is the only on-ramp for a new user and for CI reproduction
