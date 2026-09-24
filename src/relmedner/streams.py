@@ -5,6 +5,7 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from hashlib import blake2b
 from itertools import islice
 from typing import Any, ClassVar, Self
 
@@ -124,7 +125,7 @@ class DataStream(ABC):
     reaches even unfiltered sources; rows under the cap stay byte-identical, only over-cap rows
     are new drops on the declared-None path"""
 
-    def __init__(self, task: tuple[Any, ...] = (), weight: float = 1.0, *, filters: RowFilters | None = None) -> None:
+    def __init__(self, task: tuple[Any, ...] = (), weight: float = 1.0, *, filters: RowFilters | None = None, sample_rate: float = 1.0) -> None:
         """the single shared entry point every DataStream subclass builds on: it owns the
         frozen payload's leading fields, so each subclass ctor only adds its source-specific
         ones after super().__init__(task, weight).
@@ -133,11 +134,13 @@ class DataStream(ABC):
         registry.build_stream unpacks the declared payload positionally: task, weight, then
         the source-specific fields. US-008 added that keyword-only filters parameter (the
         defaults keep no-arg test doubles constructible); it rides here rather than each subclass
-        ctor so every source shares one filter slot.
+        ctor so every source shares one filter slot. sample_rate rides the same way: the
+        declared mixing-ratio fraction stream() keeps, defaulting to everything.
         """
         self.task: tuple[Any, ...] = tuple(task)
         self.weight: float = weight
         self.filters: RowFilters | None = filters
+        self.sample_rate: float = sample_rate
         # computed ONCE: the evaluator always gets a RowFilters, so the ALWAYS-ON token cap
         # applies even when the dataset declared none; self.filters keeps the DECLARED value
         self.effective_filters: RowFilters = filters if filters is not None else RowFilters()
@@ -159,14 +162,35 @@ class DataStream(ABC):
     def rows(self: Self) -> Iterator[StreamedRow]:
         """yields every row this source declares, unbounded"""
 
+    def _sampled(self: Self, rows: Iterator[StreamedRow]) -> Iterator[StreamedRow]:
+        """keep a row iff blake2b(source key + row repr) lands under sample_rate * 2**64.
+        Content-addressed so a resumed or re-parallelized pass makes the identical keep/drop
+        decision per row, and two sources never sample each other's rows; repr over the plain
+        str/int/tuple payload is deterministic across processes. Only wired when the declared
+        rate is under 1.0, so the default path pays nothing"""
+        cutoff = int(self.sample_rate * 2**64)
+        for row in rows:
+            digest = blake2b(f"{self.name}\x00{row!r}".encode(), digest_size=8).digest()
+            if int.from_bytes(digest, "big") < cutoff:
+                yield row
+            else:
+                self.stats.drop("sample_rate")
+
     def stream(self: Self, config: RunConfig) -> Iterator[StreamedRow]:
-        """wraps rows() with the sample limit and surfaces the quality line exactly once per
-        pass, at generator exhaustion. The counters themselves are populated by rows(), which
-        owns the match_on and evaluator call sites where a drop's reason is known; stream() only
-        hands rows out. The finally (not a bare tail call) makes the line land even when rows()
-        raises ZeroYieldError at source exhaustion, so the quality report is never swallowed by
-        the guard, and before the exception reaches the caller"""
-        rows: Iterator[StreamedRow] = self.rows() if config.sample_limit is None else islice(self.rows(), config.sample_limit)
+        """wraps rows() with content-hash sampling (declared sample_rate) and the sample limit,
+        and surfaces the quality line exactly once per pass, at generator exhaustion. Sampling
+        sits BEFORE the islice so sample_limit bounds KEPT rows (a test-run slice of a sampled
+        source is a slice of the sample, not of the raw stream); the counters themselves are
+        populated by rows(), which owns the match_on and evaluator call sites where a drop's
+        reason is known, plus _sampled for its own reason. The finally (not a bare tail call)
+        makes the line land even when rows() raises ZeroYieldError at source exhaustion, so the
+        quality report is never swallowed by the guard, and before the exception reaches the
+        caller"""
+        rows: Iterator[StreamedRow] = self.rows()
+        if self.sample_rate < 1.0:
+            rows = self._sampled(rows)
+        if config.sample_limit is not None:
+            rows = islice(rows, config.sample_limit)
         try:
             yield from rows
         finally:

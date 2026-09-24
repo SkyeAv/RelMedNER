@@ -442,41 +442,48 @@ def test_unset_heuristics_never_tokenize_the_row(monkeypatch: pytest.MonkeyPatch
 # ------------------------------------------------------------------ envelope plumbing --
 
 
-def _hf_dataset(filters: RowFilters | None = None) -> HuggingFaceDataset:
+def _hf_dataset(filters: RowFilters | None = None, sample_rate: float = 1.0) -> HuggingFaceDataset:
     return HuggingFaceDataset(
         task=ScriptTask(type="script", name="GlinerBiomedScript", outputs=["entities"]),
         source="hf",
         dataset="a/b",
         columns_out=["text"],
         filters=filters,
+        sample_rate=sample_rate,
     )
 
 
-def test_to_stream_args_appends_filters_after_the_frozen_payload() -> None:
-    """the payload stays the 2-tuple the EXPECTED locks pin; filters ride a third envelope slot"""
+def test_to_stream_args_appends_filters_and_sample_rate_after_the_frozen_payload() -> None:
+    """the payload stays the 2-tuple the EXPECTED locks pin; filters and sample_rate ride
+    envelope slots that cannot shift a frozen position"""
     Filters: RowFilters = RowFilters(min_text_len=3)
 
-    assert _hf_dataset().to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None)
-    assert _hf_dataset(Filters).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], Filters)
+    assert _hf_dataset().to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 1.0)
+    assert _hf_dataset(Filters).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], Filters, 1.0)
+    assert _hf_dataset(sample_rate=0.25).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 0.25)
+    # the frozen payload itself never moves, whatever the envelope carries
+    assert _hf_dataset(Filters, 0.5).to_tuple() == _hf_dataset().to_tuple()
 
 
 def test_yaml_ingests_stream_args_round_every_declared_dataset() -> None:
-    Ingests: YamlIngests = YamlIngests(datasets=[_hf_dataset(RowFilters(drop_empty=True))])
+    Ingests: YamlIngests = YamlIngests(datasets=[_hf_dataset(RowFilters(drop_empty=True), 0.5)])
 
-    assert Ingests.stream_args() == (("hf", _hf_dataset().to_tuple()[1], RowFilters(drop_empty=True)),)
+    assert Ingests.stream_args() == (("hf", _hf_dataset().to_tuple()[1], RowFilters(drop_empty=True), 0.5),)
     # generate_tuples keeps the frozen 2-tuple shape the cli parallelism count depends on
     assert Ingests.generate_tuples() == (("hf", _hf_dataset().to_tuple()[1]),)
 
 
-def test_build_stream_wires_filters_keyword_only() -> None:
+def test_build_stream_wires_filters_and_sample_rate_keyword_only() -> None:
     Payload: tuple[Any, ...] = (TASK, 1.0, "interventions/interventions.avro")
     Filters: RowFilters = RowFilters(drop_empty=True)
 
-    Stream: LocalAvroDataStream = build_stream("local", Payload, Filters)
+    Stream: LocalAvroDataStream = build_stream("local", Payload, Filters, 0.3)
     assert isinstance(Stream, LocalAvroDataStream)
     assert Stream.filters == Filters
-    # the filters default keeps every existing positional 2-arg call valid
+    assert Stream.sample_rate == 0.3
+    # the defaults keep every existing positional 2-arg call valid
     assert build_stream("local", Payload).filters is None
+    assert build_stream("local", Payload).sample_rate == 1.0
 
 
 def test_local_dataset_declares_filters_through_yaml_shape() -> None:
@@ -489,3 +496,16 @@ def test_local_dataset_declares_filters_through_yaml_shape() -> None:
 
     assert Dataset.filters is not None and Dataset.filters.max_text_len == 10_000
     assert Dataset.to_stream_args()[2] == Dataset.filters
+
+
+def test_sample_rate_declared_through_yaml_shape_is_validated_and_out_of_the_payload() -> None:
+    """the mixing-ratio knob parses off the declared yaml, bounds-checks, and never enters the
+    frozen payload tuple the EXPECTED locks pin"""
+    import pytest
+    from pydantic import ValidationError
+
+    assert _hf_dataset(sample_rate=0.25).sample_rate == 0.25
+    with pytest.raises(ValidationError):
+        _hf_dataset(sample_rate=0.0)  # zero would silently drop the whole source; drop the entry instead
+    with pytest.raises(ValidationError):
+        _hf_dataset(sample_rate=1.5)

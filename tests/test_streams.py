@@ -740,3 +740,56 @@ def test_an_hf_stream_projects_before_matching_and_yields_identical_rows(monkeyp
     assert [row[1][1] for row in yielded] == [("aspirin treats headache",)]
     assert stream.stats.rows_in == 2 and stream.stats.rows_out == 1
     assert stream.stats.dropped_by == {"match_on": 1}
+
+
+# ---------------------------------------------------------------- mixing-ratio sampling ----
+
+
+def test_stream_sample_rate_one_yields_rows_untouched() -> None:
+    """the default rate never wraps the generator: byte-identical to the raw rows()"""
+    stream = FiniteDataStream(sample_rate=1.0)
+
+    assert list(stream.stream(RunConfig())) == list(FiniteDataStream().rows())
+    assert stream.stats.dropped_by == {}
+
+
+def test_stream_sample_rate_keeps_a_deterministic_content_addressed_fraction() -> None:
+    """keep iff blake2b(source key + row) lands under rate * 2**64: exact expected set, stable
+    across stream instances, and every dropped row attributes to the sample_rate reason"""
+    from hashlib import blake2b
+
+    stream = FiniteDataStream(sample_rate=0.5)
+    kept = list(stream.stream(RunConfig()))
+
+    # the counting double owns no rows_in/rows_out accounting; the drop counter is what it proves
+    assert stream.stats.dropped_by == {"sample_rate": 20 - len(kept)}
+    assert [row for row in FiniteDataStream(sample_rate=0.5).stream(RunConfig())] == kept
+
+    cutoff = int(0.5 * 2**64)
+    expected = [
+        row
+        for row in FiniteDataStream().rows()
+        if int.from_bytes(blake2b(f"{stream.name}\x00{row!r}".encode(), digest_size=8).digest(), "big") < cutoff
+    ]
+    assert kept == expected
+
+
+def test_stream_sample_rate_sits_before_the_sample_limit() -> None:
+    """a test-run slice bounds KEPT rows: sampling drains first, islice caps the survivors"""
+    stream = FiniteDataStream(sample_rate=0.5)
+
+    kept = list(stream.stream(RunConfig(sample_limit=3)))
+    assert len(kept) == 3
+    # the same source unsampled keeps the first 20, so the cut bit a real sample
+    unsampled = FiniteDataStream()
+    assert len(list(unsampled.stream(RunConfig(sample_limit=3)))) == 3
+
+
+def test_stream_sample_rate_may_legitimately_keep_nothing() -> None:
+    """a vanishing rate on 20 rows can keep zero: no exception, an honest zero report, and the
+    quality line still lands through the finally"""
+    stream = FiniteDataStream(sample_rate=1e-9)
+
+    assert list(stream.stream(RunConfig())) == []
+    assert stream.stats.rows_out == 0
+    assert stream.stats.dropped_by.get("sample_rate") == 20

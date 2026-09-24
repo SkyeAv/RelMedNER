@@ -108,8 +108,8 @@ def sampled_examples(ingests: YamlIngests, config: RunConfig, sample_size: int, 
     # two entries sharing one row key (e.g. train/test splits of one repo) each contribute up
     # to sample_size rows; validate_sources merges them under the shared key, matching how
     # weights_by_source treats the pair as one slot
-    for source, payload, filters in ingests.stream_args():
-        stream = build_stream(source, payload, filters=filters)
+    for source, payload, filters, sample_rate in ingests.stream_args():
+        stream = build_stream(source, payload, filters=filters, sample_rate=sample_rate)
         key: str = stream.name
         if only is not None and key != only:
             continue

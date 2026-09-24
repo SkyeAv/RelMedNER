@@ -24,11 +24,12 @@ class HuggingFaceDataStream(DataStream):
         columns_out: tuple[str, ...],
         *,
         filters: RowFilters | None = None,
+        sample_rate: float = 1.0,
     ) -> None:
         # parameter order must match DatasetBase.to_tuple's field order (build_stream unpacks
         # the declared payload positionally): task, weight, then the hf-specific columns;
-        # filters is keyword-only and rides the shared base __init__ (US-008)
-        super().__init__(task, weight, filters=filters)
+        # filters and sample_rate are keyword-only and ride the shared base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
         self.name: str = dataset
         self.dataset: str = dataset
         self.subset: str | None = subset

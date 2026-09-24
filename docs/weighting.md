@@ -235,6 +235,34 @@ With `weight: 1.0` and `trust: 0.97`, the stamped weight is `1.0 * 0.97 = 0.97`
 `0.56` (band [0.56, 0.84] -- the clamp only bites when measured trust disagrees with the
 tier prior by more than the band allows).
 
+## Sampling ratios: `sample_rate`
+
+| knob | expresses | effect |
+| --- | --- | --- |
+| `sample_rate` | how much of a source's PASSING rows enter the run at all | real keep/drop, before dispatch and dedup |
+
+`weight` is a mixing ratio over rows that all exist; `sample_rate` decides how many rows
+exist. Declare it per dataset entry (`sample_rate: 0.25` keeps a quarter). Use it when a
+source is too big for its intended influence: the seven reddit fullmap ingests (7M rows)
+mined end to end dominate the run; `sample_rate: 0.25` cuts their mining, dispatch, and
+dedup cost by 4x AND their share of the corpus by 4x, which `weight` cannot do (weights
+duplicate records at export, they never remove mining work).
+
+- Deterministic per row CONTENT: keep iff `blake2b(source key + row repr)` lands under
+  `rate * 2**64`. A resumed or re-parallelized pass re-makes the identical decision per
+  row, and two sources never sample each other's rows.
+- Runs AFTER the row filters: a row dropped by quality never also attributes to
+  `sample_rate`, so the quality line keeps meaning quality. Sampled-out rows attribute to
+  the `sample_rate` reason in the same per-source stats line.
+- Sampling sits before the test-run `sample_limit` cut, so a smoke run slices the SAMPLE,
+  not the raw stream.
+- A sampled source can legitimately keep zero rows on a small input; that is a zero-yield
+  source like any other, not an error.
+
+Prefer `sample_rate` over `weight`-style mixing when the goal is compute AND share
+reduction together; prefer `weight` when every row must stay in the corpus but the
+source should shape the model less.
+
 ## Soft drops: `trust: 0` vs `weight: 0` vs `exclude_regex`
 
 | tool | use when |
