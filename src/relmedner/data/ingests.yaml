@@ -6,15 +6,25 @@
 # Rules: alias depth is one level (never alias an alias); every entry still names
 # its dataset id, its task (script name or fullmap type), and its columns_out;
 # anything an entry merges (source/split/weight) stays visible in x-defaults.
-# The &weight scalar anchor nested inside the anchored hf-train map is legal: anchors are
-# document-global wherever they are defined, and the local entry below aliases it as *weight
-# (same value, one declaration) instead of re-anchoring.
+# Tier weights are scalar anchors in x-defaults (&weight-gold/&weight-silver/&weight-general,
+# plus the 0.5 and 0.3 general bands); entries alias the tier they belong to so tier membership
+# is visible at a glance. Rows sharing one row key must alias the SAME anchor
+# (models.weights_by_source refuses to stamp two entries that disagree).
 # Full field reference: docs/yaml-config.md.
 x-defaults:
-  hf-train: &hf-train {source: hf, split: train, weight: &weight 1.0}
+  # tier anchors (docs/weighting.md 'Reweighting the existing datasets', now declared):
+  # gold 1.0 = human-annotated / curated, the hf-train default; silver 0.7 = silver or
+  # distant labels; general bands 0.5 / 0.4 / 0.3 per dataset. A non-gold entry puts an
+  # explicit `weight: *weight-...` line AFTER its merge key (explicit keys override merges).
+  weight-gold: &weight-gold 1.0
+  weight-silver: &weight-silver 0.7
+  weight-general: &weight-general 0.4
+  # general 0.3 band: non-medical task transfer (super_glue) and noisy social text (reddit)
+  weight-transfer: &weight-transfer 0.3
+  hf-train: &hf-train {source: hf, split: train, weight: *weight-gold}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
-  # bigbio/ehr_rel tier: human-rated concept pairs with no prose context (structured, not
-  # prose), per docs/weighting.md's tier table as checked by the user
+  # general 0.5 band: human-rated concept pairs with no prose context (ehr_rel) and
+  # structured-not-prose trial records (TrialPanorama)
   ehrrel-weight: &ehrrel-weight 0.5
   # shared QC thresholds for the reddit fullmap ingests, measured on wenceslaus 2026-09-23
   # (1500-row grid probe per source, samples audited by hand): the stop-word floor drops
@@ -30,14 +40,17 @@ datasets:
     columns_out: [tokenized_text, ner]
   - task: {type: script, name: PileNerBiomedScript, outputs: [entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: disi-unibo-nlp/Pile-NER-biomed-IOB
     columns_out: [tokens, ner_tags]
   - task: {type: script, name: SentenceRexScript, outputs: [relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: knowledgator/sentence_rex
     columns_out: [sentences, labels]
   - task: {type: script, name: PileNerTypeScript, outputs: [entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: Universal-NER/Pile-NER-type
     columns_out: [conversations]
   - task: *fullmap-task
@@ -50,38 +63,39 @@ datasets:
     columns_out: [text]
   - task: {type: script, name: CtkpInterventionsScript, outputs: [entities]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: interventions/interventions.avro
   - task: {type: script, name: SyntheticNerAdeTweetsScript, outputs: [entities]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: synthetic-ner-ade-tweets/ade_tweets.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/train_wiki.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/val_wiki.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/val_nyt.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/val_semeval.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/val_pubmed.avro
   - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: fewrel/pubmed_unsupervised.avro
   - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: anthonyyazdaniml/gliner-biomed-post-training
     columns_out: [tokenized_text, ner, negatives]
   - task: {type: script, name: KnowledgatorBiomedScript, outputs: [entities]}
@@ -90,45 +104,47 @@ datasets:
     columns_out: [text, entities]
   - task: {type: script, name: GlinerMultilingualScript, outputs: [entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: knowledgator/gliner-multilingual-synthetic
     columns_out: [tokenized_text, ner]
   - task: *fullmap-task
     source: hf
-    weight: *weight
+    weight: *ehrrel-weight
     dataset: TrialPanorama/TrialPanorama-database
     subset: studies
     split: all
     columns_out: [abstract]
   - task: {type: script, name: SuperGlueMultiRCScript, outputs: [classifications]}
     <<: *hf-train
+    weight: *weight-transfer
     dataset: aps/super_glue
     subset: multirc
     columns_out: [paragraph, question, answer, label]
   - task: {type: script, name: PubmedAbstractsScript, outputs: [entities, relations]}
     source: hf_json
     split: train
-    weight: *weight
+    weight: *weight-gold
     dataset: knowledgator/PubMedAbstractsNER
     file: train.json
     columns_out: [tokenized_text, ner]
   - task: {type: script, name: DocredScript, outputs: [entities, relations]}
     source: hf_json
     split: train
-    weight: *weight
+    weight: *weight-gold
     dataset: thunlp/docred
     file: data/train_annotated.json.gz
     columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: DocredScript, outputs: [entities, relations]}
     source: hf_json
     split: train
-    weight: *weight
+    weight: *weight-gold
     dataset: thunlp/docred
     file: data/train_distant.json.gz
     columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: DocredScript, outputs: [entities, relations]}
     source: hf_json
     split: train
-    weight: *weight
+    weight: *weight-gold
     dataset: thunlp/docred
     file: data/dev.json.gz
     columns_out: [sents, vertexSet, labels]
@@ -136,32 +152,34 @@ datasets:
   - task: {type: script, name: DocredScript, outputs: [entities]}
     source: hf_json
     split: train
-    weight: *weight
+    weight: *weight-gold
     dataset: thunlp/docred
     file: data/test.json.gz
     columns_out: [sents, vertexSet, labels]
   - task: {type: script, name: SuperGlueRecordScript, outputs: [entities, classifications]}
     <<: *hf-train
+    weight: *weight-transfer
     dataset: aps/super_glue
     subset: record
     columns_out: [passage, query, entities, entity_spans, answers]
   - task: *fullmap-task
     source: local_delimited
-    weight: *weight
+    weight: *weight-silver
     path: qualifiers/qualifier_corpus.tsv
     columns_out: [text]
   - task: *fullmap-task
     source: local_delimited
-    weight: *weight
+    weight: *weight-silver
     path: synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv
     columns_out: [text]
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     <<: *hf-train
+    weight: *weight-general
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     source: hf
-    weight: *weight
+    weight: *weight-general
     split: test
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
@@ -172,14 +190,14 @@ datasets:
     columns_out: [text, entities, relations]
   - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
     source: hf
-    weight: *weight
+    weight: *weight-gold
     split: validation
     dataset: bigbio/chemprot
     subset: chemprot_full_source
     columns_out: [text, entities, relations]
   - task: {type: script, name: ChemprotScript, outputs: [entities, relations]}
     source: hf
-    weight: *weight
+    weight: *weight-gold
     split: test
     dataset: bigbio/chemprot
     subset: chemprot_full_source
@@ -200,6 +218,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_157
     split: train
+    weight: *weight-transfer
     # anchor sits on the LIST node (match_on: list[MatchOn], src/relmedner/models.py:95) so
     # match_on: *biomed_communities in the sibling entries resolves to a valid list
     match_on: &biomed_communities
@@ -262,6 +281,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_30
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -274,6 +294,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_84
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -286,6 +307,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_171
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -298,6 +320,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_85
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -310,6 +333,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_217
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -322,6 +346,7 @@ datasets:
     source: hf
     dataset: tensorshield/reddit_dataset_237
     split: train
+    weight: *weight-transfer
     match_on: *biomed_communities
     columns_out:
       - text
@@ -379,18 +404,19 @@ datasets:
     columns_out: [passages, entities, relations]
   - task: {type: script, name: BioredScript, outputs: [entities, relations]}
     source: hf
-    weight: *weight
+    weight: *weight-gold
     split: validation
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
   - task: {type: script, name: BioredScript, outputs: [entities, relations]}
     source: hf
-    weight: *weight
+    weight: *weight-gold
     split: test
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: ruslan/bioleaflets-biomedical-ner
     columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
   # the test split cannot merge *hf-train (that anchor pins split: train), so it spells its hf
@@ -398,7 +424,7 @@ datasets:
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     source: hf
     split: test
-    weight: *weight
+    weight: *weight-silver
     dataset: ruslan/bioleaflets-biomedical-ner
     columns_out: [Section_1, Section_2, Section_3, Section_4, Section_5, Section_6]
   # agentlans/json-extraction: six per-source script ingests off one repo id (shared row key, all
@@ -406,36 +432,43 @@ datasets:
   # is deliberately NOT declared: it would double-stream every row.
   - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: owkin-medical_knowledge_from_extracts
     columns_out: [text, json, source]
   - task: {type: script, name: JsonExtractionScript, outputs: [structures, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: ProfessorBob-relation_extraction
     columns_out: [text, json, source]
   - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: roborovski-dolly-entity-extraction
     columns_out: [text, json, source]
   - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: sandeeppanem-resume-json-extraction-5k
     columns_out: [text, json, source]
   - task: {type: script, name: JsonExtractionScript, outputs: [structures, entities]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: Jiraya-html_to_json_information_extraction_dataset
     columns_out: [text, json, source]
   - task: {type: script, name: JsonExtractionScript, outputs: [structures]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: agentlans/json-extraction
     subset: HenriqueGodoy-extract-0
     columns_out: [text, json, source]
   - task: {type: script, name: MedicalEntityJsonScript, outputs: [entities]}
     <<: *hf-train
+    weight: *weight-silver
     split: test
     dataset: Pennlaine/Medical-Entity-JSON-Extraction
     columns_out: [text]
@@ -444,63 +477,63 @@ datasets:
   # 204 chars, so no filters block (nothing to drop).
   - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: bc5cdr/train.avro
   - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: bc5cdr/dev.avro
   - task: {type: script, name: Bc5CdrScript, outputs: [entities, relations]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: bc5cdr/test.avro
   - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
     <<: *hf-parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: bigbio/chia
     file: chia_bigbio_kb/train/0000.parquet
     columns_out: [passages, entities, relations]
   - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
     <<: *hf-parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: bigbio/chia
     file: chia_fixed_source/train/0000.parquet
     columns_out: [text, entities, relations]
   - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
     <<: *hf-parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: bigbio/chia
     file: chia_source/train/0000.parquet
     columns_out: [text, entities, relations]
   - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
     <<: *hf-parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: bigbio/chia
     file: chia_without_scope_fixed_source/train/0000.parquet
     columns_out: [text, entities, relations]
   - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
     <<: *hf-parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: bigbio/chia
     file: chia_without_scope_source/train/0000.parquet
     columns_out: [text, entities, relations]
   - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
     source: hf_parquet
-    weight: *weight
+    weight: *weight-silver
     dataset: bigbio/gad
     file: gad_blurb_bigbio_text/train/0000.parquet
     split: train
     columns_out: [text, labels]
   - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
     source: hf_parquet
-    weight: *weight
+    weight: *weight-silver
     dataset: bigbio/gad
     file: gad_blurb_bigbio_text/validation/0000.parquet
     split: train
     columns_out: [text, labels]
   - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
     source: hf_parquet
-    weight: *weight
+    weight: *weight-silver
     dataset: bigbio/gad
     file: gad_blurb_bigbio_text/test/0000.parquet
     split: train
@@ -515,7 +548,7 @@ datasets:
     columns_out: [text, entities, relations]
   - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
     source: hf
-    weight: *weight
+    weight: *weight-gold
     split: validation
     dataset: OpenMed/drugprot-parquet
     columns_out: [text, entities, relations]
@@ -524,6 +557,7 @@ datasets:
   # config-less default load streams the single jsonl file, so no subset is declared.
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: AGBonnet/augmented-clinical-notes
     columns_out: [note]
   # MedMCQA (openlifescienceai/medmcqa, apache-2.0): medical entrance-exam questions with expert
@@ -531,6 +565,7 @@ datasets:
   # explanation (36 of the first 300) drop on the declared drop_empty filter.
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: openlifescienceai/medmcqa
     columns_out: [exp]
     filters: {drop_empty: true}
@@ -539,6 +574,7 @@ datasets:
   # dialogue_context column is empty on every sampled row).
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: OpenMed/MedDialog
     columns_out: [doctor_response]
   # JNLPBA (commanderstrife/jnlpba, apache-2.0): the hub repo ships an unsupported loader script,
@@ -553,14 +589,14 @@ datasets:
   # JnlpbaScript carries the fixed 19-tag vocabulary.
   - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
     source: hf_parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: commanderstrife/jnlpba
     file: jnlpba/train/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
   - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
     source: hf_parquet
-    weight: *weight
+    weight: *weight-gold
     dataset: commanderstrife/jnlpba
     file: jnlpba/validation/0000.parquet
     split: train
@@ -575,15 +611,15 @@ datasets:
   # mixing-weight slot.
   - task: {type: script, name: MedMentionsScript, outputs: [entities]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: medmentions/train.avro
   - task: {type: script, name: MedMentionsScript, outputs: [entities]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: medmentions/dev.avro
   - task: {type: script, name: MedMentionsScript, outputs: [entities]}
     source: local
-    weight: *weight
+    weight: *weight-gold
     path: medmentions/test.avro
   # ClinicalTrials.gov summary + eligibility (rjac/clinicaltrials.gov-summary_and_eligibility,
   # MIT): 3,002 trial records pairing structured fields (nct id, status, title, dates) with the
@@ -593,6 +629,7 @@ datasets:
   # brief_summary column stays undeclared.
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: rjac/clinicaltrials.gov-summary_and_eligibility
     columns_out: [eligibility]
   # Text-Clinical-Records (hackint0sh/Text-Clinical-Records, MIT): 31,489 clinical-record texts
@@ -602,6 +639,7 @@ datasets:
   # (unknown = reject).
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
+    weight: *weight-silver
     dataset: hackint0sh/Text-Clinical-Records
     columns_out: [text]
     filters: {drop_empty: true}
@@ -613,5 +651,5 @@ datasets:
   # the export's case-only relation drift to in-text surfaces and drops what gliner2 rejects.
   - task: {type: script, name: DakpNerExportScript, outputs: [entities, classifications, relations]}
     source: local
-    weight: *weight
+    weight: *weight-silver
     path: dakp-ner-export/examples.avro

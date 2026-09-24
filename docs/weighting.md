@@ -155,14 +155,12 @@ Notes:
 
 ## Reweighting the existing datasets
 
-Every declared entry lands on `weight: 1.0` today, by three routes: some alias the single
-`&weight 1.0` anchor outright, most inherit it through the `<<: *hf-train` merge from
-`x-defaults`, and the reddit entries declare no `weight` at all and take the model default
-(the ingest table in README.md is the list that stays current as corpora are added).
-Proposal: replace that one anchor with three tier anchors in `x-defaults`
-(`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`) so tier membership is
-visible at a glance. The `trust` values below are **priors to confirm with
-`validate-trust`** -- run the validation, then replace priors with measured values.
+The tier scheme below is DECLARED: `x-defaults` in `src/relmedner/data/ingests.yaml` carries
+the tier anchors (`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`, plus the
+0.5 and 0.3 general bands), every entry aliases the tier it belongs to, and a drift lock
+test in `tests/test_docs.py` fails when this table's Weight column drifts from the declared
+yaml value for any row key. `trust` values remain PRIORS to confirm with `validate-trust`
+-- run the validation, then replace priors with measured values.
 
 Every row key in `src/relmedner/data/ingests.yaml` must appear in this table
 (`tests/test_docs.py` fails otherwise), so adding an ingest means adding its tier here in
