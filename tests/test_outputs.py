@@ -185,7 +185,21 @@ def test_a_mocked_streamed_pipeline_writes_rows_matching_their_declared_shapes(t
     Ingests: YamlIngests = _smoke_ingests()
     monkeypatch.setattr(YamlIngestsParser, "parse_ingests", lambda self: Ingests)
 
-    def fake_build_stream(source: str, payload: tuple[Any, ...], filters: Any = None, sample_rate: float = 1.0) -> SmokeDataStream:
+    def fake_build_stream(
+        source: str,
+        payload: tuple[Any, ...],
+        filters: Any = None,
+        sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
+    ) -> SmokeDataStream:
+        # build_stream's envelope is (source, payload, filters, sample_rate, read_shards,
+        # shard_index) and the pipeline splats all six positionally, so the stand-in must accept
+        # the two sharding slots too. The smoke sources declare no read_shards, so the twin
+        # exercises the unsharded path: one envelope per source, index 0. Asserting that keeps a
+        # future read_shards declaration on a smoke source from silently testing one shard of a
+        # multi-shard read as if it were the whole corpus.
+        assert (read_shards, shard_index) == (1, 0)
         # source is the SOURCE kind ("hf"), so the row key comes from the payload's dataset slot
         # (DatasetBase.row_key): the pipeline looks the mixing weight up by the stamped name.
         # Each source gets its own texts: identical rows across sources would be exact
