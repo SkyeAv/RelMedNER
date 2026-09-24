@@ -531,6 +531,45 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    # ncbi/ncbi_disease declares one hf_parquet ingest per split file off one repo id; the file
+    # path is the entry-key discriminator (the commanderstrife/jnlpba shape). Tuples frozen from
+    # live generate_tuples() output via probe --freeze.
+    "ncbi/ncbi_disease:ncbi_disease/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "NcbiDiseaseScript", ("entities", "relations")),
+            1.0,
+            "ncbi/ncbi_disease",
+            "ncbi_disease/train/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
+    "ncbi/ncbi_disease:ncbi_disease/validation/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "NcbiDiseaseScript", ("entities", "relations")),
+            1.0,
+            "ncbi/ncbi_disease",
+            "ncbi_disease/validation/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
+    "ncbi/ncbi_disease:ncbi_disease/test/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "NcbiDiseaseScript", ("entities", "relations")),
+            1.0,
+            "ncbi/ncbi_disease",
+            "ncbi_disease/test/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
     # rjac/clinicaltrials.gov-summary_and_eligibility declares one fullmap ingest over the
     # eligibility column; the tuple is frozen from live generate_tuples() output via probe --freeze.
     "rjac/clinicaltrials.gov-summary_and_eligibility": (

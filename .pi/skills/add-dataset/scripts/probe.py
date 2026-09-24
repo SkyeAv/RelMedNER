@@ -176,8 +176,8 @@ def iter_declared(requested_key: str, limit: int) -> tuple[tuple[str, ...], list
             break
     if match is None:
         raise SystemExit(f"no declared ingest matches entry_key {requested_key!r}")
-    source, payload, filters = match
-    stream = build_stream(source, payload, filters=filters)
+    source, payload, filters, sample_rate, read_shards = match
+    stream = build_stream(source, payload, filters=filters, sample_rate=sample_rate, read_shards=read_shards)
     rows: list[Any] = []
     for _, (_, values) in stream.rows():
         rows.append(values)

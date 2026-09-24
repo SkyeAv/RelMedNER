@@ -617,6 +617,37 @@ datasets:
     file: jnlpba/validation/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
+  # NCBI Disease corpus (ncbi/ncbi_disease, PUBLIC DOMAIN US gov work): 793 PubMed abstracts
+  # with dual-annotator gold disease spans (MeSH/OMIM-normalized upstream), sentence-split.
+  # The hub repo ships a loader script (unsupported on this repo's datasets version), so the
+  # three splits read their parquet off refs/convert/parquet, one hf_parquet entry per split
+  # file (the bigbio/ehr_rel read path; the builder names every file's split 'train' and the
+  # semantic split lives in the file path). Full-split census measured on wenceslaus
+  # 2026-09-24: train 5,433 / validation 924 / test 941 sentences, tags O 169,361 /
+  # B-DISEASE 6,892 / I-DISEASE 8,299. row_key is the repo id, so all three entries share one
+  # weight slot. The parquet refs lose the ClassLabel name table; NcbiDiseaseScript carries
+  # the fixed 3-tag vocabulary.
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/train/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/validation/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/test/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched

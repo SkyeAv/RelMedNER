@@ -18,6 +18,7 @@ from relmedner.scripts.json_extraction import JsonExtractionScript
 from relmedner.scripts.knowledgator_biomed import KnowledgatorBiomedScript
 from relmedner.scripts.medical_entity_json import MedicalEntityJsonScript
 from relmedner.scripts.medmentions import MedMentionsScript
+from relmedner.scripts.ncbi_disease import NcbiDiseaseScript
 from relmedner.scripts.nemotron_pii import NemotronPiiScript
 from relmedner.scripts.pile_ner_biomed import PileNerBiomedScript
 from relmedner.scripts.pile_ner_type import PileNerTypeScript
@@ -48,6 +49,7 @@ __all__ = [
     "KnowledgatorBiomedScript",
     "MedMentionsScript",
     "MedicalEntityJsonScript",
+    "NcbiDiseaseScript",
     "NemotronPiiScript",
     "PileNerBiomedScript",
     "PileNerTypeScript",
