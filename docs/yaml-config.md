@@ -484,7 +484,7 @@ mixed per-config schemas, so one file per entry is the shape that works.
 | `memory` | yes | none | string like `16g` | memory given to the worker container |
 | `fullmap` | yes | none | host directory | directory holding the fullmap redb bundle (primary redb plus `<stem>.s<N>.redb` shards); bind-mounted read-only into the sdkworker at `/opt/fullmap` |
 | `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards are collected onto the head host when the job finishes |
-| `polars_runtime` | no | `"32"` | `"32"`, `"64"`, or `"compat"` | `POLARS_FORCE_PKG` for this host's sdkworker: `"compat"` on CPUs without AVX2/FMA/BMI2, where the default runtime dies with SIGILL (the image ships both via `tablassert[rt]`) |
+| `polars_runtime` | no | `"32"` | `"32"`, `"64"`, or `"compat"` | `POLARS_FORCE_PKG` for this host's sdkworker; the image ships every runtime via `tablassert[rt]`. `"compat"` is REQUIRED on CPUs without AVX2/FMA/BMI2, where the default runtime dies with SIGILL, and the bundled `cluster.yaml` pins it on every host so one runtime serves the whole job: on the AVX2 head (Xeon Gold 6230) that costs 2.7% single-threaded through `tablassert.fullmap.filter_and_rank` and is faster at 80 threads, with byte-identical output. `"64"` measured 7.5% SLOWER than `"32"` there, so prefer `"compat"` or `"32"` |
 
 ## How the loader reads these files
 

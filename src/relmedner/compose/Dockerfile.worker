@@ -4,5 +4,7 @@ FROM docker.io/apache/beam_python3.13_sdk:2.76.0
 COPY dist/*.whl /tmp/
 # tablassert[rt] adds polars' rtcompat runtime alongside the default one: hypatia's Ivy Bridge
 # xeons lack AVX2/FMA/BMI2 and the default runtime dies there with SIGILL. which runtime loads is
-# picked per host via POLARS_FORCE_PKG (cluster.yaml polars_runtime), so AVX2 hosts keep the fast one
+# picked per host via POLARS_FORCE_PKG (cluster.yaml polars_runtime); the bundled cluster pins
+# compat on EVERY host, because it costs the AVX2 head only ~3% single-threaded and keeps one
+# runtime across the job (measurement in the cluster.yaml comment)
 RUN pip install --no-cache-dir /tmp/*.whl "tablassert[rt]" && rm -f /tmp/*.whl

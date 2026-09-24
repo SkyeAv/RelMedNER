@@ -15,8 +15,17 @@ def test_cluster_shape() -> None:
     assert ClusterSpec.ssh_user == "sgoetz"
     assert ClusterSpec.jobmanager == "10.2.9.11"
     assert tuple(worker.to_tuple() for worker in ClusterSpec.workers) == (
-        ("10.2.9.11", 64, "112g", "/local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap", "/local_raid1/sgoetz/DBSTORE/FULLMAP/outputs", "32"),
-        # hypatia's pre-AVX2 xeons need polars' compat runtime
+        # both hosts pin polars' compat runtime: hypatia's pre-AVX2 xeons SIGILL on the default one,
+        # and the AVX2 head host pays ~3% single-threaded for one runtime across the whole job
+        # (measured, see the cluster.yaml comment)
+        (
+            "10.2.9.11",
+            64,
+            "112g",
+            "/local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap",
+            "/local_raid1/sgoetz/DBSTORE/FULLMAP/outputs",
+            "compat",
+        ),
         ("10.2.9.19", 16, "40g", "/ssd2/sgoetz/fullmap", "/ssd2/sgoetz/outputs", "compat"),
     )
 

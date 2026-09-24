@@ -55,7 +55,9 @@ services:
       # pipeline code resolves the redb through relmedner.constants.FULLMAP_DIR, which honors this
       # override — point it at the read-only bundle mount, not the host path (invisible in here)
       RELMEDNER_FULLMAP_DIR: ${FULLMAP_MOUNT}
-      # which polars runtime to load: "compat" on CPUs without AVX2 (hypatia), else the fast default
+      # which polars runtime to load, per host from cluster.yaml polars_runtime: "compat" is
+      # required without AVX2/FMA/BMI2 (hypatia) and is pinned on the AVX2 head too, so one runtime
+      # serves the whole job
       POLARS_FORCE_PKG: "${POLARS_RUNTIME}"
       # one polars thread per harness: parallelism comes from one harness per slot
       # (sdk_worker_parallelism), so per-process polars pools would oversubscribe the cores

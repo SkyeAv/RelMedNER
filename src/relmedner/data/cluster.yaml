@@ -16,6 +16,15 @@ workers:
     memory: 112g
     fullmap: /local_raid1/sgoetz/DBSTORE/FULLMAP/fullmap
     outputs: /local_raid1/sgoetz/DBSTORE/FULLMAP/outputs
+    # Xeon Gold 6230 (Cascade Lake) has AVX2, so the fast "32" runtime would work here; pinned to
+    # compat anyway so ONE runtime serves every host in the job. Measured on this CPU through the
+    # real hot path (tablassert.fullmap.filter_and_rank, 600k rows / 200k terms,
+    # POLARS_MAX_THREADS=1 exactly as the sdkworker container sets it): "32" 1.024s median vs
+    # "compat" 1.052s, i.e. +2.7%; at 80 threads compat was 5% FASTER; and the output frame was
+    # byte-identical (same sha256), so ranking and dedup cannot diverge between hosts. The hot path
+    # is dominated by tablassert's Python map_batches normalization, which no SIMD build affects.
+    # Do NOT switch this to "64": the AVX512 runtime measured 1.101s (+7.5%) on the same workload.
+    polars_runtime: compat
   # measured 2026-09-24: 40 CPU / 125 GB RAM (102 GB available); docker has no compose plugin —
   # standalone docker-compose lives in the nix profile. cross-host traffic is :22-only, so the
   # flink rpc/blob/shuffle ports ride ssh -L tunnels spawned by deploy (see deploy.py).

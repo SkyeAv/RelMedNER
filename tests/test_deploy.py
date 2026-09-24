@@ -45,12 +45,15 @@ def test_each_host_gets_its_own_polars_runtime_in_the_compose_vars() -> None:
     assert deploy.compose_vars(New, "flink:x", "worker:x", 16125)["POLARS_RUNTIME"] == "32"
 
 
-def test_the_bundled_cluster_marks_hypatia_for_the_compat_polars_runtime() -> None:
+def test_every_bundled_host_pins_the_compat_polars_runtime() -> None:
+    """one runtime for the whole job: hypatia's pre-AVX2 xeons SIGILL on the default runtime, and the
+    AVX2 head host pays ~3% single-threaded for the uniformity (measured, see cluster.yaml)"""
     from relmedner.clusters import YamlClusterParser
 
     Runtimes: dict[str, str] = {worker.host: worker.polars_runtime for worker in YamlClusterParser().remotes()}
 
     assert Runtimes["10.2.9.19"] == "compat"
+    assert Runtimes["10.2.9.11"] == "compat"
 
 
 def test_data_port_stems_from_the_canonical_port_by_worker_index() -> None:
