@@ -283,6 +283,36 @@ def test_every_declared_ingest_has_a_weighting_prior() -> None:
     )
 
 
+def test_declared_weights_match_priors_table() -> None:
+    """Weight-equality drift lock (REQ-WT-5): the table in docs/weighting.md is the review
+    surface for tier membership, so a yaml-side weight edit that skips the table (or a
+    table-side retune that skips the yaml) must fail CI, not ship a silent disagreement.
+    The coverage test above only checks that every row key appears; this one checks the
+    declared weight NUMBER matches. The weights side comes from the real parser
+    (`weights_by_source`, what the pipeline stamps), the docs side from the table's Weight
+    column, joined through the same wildcard rule `_names_row_key` uses."""
+    weights = YamlIngestsParser().parse_ingests().weights_by_source()
+    rows: dict[str, list[str]] = {}
+    for line in _priors_table_rows():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        spans = _BACKTICKED_RE.findall(cells[0])
+        for span in spans:
+            rows[span] = cells
+    mismatches: list[str] = []
+    for key in sorted(weights):
+        named = [cells for span, cells in rows.items() if _names_row_key(key, [span])]
+        assert named, f"priors table lost its row for {key} (coverage test drifted)"
+        try:
+            docs_weight = float(named[0][2])
+        except ValueError as err:
+            raise AssertionError(f"priors table Weight cell for {key} is not a number: {named[0][2]!r}") from err
+        if docs_weight != weights[key]:
+            mismatches.append(f"{key}: yaml declares {weights[key]} but docs table says {docs_weight}")
+    assert not mismatches, f"docs/weighting.md Weight column disagrees with ingests.yaml for {len(mismatches)} row key(s):\n  " + "\n  ".join(
+        mismatches
+    )
+
+
 @pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
 def test_docs_prose_is_ascii(doc: str) -> None:
     """ASCII guard (REQ-DOCS-7): the house style forbids em dashes, unicode arrows,
