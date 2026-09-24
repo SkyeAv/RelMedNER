@@ -22,6 +22,7 @@ x-defaults:
   # newline-spam lists; see docs/quality-heuristics.md for the measured table
   reddit-quality: &reddit-quality {min_stop_word_ratio: 0.02, max_short_line_ratio: 0.9}
 
+  hf-parquet: &hf-parquet {source: hf_parquet, split: train}
 datasets:
   - task: {type: script, name: GlinerBiomedScript, outputs: [entities, relations]}
     <<: *hf-train
@@ -55,6 +56,30 @@ datasets:
     source: local
     weight: *weight
     path: synthetic-ner-ade-tweets/ade_tweets.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/train_wiki.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_wiki.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_nyt.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_semeval.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/val_pubmed.avro
+  - task: {type: script, name: FewRelScript, outputs: [entities, relations]}
+    source: local
+    weight: *weight
+    path: fewrel/pubmed_unsupervised.avro
   - task: {type: script, name: GlinerBiomedPostScript, outputs: [entities, classifications, structures, relations]}
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-post-training
@@ -364,20 +389,6 @@ datasets:
     split: test
     dataset: wcole3/biored-parquet
     columns_out: [passages, entities, relations]
-  # DrugProt gold (OpenMed/drugprot-parquet): the cc-by-4.0 parquet mirror of bigbio/drugprot,
-  # whose script-only hub loading is unsupported on this repo's datasets version. The config-less
-  # default load streams the hub's default config, so no subset is declared and entry_key
-  # split-qualifies the two locks (OpenMed/drugprot-parquet:train/:validation), the biored shape.
-  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
-    <<: *hf-train
-    dataset: OpenMed/drugprot-parquet
-    columns_out: [text, entities, relations]
-  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
-    source: hf
-    weight: *weight
-    split: validation
-    dataset: OpenMed/drugprot-parquet
-    columns_out: [text, entities, relations]
   - task: {type: script, name: BioleafletsScript, outputs: [entities, relations]}
     <<: *hf-train
     dataset: ruslan/bioleaflets-biomedical-ner
@@ -443,6 +454,71 @@ datasets:
     source: local
     weight: *weight
     path: bc5cdr/test.avro
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_bigbio_kb/train/0000.parquet
+    columns_out: [passages, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_fixed_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: ChiaScript, outputs: [entities, relations]}
+    <<: *hf-parquet
+    weight: *weight
+    dataset: bigbio/chia
+    file: chia_without_scope_source/train/0000.parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/train/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/validation/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  - task: {type: script, name: GadBlurbScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/gad
+    file: gad_blurb_bigbio_text/test/0000.parquet
+    split: train
+    columns_out: [text, labels]
+  # DrugProt gold (OpenMed/drugprot-parquet): the cc-by-4.0 parquet mirror of bigbio/drugprot,
+  # whose script-only hub loading is unsupported on this repo's datasets version. The config-less
+  # default load streams the hub's default config, so no subset is declared and entry_key
+  # split-qualifies the two locks (OpenMed/drugprot-parquet:train/:validation), the biored shape.
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
   # Augmented clinical notes (AGBonnet/augmented-clinical-notes, MIT): 30,000 clinical-note
   # paragraphs (EHR-shaped text, mean 344 tokens) mined through the shared fullmap path; the
   # config-less default load streams the single jsonl file, so no subset is declared.

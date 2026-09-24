@@ -175,6 +175,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `anthonyyazdaniml/gliner-biomed-balanced-curated-corpus` | gold | 1.0 | 1.0 | curated, class-balanced variant |
 | `interventions/interventions.avro` | gold | 1.0 | 1.0 | local curated intervention gazetteer |
 | `thunlp/docred` (three declared ingests, one row key) | gold | 1.0 | 1.0 | human-annotated document-level entity clusters and gold relations |
+| `fewrel/*` (six declared ingests, six row keys, one wildcard like the reddit anchor) | gold | 1.0 | 1.0 | human-annotated gold token spans and relations; wiki/nyt/semeval general domain, pubmed splits biomedical |
 | `disi-unibo-nlp/Pile-NER-biomed-IOB` | silver | 0.7 | 0.8 | silver IOB annotations |
 | `knowledgator/sentence_rex` | silver | 0.7 | 0.8 | sentence-level RE, distant labels |
 | `Universal-NER/Pile-NER-type` | silver | 0.7 | 0.8 | LLM-generated type annotations |
@@ -191,6 +192,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `medmentions/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
 | `medmentions/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
 | `bigbio/chemprot` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioCreative VI ChemProt, expert-annotated chemical-protein relations |
+| `bigbio/chia` (five declared ingests, one row key) | gold | 1.0 | 1.0 | CHIA, expert-annotated clinical-trial eligibility criteria (Kury et al., 2020) |
 | `wcole3/biored-parquet` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioRED, expert-annotated biomedical relations |
 | `OpenMed/drugprot-parquet` (train, validation; one row key) | gold | 1.0 | 1.0 | DrugProt, expert-annotated chemical-gene relations (cc-by-4.0 mirror) |
 | `AGBonnet/augmented-clinical-notes` | silver | 0.7 | 0.8 | LLM-augmented clinical-note paragraphs, unlabeled text, fullmap-mined distant labels (MIT) |
@@ -201,6 +203,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `hackint0sh/Text-Clinical-Records` | silver | 0.7 | 0.8 | clinical-record prose, fullmap-mined distant labels (MIT) |
 | `chanzuckerberg/MedMentions` (ST21pv) | gold | 1.0 | 1.0 | PubMed abstract gold UMLS-linked entity spans, 21 semantic types (CC0) |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
+| `bigbio/gad` (train, validation, test; one row key) | silver | 0.7 | 0.8 | GAD gene-disease association labels, derived from database curation rather than span annotation |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |
 | `bigbio/ehr_rel` (four declared ingests, one row key) | general | 0.5 | 0.7 | clinician-rated SNOMED concept-pair relatedness, no text context; 0.5 is the declared weight |
@@ -238,3 +241,9 @@ tier prior by more than the band allows).
 Both zero forms keep records in avro and exclude them at export duplication. Neither
 removes them from dedup inputs -- a 0-weight record can still *lose* a collision (it just
 never wins one against anything heavier).
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [yaml config](yaml-config.md) -- the field reference for `weight` and `trust`
+- [ingests](ingests.md) -- the declared row keys the priors table covers

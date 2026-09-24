@@ -54,3 +54,9 @@ both scripts live on wenceslaus at `/local_raid1/sgoetz/ctkp-staging/`, next to 
 RAID array rather than the NFS home dir: the array is the faster disk for gate runs, and every
 remote gate stages the blob from there into the package data dir. To point at a different
 snapshot, edit `path` in `src/relmedner/data/ingests.yaml`.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [bc5cdr](bc5cdr.md) -- the other out-of-band local-avro ingest
+- [ingests](ingests.md) -- the resolution chain its rows enter

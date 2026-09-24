@@ -18,3 +18,9 @@ surviving span surfaces, `true_label` the gold answers that occur in that label 
 `prompt` the raw query. Answers whose surface never survives span validation drop rather than
 corrupting the label set; when no gold answer survives, the row ships entities only (subset
 semantics of the declared-outputs filter).
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [ingests](ingests.md) -- the resolution chain its rows enter
+- [output](output.md) -- the records its classifications land in

@@ -1,8 +1,7 @@
 # Ingests
 
-[ingest table](../README.md#ingests)
-
-All script tasks except the multilingual ingest (which labels directly, see its
+Every row of the README [ingest table](../README.md#ingests) resolves through the
+chains documented here. All script tasks except the multilingual ingest (which labels directly, see its
 notes under [Statement qualifiers and negation](qualifiers.md)) share one resolution chain -- fullmap first, a shared lowercased
 `FALLBACK_LABEL_MAP` second (dataset vocabularies ride on top via
 `resolve_mentions(label_map=...)`), raw labels last -- and two shared quality gates:
@@ -16,3 +15,9 @@ notes under [Statement qualifiers and negation](qualifiers.md)) share one resolu
   candidate relations rejected, all sampled rejects genuinely wrong. Qualifier contexts are
   stricter: typed slots demand resolvable biolink ancestors and reject
   `JUNKY_CATEGORIES` (UMLS qualifier/indexing concepts).
+
+## Related
+
+- [Ingest table](../README.md#ingests) -- the per-dataset rows this page maps to chains
+- [yaml config](yaml-config.md) -- the field-by-field reference for the declarations
+- [quality heuristics](quality-heuristics.md) -- the row filters layered beside these gates

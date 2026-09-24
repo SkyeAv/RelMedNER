@@ -43,6 +43,18 @@ FANOUT: tuple[tuple[str, str], ...] = (
     ("docs/nemotron-pii.md", "The one general-domain ingest"),
     ("docs/post-training-families.md", "splits the multi-task corpus into disjoint families"),
     ("docs/fullmap-mining.md", "Per batch of documents (Beam"),
+    ("docs/reddit-corpora.md", "Seven general-Reddit dumps from the `tensorshield` hub org"),
+    ("docs/biored.md", "BioRED gold (Luo et al. 2022"),
+    ("docs/chia.md", "`bigbio/chia` is the CHIA corpus (Kury et al., Sci Data 2020)"),
+    ("docs/gad.md", "Dataset-format notes (GadBlurbScript)"),
+    ("docs/drugprot.md", "DrugProt gold (Krallinger et al. 2021, BioCreative VII; cc-b"),
+    ("docs/augmented-clinical-notes.md", "`AGBonnet/augmented-clinical-notes` (MIT): 30,000 clinical-n"),
+    ("docs/medmcqa.md", "`openlifescienceai/medmcqa` (apache-2.0): medical entrance-e"),
+    ("docs/meddialog.md", "`OpenMed/MedDialog` (apache-2.0): 251,731 patient-doctor con"),
+    ("docs/jnlpba.md", "`commanderstrife/jnlpba` (apache-2.0): the classic JNLPBA bi"),
+    ("docs/medmentions.md", "`chanzuckerberg/MedMentions` ST21pv (CC0): 4,392 PubMed docu"),
+    ("docs/clinicaltrials-gov.md", "`rjac/clinicaltrials.gov-summary_and_eligibility` (MIT; upst"),
+    ("docs/text-clinical-records.md", "`hackint0sh/Text-Clinical-Records` (MIT): 31,489 clinical-re"),
 )
 
 # the quick start is the only on-ramp for a new user and for CI reproduction
@@ -284,3 +296,64 @@ def test_docs_prose_is_ascii(doc: str) -> None:
             bad = sorted({f"{ch!r} (U+{ord(ch):04X})" for ch in line if ord(ch) > 127})
             offenders.append(f"{doc}:{lineno}: {', '.join(bad)}")
     assert not offenders, "non-ASCII character(s) found:\n" + "\n".join(offenders)
+
+
+def _h1_lines(path: pathlib.Path) -> list[tuple[int, str]]:
+    """(line number, title) of every ATX H1 outside code fences, in document order."""
+    h1: list[tuple[int, str]] = []
+    in_fence = False
+    for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _ATX_HEADING_RE.match(line)
+        if match and match.group(1) == "#":
+            h1.append((lineno, match.group(2)))
+    return h1
+
+
+def _related_section(path: pathlib.Path) -> str | None:
+    """Body of the '## Related' section (up to the next ATX heading), or None when the
+    page has no such section. Code fences inside the section are skipped so a linked
+    snippet cannot fake the required back-link."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    start = None
+    in_fence = False
+    for lineno, line in enumerate(lines):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = _ATX_HEADING_RE.match(line)
+        if match and start is None and _slug(match.group(2)) == "related":
+            start = lineno
+        elif match and start is not None:
+            return "\n".join(lines[start + 1 : lineno])
+    if start is not None:
+        return "\n".join(lines[start + 1 :])
+    return None
+
+
+@pytest.mark.parametrize("doc", [str(README), *sorted(str(p) for p in DOCS_DIR.glob("*.md"))])
+def test_docs_page_has_single_h1(doc: str) -> None:
+    """Single-H1 guard (REQ-STD-1): the H1 is the page identity the README index, the
+    Related sections, and every reader navigate by; a second H1 usually means a page
+    was pasted onto another and the paste drifts. Exactly one per file, code fences
+    excluded so a `#` shell or yaml comment cannot fake one."""
+    h1 = _h1_lines(pathlib.Path(doc))
+    assert len(h1) == 1, f"{doc} must have exactly one ATX H1, found {len(h1)}: {h1}"
+
+
+@pytest.mark.parametrize("doc", sorted(str(p) for p in DOCS_DIR.glob("*.md")))
+def test_docs_page_has_related_section(doc: str) -> None:
+    """Related guard (REQ-STD-2): every docs page is a module that navigates -- it ends
+    in a '## Related' section linking back to the README index plus its sibling pages,
+    so a reader landing on the page cold always has a path to the rest of the docs.
+    README.md is the index itself and is exempt."""
+    section = _related_section(pathlib.Path(doc))
+    assert section is not None, f"{doc} has no '## Related' section"
+    back = [t for t in _LINK_RE.findall(section) if t == "../README.md" or t.startswith("../README.md#")]
+    assert back, f"{doc} '## Related' section must link ../README.md; links found: {_LINK_RE.findall(section)}"

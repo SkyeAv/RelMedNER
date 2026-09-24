@@ -27,3 +27,9 @@ Gate note: `ResolutionGate` gained a `pii-person-name` bucket plus person/place/
 extensions, so a surname that fullmap-hits as a gene is rejected (only
 `Human`/`IndividualOrganism` ancestors survive); rejections fall through to fallback/raw like
 every other gate rejection.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [ingests](ingests.md) -- the resolution chain its rows enter
+- [weighting](weighting.md) -- the tier and trust prior for its row key

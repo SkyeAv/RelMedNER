@@ -52,6 +52,12 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `TrialPanorama/TrialPanorama-database` (`studies`) | `fullmap` (max_ngram=6, taxon=9606) | `abstract` | entities, relations | 1,332,141 |
 | `anthonyyazdaniml/gliner-biomed-post-training` | `script` -> `GlinerBiomedPostScript` | `tokenized_text`, `ner`, `negatives` | entities, classifications, structures, relations | -- |
 | `interventions/interventions.avro` (local package data) | `script` -> `CtkpInterventionsScript` | whole avro record | entities | 1,020,749 |
+| `fewrel/train_wiki.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 44,800 |
+| `fewrel/val_wiki.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 11,200 |
+| `fewrel/val_nyt.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 2,500 |
+| `fewrel/val_semeval.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 8,851 |
+| `fewrel/val_pubmed.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities, relations | 1,000 |
+| `fewrel/pubmed_unsupervised.avro` (local package data) | `script` -> `FewRelScript` | whole avro record | entities | 2,500 |
 | `qualifiers/qualifier_corpus.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 24 |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` (local package data) | `script` -> `SyntheticNerAdeTweetsScript` | whole avro record | entities | 17,000 (probe census, wenceslaus 2026-09-22) |
 | `synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv` (local package data) | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 8,502 (probe census, wenceslaus 2026-09-22) |
@@ -83,6 +89,8 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `tensorshield/reddit_dataset_85` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 150,311 |
 | `tensorshield/reddit_dataset_217` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 142,531 |
 | `tensorshield/reddit_dataset_237` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 121,584 |
+| `bigbio/chia` (five subsets: `chia_bigbio_kb`, `chia_fixed_source`, `chia_source`, `chia_without_scope_fixed_source`, `chia_without_scope_source`) | `script` -> `ChiaScript` | `text`/`passages`, `entities`, `relations` | entities, relations | 10,000 |
+| `bigbio/gad` (`gad_blurb_bigbio_text`, train + validation + test) | `script` -> `GadBlurbScript` | `text`, `labels` | classifications | 5,330 |
 | `bigbio/ehr_rel` (4 subsets, see [docs/ehr-rel.md](docs/ehr-rel.md)) | `script` -> `EhrRelScript` | `snomed_label_1`, `snomed_label_2`, `mean_rating` / `text_1`, `text_2`, `label` | relations | 111 + 3,630 + 3,741 + 3,741 |
 | `ruslan/bioleaflets-biomedical-ner` (`train`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 1,068 |
 | `ruslan/bioleaflets-biomedical-ner` (`test`) | `script` -> `BioleafletsScript` | `Section_1`, `Section_2`, `Section_3`, `Section_4`, `Section_5`, `Section_6` | entities, relations | 134 |
@@ -95,12 +103,12 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `Pennlaine/Medical-Entity-JSON-Extraction` (test) | `script` -> `MedicalEntityJsonScript` | `text` | entities | 50 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
-
 ## Documentation
 
 - [docs/yaml-config.md](docs/yaml-config.md) -- field-by-field reference for the two pipeline YAML files and their pydantic validation.
 - [docs/ingests.md](docs/ingests.md) -- ingest resolution chains and gates for every table row.
 - [docs/ctkp-interventions.md](docs/ctkp-interventions.md) -- the `source: local` avro-container ingest and its schema.
+- [docs/fewrel.md](docs/fewrel.md) -- the six FewRel local-avro ingests: delivery, span encoding, resolution chain.
 - [docs/deduplication.md](docs/deduplication.md) -- the dedup stage every merged `TrainingExample` passes through before Avro write.
 - [docs/docred.md](docs/docred.md) -- the `thunlp/docred` document-level relation ingests over the raw hub `json.gz` files.
 - [docs/output.md](docs/output.md) -- the Avro `TrainingExample` records and their provenance fields.
@@ -118,183 +126,18 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
 - [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
 - [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
-
-## Reddit corpora
-
-Seven general-Reddit dumps from the `tensorshield` hub org, all MIT-licensed. The
-inclusion bar is corpus-wide `total_rows >= 100,000` in the org's stats.json: the kept
-seven span 121,584 to 7,114,560 rows. `tensorshield/reddit_dataset_226` (22,572 rows)
-carries the same license but fails the bar: after the health-community filter its
-projected yield is noise, so it stays out of the pipeline.
-
-None of these corpora are biomedical on their own, so every entry filters rows
-client-side post-stream with `match_on`: exact-value membership on `communityName`
-against a single yaml anchor `&biomed_communities` holding 42 provisional health
-subreddits (`r/AskDocs`, `r/diabetes`, `r/CrohnsDisease`, ...; the full list lives in
-`src/relmedner/data/ingests.yaml` and all seven entries alias the one anchor, so the
-allowlists cannot drift apart). Casing must be the Reddit canonical form: `r/askdocs`
-does not match, and neither does a non-health community like `r/madmen`. `columns_out`
-is `text` alone.
-
-The table's rows-in are stats.json `total_rows` for the whole corpus, before the
-community filter. Mining runs the unchanged fullmap path of the previous section;
-informal reddit prose (slang, misspellings, first-person narratives) is expected to
-mine at lower unigram precision than the curated corpus, and the measured gates in
-`relmedner/constants.py` are deliberately not loosened for it.
-
-## BioRED
-
-BioRED gold (Luo et al. 2022, `ftp.ncbi.nlm.nih.gov/pub/lu/BioRED`): 600 PubMed abstracts
-(400 train / 100 validation / 100 test) with gold entities and gold document-level relations.
-The declared source is `wcole3/biored-parquet`, not the `bigbio/biored` the corpus is usually
-reached through: that hub repo is script-only, and its loading script needs `bioc` plus the
-removed `trust_remote_code` path, which `datasets` 5.x no longer supports (the datasets-server
-errors on it and its `refs/convert/parquet` branch is empty). The mirror is a faithful
-conversion of the same data: the upstream zip holds 20,419 entity annotation lines
-(13,351 / 3,533 / 3,535) and the parquet streams exactly 20,419 entities over 600 docs.
-
-Each row is one abstract as two passages (title, abstract); 0 of 600 rows are empty. Entity
-offsets are end-EXCLUSIVE and document-relative against the `title + " " + abstract` join:
-20,419/20,419 sampled surfaces match (1,964 title-anchored, 18,455 abstract-anchored, 0
-no-match), exactly one offset pair per entity, 0 discontinuous. The census behind the label
-map: GeneOrGeneProduct 6,697, DiseaseOrPhenotypicFeature 5,545, ChemicalEntity 4,429,
-OrganismTaxon 2,192, SequenceVariant 1,381, CellLine 175; all six map onto biolink Categories
-one-for-one except GeneOrGeneProduct, which lands on Gene (these mentions carry NCBIGene ids,
-unlike the Pile-NER nonspecific tail). Gold normalization ids (MESH 10,052, NCBIGene 7,406,
-NCBITaxon 2,193, dbSNP 784, custom 597, Cellosaurus 175, OMIM 20) feed the relation dedupe key
-but are deliberately not shipped on the emitted entities.
-
-The upstream gold is 6,503 concept-pair REL lines; the bigbio conversion expands every concept
-pair into ALL mention-pair combinations, inflating the stream to 128,460 raw relations (~20x).
-`BioredScript` collapses each row back to concept level, keyed by (relation type, frozenset of
-arg1 normalized db_ids, frozenset of arg2 normalized db_ids) and keeping the first mention pair
-in row order: 128,460 raw -> 6,767 relations (4,390 train / 1,243 validation / 1,134 test).
-121 mention-level self-loops drop before the dedupe; 8 rows carry entities but no relations and
-ship entities-only under the permitted-shapes contract. Predicate map over the deduped census:
-Association 3,510 -> associated_with, Positive_Correlation 1,854 -> positively_correlated_with,
-Negative_Correlation 1,172 -> negatively_correlated_with, Bind 120 -> physically_interacts_with,
-Drug_Interaction 13 -> pharmacologically_interacts_with; Comparison 39, Cotreatment 55, and
-Conversion 4 stay native snake_case (biolink has no honest slot; resolve_predicate convention).
-Gold relations emit `evidence="asserted"`, never negated. Declared probes measured rows_in =
-rows_out and a 100% emit rate on every split.
-
-## DrugProt
-
-DrugProt gold (Krallinger et al. 2021, BioCreative VII; cc-by-4.0): 4,250 PubMed abstracts
-(3,500 train / 750 validation) with expert-annotated chemical and gene mentions plus gold
-mention-level chemical-gene relations. The declared source is `OpenMed/drugprot-parquet`, not
-`bigbio/drugprot` (script-only hub loading, the same datasets-5.x problem BioRED documents); the
-mirror's rows carry exactly the DrugProt tables and the license is stated on its card. Measured
-full-split census (wenceslaus, 2026-09-23): 108,387 entities, all end-EXCLUSIVE char offsets
-against the pre-joined `text` column with exact surface matches on 108,387/108,387, 0
-out-of-bounds, 0 self-loops, 0 dangling relation args. Entity census: train CHEMICAL 46,274 /
-GENE-Y 28,421 / GENE-N 14,834, validation CHEMICAL 9,853 / GENE 9,005; `DrugprotScript` maps
-CHEMICAL to ChemicalEntity, GENE-Y and the plain GENE twin to Gene, and GENE-N to GeneFamily per
-the ChemprotScript precedent (the -N mark names nonspecific mentions such as "kinase").
-
-Relations: 13 gold labels over 21,035 measured pairs (INHIBITOR 6,538, DIRECT-REGULATOR 2,705,
-SUBSTRATE 2,497, INDIRECT-UPREGULATOR 1,680, ACTIVATOR 1,674, INDIRECT-DOWNREGULATOR 1,661,
-PRODUCT-OF 1,078, PART-OF 1,142, ANTAGONIST 1,190, AGONIST 789, AGONIST-ACTIVATOR 39,
-SUBSTRATE_PRODUCT-OF 27, AGONIST-INHIBITOR 15). The corpus-native labels are the ChemProt CPR
-codes unabbreviated, so the directional families reuse the landed predicate choices (ACTIVATOR
-and INDIRECT-UPREGULATOR -> increases_amount_or_activity_of, INHIBITOR and
-INDIRECT-DOWNREGULATOR -> decreases_amount_or_activity_of, DIRECT-REGULATOR -> regulates,
-PART-OF -> part_of, SUBSTRATE -> is_substrate_of); AGONIST, AGONIST-ACTIVATOR,
-AGONIST-INHIBITOR, ANTAGONIST, PRODUCT-OF, and SUBSTRATE_PRODUCT-OF stay native snake_case
-(biolink has no honest slot; resolve_predicate convention). 1,275 of 4,250 rows (1,067 train /
-208 validation) carry entities with zero relations and ship entities-only under the
-permitted-shapes contract. Gold relations emit `evidence="asserted"`, never negated. Declared
-probe over the first 300 train rows: rows_in = rows_out = 300, 100% emit, 4,184 entity mentions,
-1,565 relations, 219 rows shipping the relations shape.
-
-## Augmented clinical notes
-
-`AGBonnet/augmented-clinical-notes` (MIT): 30,000 clinical-note paragraphs (a streaming count of
-the single `augmented_notes_30K.jsonl` file, wenceslaus 2026-09-24), an EHR-shaped unlabeled text
-corpus mined through the shared fullmap path at the repo defaults (max_ngram=6, taxon=9606).
-Measured over the first 200 rows: mean 343.8 tokens per note (median 343, min 341, max 360), 0
-empty notes, every one of the 200 notes produced mentions, 21.58 mentions per note, and 214
-relations over 200 notes. The rows are LLM-augmented (the `note` column paraphrases a source
-document), so the corpus is tiered silver in `docs/weighting.md`: mining scores the fiction, and
-the labels are distant, not gold. The declared column is `note` (not `full_note`), the
-paragraph-length clinical note itself.
-
-## MedMCQA
-
-`openlifescienceai/medmcqa` (apache-2.0): medical entrance-exam questions; the train split alone
-is 182,822 rows (validation 4,183, test 6,150, datasets-server size endpoint, undeclared). The
-declared column is `exp`, the expert explanation: measured over the first 300 train rows, 36
-rows (12%) carry no explanation and drop on the declared `drop_empty` filter, 264 ship, 234
-docs produce mentions at 8.1 mentions per doc, and 158 relations over the 300-row sample.
-Explanations are short (mean 532 chars), so the yield per row is the lowest of the fullmap
-mining bases; the volume is what makes the corpus useful. Exam prose is tiered silver in
-`docs/weighting.md` (distant labels, unverified provenance).
-
-## MedDialog
-
-`OpenMed/MedDialog` (apache-2.0): 251,731 patient-doctor consultations total; the declared train
-split carries 226,557 rows (datasets-server size endpoint), and the validation split stays
-undeclared. The declared column is `doctor_response`, the clinician reply (the
-`dialogue_context` column is empty on every sampled row). Measured over the first 300 train
-rows (wenceslaus 2026-09-24): mean 93.7 tokens per reply (median 83), 0 empty, 285 of 300 docs
-produce mentions at 6.19 mentions per doc, 84 relations. Consultation replies are informal
-clinical register, so the corpus is tiered silver in `docs/weighting.md` (distant labels).
-
-## JNLPBA
-
-`commanderstrife/jnlpba` (apache-2.0): the classic JNLPBA biomedical NER corpus (GENIA abstracts,
-IOB gold spans for protein, DNA, RNA, cell line, cell type and species-flavored labels). The hub
-repo ships an unsupported `jnlpba.py` loader script, but its `refs/convert/parquet` branch carries
-the splits as parquet files, so the declared read path is the bigbio/ehr_rel pattern: one
-`hf_parquet` file entry per split. The raw parquet loses the ClassLabel name table, so
-`JnlpbaScript` carries the fixed 19-tag vocabulary and decodes the int `ner_tags` itself; an
-out-of-vocabulary index decodes as background, never as a guessed span. The corpus's complete
-vocabulary (9 labels) is mapped: chemical -> ChemicalEntity, gene -> Gene, protein -> Protein,
-disease -> Disease, dna/rna -> NucleicAcidEntity, cell_line -> CellLine, cell_type -> Cell,
-species -> OrganismTaxon. Measured on the parquet refs (wenceslaus 2026-09-24): train 37,094
-rows / 985,102 tokens / 102,602 gold spans, validation 7,714 rows / 202,078 tokens / 17,324 gold
-spans. The repo's test parquet is byte-identical to its validation parquet (md5
-e446a9191dbf474bdb79f37b08183fb3 on both), so it is deliberately undeclared: declaring it would
-double-stream 7,714 duplicate rows (the agentlans/json-extraction precedent). Gold IOB spans are
-tiered gold in `docs/weighting.md` (human annotations).
-
-## MedMentions ST21pv
-
-`chanzuckerberg/MedMentions` ST21pv (CC0): 4,392 PubMed documents with 203,282 gold UMLS-linked
-entity spans over exactly 21 semantic types. The declared read path is the bc5cdr pattern: three
-local avro ingests (train 2,635 docs / 122,241 spans, dev 878 / 40,884, test 879 / 40,157), built
-out-of-band from the PubTator corpus with document-absolute offsets over title + newline +
-abstract; the converter's census slice-matched 203,282 of 203,282 annotations. The zameji hub
-mirror of this corpus was probed first and REJECTED: its token-index re-encoding left 33.6
-percent of spans unrecoverable on any shift 0-5 (wenceslaus 2026-09-24). `MedMentionsScript`
-trusts each span's own UMLS CUI as the curie (trust-gold, the bc5cdr MESH pattern), maps all 21
-semantic types through LABEL_MAP (T005 Virus, T007 Bacterium, T017/T022/T031 AnatomicalEntity,
-T033 ClinicalFinding, T037 Disease, T038 BiologicalProcess, T058 ClinicalIntervention, T062
-Study, T074 Device, T082 GeographicLocation, T091 Activity, T092 Agent, T097/T098
-PopulationOfIndividualOrganisms, T103 ChemicalEntity, T168 Food, T170 InformationContentEntity,
-T201 ClinicalAttribute, T204 OrganismTaxon), and ships no relations (the corpus annotates
-entities only). Gold spans are tiered gold in `docs/weighting.md`.
-
-## ClinicalTrials.gov summaries + eligibility
-
-`rjac/clinicaltrials.gov-summary_and_eligibility` (MIT; upstream ClinicalTrials.gov registry data
-is public domain): 3,002 trial records pairing structured registry fields (nct id, status, title,
-summary, dates) with the eligibility criteria prose, the relational trial-database shape. One
-fullmap ingest mines `eligibility` (the densest clinical text; a second text column would collide
-on the fullmap entry key, so `brief_summary` stays undeclared). Measured over the first 300
-train rows (wenceslaus 2026-09-24): 300 of 300 docs with mentions at 17.87 mentions per doc, 295
-relations, 0 empty criteria strings. Criteria prose is tiered silver in `docs/weighting.md`
-(distant labels, unverified provenance).
-
-## Text-Clinical-Records
-
-`hackint0sh/Text-Clinical-Records` (MIT): 31,489 clinical-record texts, the EHR-shaped prose
-register. Measured over the first 300 train rows (wenceslaus 2026-09-24): mean 842 chars (median
-513), 78 of 300 rows empty (dropped on the declared `drop_empty` filter), 195 of the 222
-surviving docs produce mentions at 9.57 mentions per doc, 61 relations. The kjappelbaum
-chemnlp-chemdner candidate was rejected before probing: no license declared on its card (unknown
-= reject). Clinical-record prose is tiered silver in `docs/weighting.md` (distant labels).
-
+- [docs/reddit-corpora.md](docs/reddit-corpora.md) -- the seven general-Reddit `tensorshield` dumps, their `match_on` health-community anchor, and the 100k-row inclusion bar.
+- [docs/biored.md](docs/biored.md) -- the BioRED gold corpus over the `wcole3/biored-parquet` mirror, its end-exclusive span convention, and the concept-pair relation collapse.
+- [docs/chia.md](docs/chia.md) -- the CHIA eligibility-criteria corpus, its five `hf_parquet` subsets, and the measured label-map and offset caveats.
+- [docs/gad.md](docs/gad.md) -- the GAD gene-disease sentence corpus, its single declared subset, and the 21 subset-splits deliberately left out.
+- [docs/drugprot.md](docs/drugprot.md) -- the DrugProt chemical-protein gold corpus over the `OpenMed/drugprot-parquet` mirror and its relation map.
+- [docs/augmented-clinical-notes.md](docs/augmented-clinical-notes.md) -- the `AGBonnet/augmented-clinical-notes` fullmap ingest over clinical-note paragraphs.
+- [docs/medmcqa.md](docs/medmcqa.md) -- the `openlifescienceai/medmcqa` fullmap ingest over exam-question explanations.
+- [docs/meddialog.md](docs/meddialog.md) -- the `OpenMed/MedDialog` fullmap ingest over doctor replies.
+- [docs/jnlpba.md](docs/jnlpba.md) -- the `commanderstrife/jnlpba` IOB script ingest over train and validation.
+- [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
+- [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
+- [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.
 ## Install
 
     uv sync

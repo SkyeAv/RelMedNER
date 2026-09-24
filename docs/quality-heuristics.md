@@ -109,3 +109,9 @@ line, and the sources stay well clear of the zero-yield guard.
 Every value above is a placeholder shape, not a recommendation. Field semantics, bounds,
 and the full 12-step drop order: [yaml-config](yaml-config.md). The quality line they
 produce: [Reading ingest quality numbers](yaml-config.md#reading-ingest-quality-numbers).
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [yaml config](yaml-config.md) -- the `row_filters` knobs that enable these filters
+- [ingests](ingests.md) -- the resolution-chain gates these filters sit beside

@@ -114,3 +114,9 @@ the shared gates make every candidate map pure set arithmetic over headings, so 
 stays throwaway and is deliberately not committed. Gazetteer relations over a 5,000-row
 sample through the production `run()` path with the expanded map: 18.4% of rows carry >=1
 relation (1,107 relations, 22 distinct predicates); 100% of rows emit entities.
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [fullmap mining](fullmap-mining.md) -- the mined spans the gazetteer matches
+- [ingests](ingests.md) -- the PredicateRangeGate rules qualifier contexts must satisfy

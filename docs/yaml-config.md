@@ -527,3 +527,9 @@ Relative paths resolve against the edited file's directory, so a YAML file in
 `src/relmedner/data/` uses the `../..` depth shown above. Agents can likewise
 pre-validate a candidate config against `schemas/ingests.schema.json` before
 the pipeline ever runs.
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [ingests](ingests.md) -- the resolution chains the declarations configure
+- [weighting](weighting.md) -- the practice guide for weight and trust values

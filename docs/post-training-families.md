@@ -22,3 +22,9 @@ Zero-shot breadth rules on this corpus:
   `CC`, `-`, `chemokines`) are filtered at extraction -- gliner2 would drop them anyway;
 - `GlinerBiomedPostScript.LABEL_MAP` extends the shared `FALLBACK_LABEL_MAP` with 25
   validated biolink classes; values are validated loudly at import.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [ingests](ingests.md) -- the resolution chain the family rows share
+- [output](output.md) -- the provenance fields the families stamp

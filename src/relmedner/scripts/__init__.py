@@ -2,10 +2,13 @@ from relmedner.scripts.bc5cdr import Bc5CdrScript
 from relmedner.scripts.bioleaflets import BioleafletsScript
 from relmedner.scripts.biored import BioredScript
 from relmedner.scripts.chemprot import ChemprotScript
+from relmedner.scripts.chia import ChiaScript
 from relmedner.scripts.ctkp_interventions import CtkpInterventionsScript
 from relmedner.scripts.docred import DocredScript
 from relmedner.scripts.drugprot import DrugprotScript
 from relmedner.scripts.ehr_rel import EhrRelScript
+from relmedner.scripts.fewrel import FewRelScript
+from relmedner.scripts.gad_blurb import GadBlurbScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
@@ -28,10 +31,13 @@ __all__ = [
     "BioleafletsScript",
     "BioredScript",
     "ChemprotScript",
+    "ChiaScript",
     "CtkpInterventionsScript",
     "DocredScript",
     "DrugprotScript",
     "EhrRelScript",
+    "FewRelScript",
+    "GadBlurbScript",
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
     "GlinerMultilingualScript",
