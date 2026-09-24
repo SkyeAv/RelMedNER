@@ -645,3 +645,98 @@ def test_a_match_on_emptied_source_stays_recorded_not_guarded(monkeypatch: pytes
 
     assert Yielded == []
     assert Stream.stats.dropped_by == {"match_on": 2}
+
+
+# ---------------------------------------------------------------- column projection (perf) ----
+
+WIDE_ROWS: dict[str, list[Any]] = {
+    "text": ["aspirin treats headache", "warfarin interacts with nsaid"],
+    "communityName": ["r/medicine", "r/AskDocs"],
+    "author": ["a", "b"],
+    "score": [3, 7],
+    "unused": ["x", "y"],
+}
+
+
+def test_select_declared_columns_prunes_to_the_declared_and_match_columns() -> None:
+    """a wide hub source must decode only what the declaration reads: the reddit ingests name
+    text + communityName out of ~30 columns, and every skipped column is decoder work not done"""
+    from datasets import Dataset
+
+    from relmedner.streams import select_declared_columns
+
+    whole = Dataset.from_dict(WIDE_ROWS)
+    projected = select_declared_columns(whole, ("text",), (("communityName", frozenset({"r/medicine"})),))
+
+    assert projected.column_names == ["text", "communityName"]
+    assert [row["text"] for row in projected] == WIDE_ROWS["text"]
+    assert [row["communityName"] for row in projected] == WIDE_ROWS["communityName"]
+
+
+def test_select_declared_columns_is_a_noop_when_every_column_is_needed() -> None:
+    """no projection transform is inserted when it would keep everything anyway"""
+    from datasets import Dataset
+
+    from relmedner.streams import select_declared_columns
+
+    whole = Dataset.from_dict({"text": ["a"], "ner": [["x"]]})
+    assert select_declared_columns(whole, ("text", "ner"), ()) is whole
+
+
+def test_a_declared_column_the_dataset_lacks_stays_absent_instead_of_raising() -> None:
+    """the docred test split declares `labels` but its rows carry no such key, and that split ships
+    entities only; projection must keep row.get's None rather than turn the gap into a load error"""
+    from datasets import Dataset
+
+    from relmedner.streams import select_declared_columns
+
+    whole = Dataset.from_dict({"sents": [["a"]], "vertexSet": [[1]]})
+    projected = select_declared_columns(whole, ("sents", "vertexSet", "labels"), ())
+
+    assert projected.column_names == ["sents", "vertexSet"]
+    assert next(iter(projected)).get("labels") is None
+
+
+def test_select_declared_columns_leaves_a_schema_less_source_untouched() -> None:
+    """streaming sources whose features only arrive with the first row (and the plain-list doubles
+    the other tests use) must pass through unchanged rather than lose their columns"""
+    from relmedner.streams import select_declared_columns
+
+    class NoSchema:
+        features = None
+
+        def __iter__(self):
+            return iter([{"text": "a", "other": 1}])
+
+    source = NoSchema()
+    assert select_declared_columns(source, ("text",), ()) is source
+    rows = [{"text": "a", "other": 1}]
+    assert select_declared_columns(rows, ("text",), ()) is rows
+
+
+def test_an_hf_stream_projects_before_matching_and_yields_identical_rows(monkeypatch: pytest.MonkeyPatch) -> None:
+    """end to end over the production rows() loop: match_on still filters on a projected column,
+    the yielded payload is unchanged, and the projection is asked for exactly the needed columns"""
+    from datasets import Dataset
+
+    from relmedner import huggingface
+
+    whole = Dataset.from_dict(WIDE_ROWS)
+    asked: list[list[str]] = []
+    real = huggingface.select_declared_columns
+
+    def spy(dataset: Any, columns_out: Any, match_on: Any) -> Any:
+        projected = real(dataset, columns_out, match_on)
+        asked.append(list(projected.column_names))
+        return projected
+
+    monkeypatch.setattr(huggingface, "load_dataset", lambda *args, **kwargs: whole)
+    monkeypatch.setattr(huggingface, "select_declared_columns", spy)
+
+    stream = _hf_stream(monkeypatch, whole, columns_out=("text",), match_on=(("communityName", ("r/medicine",)),))
+    yielded = list(stream.rows())
+
+    assert asked == [["text", "communityName"]]
+    assert [row[1][1] for row in yielded] == [("aspirin treats headache",)]
+    assert stream.stats.rows_in == 2 and stream.stats.rows_out == 1
+    assert stream.stats.dropped_by == {"match_on": 1}
