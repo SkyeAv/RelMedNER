@@ -231,6 +231,12 @@
           "title": "Sample Rate",
           "type": "number"
         },
+        "read_shards": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Read Shards",
+          "type": "integer"
+        },
         "source": {
           "const": "hf",
           "title": "Source",
@@ -366,6 +372,12 @@
           "title": "Sample Rate",
           "type": "number"
         },
+        "read_shards": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Read Shards",
+          "type": "integer"
+        },
         "source": {
           "const": "hf_json",
           "title": "Source",
@@ -494,6 +506,12 @@
           "maximum": 1.0,
           "title": "Sample Rate",
           "type": "number"
+        },
+        "read_shards": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Read Shards",
+          "type": "integer"
         },
         "source": {
           "const": "hf_parquet",
@@ -624,6 +642,12 @@
           "title": "Sample Rate",
           "type": "number"
         },
+        "read_shards": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Read Shards",
+          "type": "integer"
+        },
         "source": {
           "const": "local",
           "title": "Source",
@@ -711,6 +735,12 @@
           "maximum": 1.0,
           "title": "Sample Rate",
           "type": "number"
+        },
+        "read_shards": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Read Shards",
+          "type": "integer"
         },
         "source": {
           "const": "local_delimited",

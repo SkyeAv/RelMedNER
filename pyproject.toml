@@ -42,8 +42,11 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # coverage stays out of addopts so a targeted `uv run pytest tests/test_x.py` is fast; `make test`
-# is the full gate and passes the coverage flags (with a floor) explicitly
-addopts = "-n auto"
+# is the full gate and passes the coverage flags (with a floor) explicitly.
+# 4 workers is the laptop-safe memory ceiling (each worker imports 150-335 MB of
+# interpreter + relmedner + apache_beam state; -n auto OOMs a 30 GB box). The Makefile
+# passes -n $(XDIST) explicitly, and a later -n flag overrides this default.
+addopts = "-n 4"
 
 [tool.ruff]
 line-length = 150

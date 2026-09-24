@@ -61,6 +61,7 @@ datasets:
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-curated-corpus
     columns_out: [text]
+    read_shards: 4
   - task: *fullmap-task
     <<: *hf-train
     dataset: anthonyyazdaniml/gliner-biomed-balanced-curated-corpus
@@ -69,6 +70,7 @@ datasets:
     source: local
     weight: *weight-gold
     path: interventions/interventions.avro
+    read_shards: 8
   - task: {type: script, name: SyntheticNerAdeTweetsScript, outputs: [entities]}
     source: local
     weight: *weight-gold
@@ -118,6 +120,7 @@ datasets:
     subset: studies
     split: all
     columns_out: [abstract]
+    read_shards: 8
   - task: {type: script, name: SuperGlueMultiRCScript, outputs: [classifications]}
     <<: *hf-train
     weight: *weight-transfer
@@ -580,6 +583,7 @@ datasets:
     dataset: openlifescienceai/medmcqa
     columns_out: [exp]
     filters: {drop_empty: true}
+    read_shards: 4
   # MedDialog (OpenMed/MedDialog, apache-2.0): 226,557 patient-doctor consultation dialogues;
   # the `doctor_response` column is the clinical register the fullmap path mines (the
   # dialogue_context column is empty on every sampled row).
@@ -588,6 +592,7 @@ datasets:
     weight: *weight-silver
     dataset: OpenMed/MedDialog
     columns_out: [doctor_response]
+    read_shards: 4
   # JNLPBA (commanderstrife/jnlpba, apache-2.0): the hub repo ships an unsupported loader script,
   # but its refs/convert/parquet branch carries the splits as parquet, so train and validation
   # declare their own hf_parquet file entries (the bigbio/ehr_rel read path). The repo's test
