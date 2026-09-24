@@ -4,10 +4,12 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import apache_beam as beam
 import pytest
 from apache_beam.metrics.metric import MetricsFilter
+from apache_beam.options.pipeline_options import PipelineOptions
 from apache_beam.runners.runner import PipelineResult
 from apache_beam.testing.test_pipeline import TestPipeline
 from apache_beam.testing.util import assert_that, equal_to
@@ -17,9 +19,13 @@ from relmedner.dedup import (
     DEDUP_METRICS_NAMESPACE,
     KeepPriorityWinnerByKey,
     NearDeduplicate,
+    _EmitBandKeys,
+    _JoinPayloads,
+    _TagBandLosers,
     apply_dedup,
     band_keys,
     base_hash,
+    content_id,
     exact_key,
     format_dedup_summary,
     normalize_text,
@@ -95,7 +101,7 @@ def test_exact_key_folds_whitespace_and_preserves_case() -> None:
 
 def test_exact_stage_keeps_priority_winner_per_key() -> None:
     """REQ-EXACT-2: mixed-weight duplicates collapse to the highest-weight record regardless of
-    arrival order; equal-weight ties break on canonical json, never on first-seen"""
+    arrival order; equal-weight ties break on content_id, never on first-seen"""
     curated = a_distinguishable_example(" aspirin ", weight=3.0)
     mined = a_distinguishable_example("aspirin", weight=1.0)
 
@@ -105,7 +111,7 @@ def test_exact_stage_keeps_priority_winner_per_key() -> None:
 
     tied_with_payload = a_distinguishable_example("aspirin", weight=2.0)
     tied_bare = TrainingExample(text="aspirin", weight=2.0)
-    assert priority(tied_with_payload) != priority(tied_bare)  # canonical json gives a total order
+    assert priority(tied_with_payload) != priority(tied_bare)  # content_id gives a total order
     assert min([tied_bare, tied_with_payload], key=priority) is min([tied_with_payload, tied_bare], key=priority)
 
     with TestPipeline() as pipeline:
@@ -464,3 +470,106 @@ def test_affine_mod_is_exact_at_the_modulus_edges() -> None:
     got = _affine_mod(np.array(edges, dtype=np.uint64))
     for j, (a, b) in enumerate(zip(_PERM_A, _PERM_B, strict=True)):
         assert [int(value) for value in got[j]] == [(a * h + b) % _MERSENNE_PRIME for h in edges]
+
+
+# ------------------------------------------- compact band shuffle (content_id + payload join) ----
+
+
+def test_content_id_is_a_stable_fingerprint_of_the_whole_payload() -> None:
+    """content_id names a record in the band shuffle without shipping it, so it must be a pure
+    function of the canonical json: equal payloads share an id, any payload difference does not,
+    and it is stable across processes (two workers must agree or the join drops records)"""
+    base = a_distinguishable_example(NEAR_BASE_TEXT)
+    same = a_distinguishable_example(NEAR_BASE_TEXT)
+    other = a_distinguishable_example(NEAR_BASE_TEXT, weight=0.5)
+
+    assert content_id(base) == content_id(same)
+    assert content_id(base) != content_id(other)
+    assert len(content_id(base)) == 32  # blake2b digest_size=16 -> 32 hex chars
+    assert priority(base) == (-base.weight, content_id(base))
+
+    probe_code = (
+        "import sys\n"
+        "sys.path.insert(0, sys.argv[1])\n"
+        "from tests.test_dedup import a_distinguishable_example, NEAR_BASE_TEXT\n"
+        "from relmedner.dedup import content_id\n"
+        "print(content_id(a_distinguishable_example(NEAR_BASE_TEXT)))\n"
+    )
+    repo_root = str(Path(__file__).resolve().parents[1])
+    remote = subprocess.run(
+        [sys.executable, "-c", probe_code, repo_root],
+        env={**os.environ, "PYTHONHASHSEED": "999"},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=300,
+    ).stdout.strip()
+    assert remote == content_id(base)
+
+
+def test_the_band_stream_carries_priorities_and_the_payload_rides_one_tagged_output() -> None:
+    """the whole point of the restructure: a long record emits DEDUP_BANDS compact
+    (band_key, priority) elements and exactly ONE payload element, so its TrainingExample crosses
+    the shuffle once instead of twice per band; a short record emits no band element at all"""
+    emit = _EmitBandKeys()
+    long_record = a_distinguishable_example(NEAR_BASE_TEXT)
+    outputs = list(emit.process(long_record))
+
+    bands = [item for item in outputs if not isinstance(item, beam.pvalue.TaggedOutput)]
+    payloads = [item for item in outputs if isinstance(item, beam.pvalue.TaggedOutput) and item.tag == "payload"]
+    assert len(bands) == DEDUP_BANDS
+    assert all(value == priority(long_record) for _key, value in bands)
+    assert {key for key, _ in bands} == set(band_keys(signature(NEAR_BASE_TEXT)))
+    assert [(item.tag, item.value) for item in payloads] == [("payload", (content_id(long_record), long_record))]
+
+    short_record = a_distinguishable_example("aspirin")
+    short_outputs = list(emit.process(short_record))
+    assert [(item.tag, item.value) for item in short_outputs] == [("bypass", short_record)]
+
+
+def test_band_losers_are_marked_once_per_losing_bucket_and_winners_emit_nothing() -> None:
+    """a bucket winner ships no marker, so a bucket whose records all survive costs nothing
+    downstream; every non-winner ships exactly one marker per bucket it loses"""
+    high = priority(a_distinguishable_example(NEAR_BASE_TEXT, weight=3.0))
+    low = priority(a_distinguishable_example(NEAR_VARIANT_TEXT, weight=1.0))
+    tagger = _TagBandLosers()
+
+    assert list(tagger.process(((0, "k"), [high, low]))) == [(low[1], None)]
+    assert list(tagger.process(((0, "k"), [low, high]))) == [(low[1], None)]  # order-independent
+    assert list(tagger.process(((0, "k"), [high]))) == []
+    assert list(tagger.process(((0, "k"), [high, high]))) == []  # identical priorities tie, no loser
+
+
+def test_the_payload_join_drops_a_record_that_lost_any_band_and_emits_survivors_once() -> None:
+    """REQ-NEAR-4/6 at the join: one loser marker is enough to drop the record no matter how many
+    bands it won, a record with no marker is emitted exactly once, and a marker with no payload
+    neither emits nor counts"""
+    survivor = a_distinguishable_example(NEAR_BASE_TEXT, weight=3.0)
+    loser = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=1.0)
+    join = _JoinPayloads()
+
+    assert list(join.process((content_id(survivor), {"payload": [survivor], "lost": []}))) == [survivor]
+    assert list(join.process((content_id(loser), {"payload": [loser], "lost": [None, None, None]}))) == []
+    assert list(join.process(("orphan", {"payload": [], "lost": [None]}))) == []
+
+
+def test_equal_weight_near_duplicates_pick_one_survivor_regardless_of_arrival_order() -> None:
+    """the content_id tie-break replaces the canonical-json one, so determinism is the contract to
+    pin: two equal-weight near-duplicates must yield the SAME survivor under every arrival order
+    and every bundle split, which is what keeps a Flink run reproducible across shard counts"""
+    first = a_distinguishable_example(NEAR_BASE_TEXT, weight=1.0)
+    second = a_distinguishable_example(NEAR_VARIANT_TEXT, weight=1.0)
+    expected = min([first, second], key=priority)
+
+    for order in ([first, second], [second, first]):
+        pipeline = TestPipeline()
+        survivors = pipeline | beam.Create(order) | NearDeduplicate()
+        assert_that(survivors, equal_to([expected]))
+        result = pipeline.run()
+        result.wait_until_finish()
+        assert near_counters(result) == {"near_in": 2, "near_dropped": 1, "near_kept": 1, "near_buckets_nontrivial": 5}
+
+    # two direct workers: the join must not depend on both records landing in one bundle
+    split_pipeline = TestPipeline(options=PipelineOptions(["--direct_num_workers=2"]))
+    split = split_pipeline | "create" >> beam.Create([first, second]) | "near" >> NearDeduplicate()
+    assert_that(split, equal_to([expected]))

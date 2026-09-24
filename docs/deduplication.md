@@ -11,9 +11,18 @@ texts merge, half-overlapping ones never do. Texts under 10 tokens bypass near-d
 entirely, because below that a 5-gram shingle set has too few members for a stable
 Jaccard estimate, but they still get exact dedup.
 
-Where a duplicate group collapses, the survivor is the highest-weight record, ties
-broken by canonical JSON so the winner is deterministic. Weights are not summed; the
-export step owns weighted duplication.
+Where a duplicate group collapses, the survivor is the highest-weight record, ties broken
+by `content_id` (a 128-bit blake2b fingerprint of the record's canonical JSON) so the
+winner is deterministic across runners, shard counts, and arrival order. Weights are not
+summed; the export step owns weighted duplication.
+
+Near dedup ships a compact element through its band shuffle: each record emits
+`(band_key, priority)` per band, where `priority` is `(-weight, content_id)`, plus its
+full payload exactly once on a separate stream that the join step keys by `content_id`.
+A record is dropped when it carries at least one loser marker from any band bucket, so
+winning one band never resurrects a record that lost another. The earlier shape attached
+the whole `TrainingExample` to every band emission and again on the collapse step, 16 full
+copies per record (~23 KiB measured on a 200-token record versus ~2.2 KiB now).
 
 `build-dataset --dedup-mode` controls the stage: `near` (the default) runs exact then
 near, `exact` runs exact only, and `off` adds no dedup transforms at all. Drop counts
