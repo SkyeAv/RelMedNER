@@ -718,19 +718,49 @@ class ScriptUtils:
 
     @classmethod
     def _fetch_best(cls, terms: list[str]) -> dict[str, dict[str, object]]:
-        """the uncached path: one lookup_rows + filter_and_rank over the given distinct terms"""
-        import polars as pl
-        from tablassert.fullmap import filter_and_rank
-
+        """the uncached path: one lookup_rows round trip, then the ranking below"""
         rows: list[dict[str, object]] = lookup_rows(cls.fullmap_db(), terms)
         if not rows:
             return {}
-        frame = pl.DataFrame({"term": terms, "nlp_level": [1] * len(terms)})
-        matches = filter_and_rank(pl.DataFrame(rows), frame, cls.FULLMAP_TAXON, None, None, False)
-        best: dict[str, dict[str, object]] = {}
-        for row in matches.select("term", *cls._BEST_FIELDS).iter_rows(named=True):
-            best.setdefault(str(row["term"]), {field: row[field] for field in cls._BEST_FIELDS})  # sorted best-first
-        return best
+        return cls._rank_best(rows)
+
+    @classmethod
+    def _rank_best(cls, rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
+        """one best-ranked lookup_rows row per term, in plain python.
+
+        This is filter_and_rank(column_context=False) + "keep the first row per term" expressed
+        directly: polars builds and collects a lazy plan per call, and at one call per script row
+        over a handful of rows that fixed overhead dominated dispatch (6.9s of a 13.5s profile for
+        480 calls). The equivalence, term by term:
+
+        - taxon filter: keep TAXON_ID == FULLMAP_TAXON or 0
+        - PR: 1 when PREFERRED_NAME == term, else 5 when the level-one normalizations agree
+          (NLP_LEVEL is 1 for every row, so the filter_and_rank guard always holds), else 10
+        - best per term: min (PR, NLP_LEVEL, CURIE), which is exactly the head of
+          deduplicate_result's sort for that term
+
+        Ties that differ only in SOURCE_NAME/VERSION are resolved arbitrarily by polars too, and
+        the returned fields are CURIE-derived, so the result is unchanged. Requires distinct terms
+        (the caller passes a sorted set): a repeated term would multiply rows in the polars join.
+        """
+        taxon: int = int(cls.FULLMAP_TAXON)
+        kept: list[dict[str, object]] = [row for row in rows if int(row["TAXON_ID"]) in (taxon, 0)]
+        if not kept:
+            return {}
+        # one Rust batch call for both sides of the level-one comparison
+        surfaces: list[str] = sorted({str(row["PREFERRED_NAME"]) for row in kept} | {str(row["term"]) for row in kept})
+        normalized: dict[str, str] = dict(zip(surfaces, rs.normalize_terms(surfaces), strict=True))
+        best: dict[str, tuple[tuple[int, int, str], dict[str, object]]] = {}
+        for row in kept:
+            term: str = str(row["term"])
+            name: str = str(row["PREFERRED_NAME"])
+            curie: str = str(row["CURIE"])
+            rank = 1 if name == term else (5 if normalized[name] == normalized[term] else 10)
+            order: tuple[int, int, str] = (rank, 1, curie)
+            current = best.get(term)
+            if current is None or order < current[0]:
+                best[term] = (order, {field: row[field] for field in cls._BEST_FIELDS})
+        return {term: payload for term, (_order, payload) in best.items()}
 
     @classmethod
     def _resolve(
