@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError, select_declared_columns
+from relmedner.streams import DataStream, StreamedRow, StreamStats, select_declared_columns, shard_of
 
 
 class HuggingFaceJsonDataStream(DataStream):
@@ -29,6 +29,8 @@ class HuggingFaceJsonDataStream(DataStream):
 
     SOURCE: ClassVar[str] = "hf_json"
 
+    SHARDED_READS: ClassVar[bool] = True
+
     def __init__(
         self: Self,
         task: tuple[Any, ...],
@@ -41,11 +43,14 @@ class HuggingFaceJsonDataStream(DataStream):
         *,
         filters: RowFilters | None = None,
         sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
     ) -> None:
         # positional contract: the payload DatasetBase.to_tuple() produces for HuggingFaceJsonDataset
         # (model field order minus source); registry.build_stream splats it into this __init__;
-        # filters and sample_rate are keyword-only and ride the shared base __init__
-        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
+        # filters, sample_rate, read_shards, and shard_index are keyword-only and ride the shared
+        # base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate, read_shards=read_shards, shard_index=shard_index)
         self.name: str = dataset
         self.dataset: str = dataset
         self.file: str = file
@@ -59,6 +64,10 @@ class HuggingFaceJsonDataStream(DataStream):
     def rows(self: Self) -> Iterator[StreamedRow]:
         # no streaming kwarg, on purpose: see the class docstring cold-cache hazard
         datastream = load_dataset("json", data_files=f"hf://datasets/{self.dataset}/{self.file}", split=self.split)
+        # shard BEFORE any operator: a built Dataset shards by row index (views over the same
+        # arrow table), so each reader walks its own contiguous slice
+        if self.read_shards > 1:
+            datastream = shard_of(datastream, self.read_shards, self.shard_index)
         datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # every pass counts (US-009 shape), INCLUDING the declared-filters-None one: the
@@ -85,6 +94,6 @@ class HuggingFaceJsonDataStream(DataStream):
         # fail-loud zero-yield guard, matching the other hf stream: a declared filter OR the
         # ALWAYS-ON token cap that drops every candidate row of a non-empty source is the
         # silent-empty-training-set bug; a genuinely empty source (0 candidates, e.g. everything
-        # match_on-dropped) is recorded, not guarded
-        if candidates > 0 and self.stats.rows_out == 0:
-            raise ZeroYieldError(f"filters {self.filters} dropped 100% of {candidates} rows from {self.name}")
+        # match_on-dropped) is recorded, not guarded. On a sharded read the guard degrades to
+        # a per-shard WARNING (streams.zero_yield_guard)
+        self.zero_yield_guard(candidates)

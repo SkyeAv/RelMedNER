@@ -127,10 +127,10 @@ class RowFilters(StrictBase):
 
 
 class DatasetBase(StrictBase):
-    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges", "sample_rate"})
+    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges", "sample_rate", "read_shards"})
     """names that never enter the packed payload: "source" is the dict key today; "filters",
-    "trust", "trust_edges", and "sample_rate" are validation-time keyword-only fields, so none can
-    shift an existing tuple position"""
+    "trust", "trust_edges", "sample_rate", and "read_shards" are validation-time keyword-only
+    fields, so none can shift an existing tuple position"""
 
     tuple_fields: ClassVar[tuple[str, ...]]
     """the explicit field packing order frozen by tests/test_ingests.py EXPECTED locks; concrete
@@ -173,6 +173,17 @@ class DatasetBase(StrictBase):
     mines a quarter of it. Excluded from tuple_fields like filters: it shifts no frozen payload
     position and rides the stream_args envelope"""
 
+    read_shards: int = Field(1, ge=1)
+    """how many parallel readers to split this source's read across (default 1 = one full
+    pass). Each shard is one Create element of the pipeline graph, so the fan-out Reshuffle
+    spreads the read over as many cluster tasks instead of serializing a whole dataset on
+    one subtask. Sharding is TRANSPARENT: shard selection is deterministic and
+    non-overlapping (whole avro blocks locally, hub file shards remotely), the union of all
+    shards' rows equals the unsharded row list, and per-row sample_rate decisions are made
+    on content, so they never depend on shard boundaries. Only sources whose DataStream
+    supports SHARDED_READS accept a value over 1 (validation raises otherwise, so a typo
+    fails at parse time, never mid-run)"""
+
     @property
     def row_key(self: Self) -> str:
         """the name streamed rows are stamped with (DataStream.rows yields it per row); the
@@ -182,12 +193,12 @@ class DatasetBase(StrictBase):
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
         return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).tuple_fields))
 
-    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None, float]:
-        """the (source, payload, filters, sample_rate) envelope build_stream unpacks; the payload
-        stays the frozen 2-tuple shape cli.py and the EXPECTED locks depend on, filters and
-        sample_rate ride keyword-only"""
+    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None, float, int]:
+        """the (source, payload, filters, sample_rate, read_shards) envelope build_stream
+        unpacks; the payload stays the frozen 2-tuple shape cli.py and the EXPECTED locks
+        depend on, and the validation-time slots ride after it without shifting a position"""
         source, payload = self.to_tuple()
-        return (source, payload, self.filters, self.sample_rate)
+        return (source, payload, self.filters, self.sample_rate, self.read_shards)
 
 
 class MatchOn(StrictBase):
@@ -442,10 +453,17 @@ class YamlIngests(StrictBase):
         entry[1][2] helper index the payload positionally"""
         return tuple(dataset.to_tuple() for dataset in self.datasets)
 
-    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None, float], ...]:
-        """the pipeline's Create stage feeds build_stream, which unpacks each 4-tuple as
-        (source, payload, filters, sample_rate)"""
-        return tuple(dataset.to_stream_args() for dataset in self.datasets)
+    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None, float, int, int], ...]:
+        """the pipeline's Create stage feeds build_stream, which unpacks each 6-tuple as
+        (source, payload, filters, sample_rate, read_shards, shard_index): a source declaring
+        read_shards contributes one envelope per shard index, so its read fans out over that
+        many Create elements (and, through the fan-out Reshuffle, cluster tasks) instead of
+        serializing the whole dataset on one subtask"""
+        return tuple(
+            (source, payload, filters, sample_rate, read_shards, shard_index)
+            for source, payload, filters, sample_rate, read_shards in (dataset.to_stream_args() for dataset in self.datasets)
+            for shard_index in range(read_shards)
+        )
 
     def weights_by_source(self: Self) -> dict[str, float]:
         """row key -> declared mixing weight; rows key on the source's repo id (not the "hf"

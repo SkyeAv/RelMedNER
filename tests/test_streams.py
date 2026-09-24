@@ -123,6 +123,25 @@ def test_rebuild_task_round_trips_every_declared_task_type() -> None:
         rebuild_task(("teleport",))
 
 
+def test_rebuild_task_cache_returns_the_same_frozen_instance() -> None:
+    """the dispatch hot path calls rebuild_task per row over an identical task tuple, so the
+    bounded LRU must return ONE shared frozen model per distinct tuple (models are immutable,
+    sharing is safe) while distinct tuples still build their own correct models and the
+    unknown-kind raise stays loud on every call (lru_cache never caches exceptions)"""
+    from relmedner.streams import rebuild_task
+
+    script: tuple[Any, ...] = ("script", "CtkpInterventionsScript", ("entities",))
+    other: tuple[Any, ...] = ("script", "DocredScript", ("entities", "relations"))
+
+    assert rebuild_task(script) is rebuild_task(script)
+    assert rebuild_task(other) is rebuild_task(other)
+    assert rebuild_task(script) is not rebuild_task(other)
+    assert type(rebuild_task(script)).__name__ == "ScriptTask"
+    assert rebuild_task(script).name == "CtkpInterventionsScript"
+    with pytest.raises(ValueError):
+        rebuild_task(("teleport",))
+
+
 def test_registry_keys_on_the_source_discriminator() -> None:
     assert SOURCE_REGISTRY["hf"] is HuggingFaceDataStream
     assert SOURCE_REGISTRY["hf_parquet"] is HuggingFaceParquetDataStream

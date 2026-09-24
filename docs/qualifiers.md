@@ -13,6 +13,31 @@ value-style slots (`frequency`/`temporal`) fall back to the multi-token phrase s
 "failed to", "without", ...) sharing a sentence with a fired predicate re-encode the
 statement as `not_<predicate>` with `negated=true`.
 
+## Enum-valued Translator qualifiers
+
+Beyond the DAKP subset, four live enum-ranged biolink qualifiers ride along on fired
+statements, mirroring the NCATSTranslator/translator-ingests pattern (ChEMBL, GtoPdb,
+SemMedDB, and CTD edges all carry them as closed-vocabulary tokens):
+`object_direction_qualifier` (increased/decreased/upregulated/downregulated),
+`object_aspect_qualifier` (expression, activity, phosphorylation, ...),
+`causal_mechanism_qualifier` (activation, inhibition, competitive_inhibition, ...), and
+`subject_form_or_variant_qualifier` (mutant_form, genetic_variant_form, ...). The cue
+phrase supplies the value itself: the emitted relation is always the canonical enum
+token, never the surface ("competitive inhibition" emits `competitive_inhibition`), so
+`validate_enum_qualifier_table` can pin every value against tablassert's
+`ENUM_RANGED_QUALIFIERS` derived from the pinned biolink model. A slot absent from that
+map is attached to no association class (the deprecation exclusion; e.g.
+`severity_qualifier`, `temporal_interval_qualifier`) or CURIE-ranged, and is rejected at
+import time -- the live-in-practice check and the not-deprecated check are the same gate.
+Unlike the DAKP slots these qualifiers are side-bound: `object_*` slots host the
+statement tail, `subject_*` the head (`Mutant KRAS activates RAF` carries its variant
+form on KRAS), and the variant-form cues are windowed to adjacency so a floating
+"mutant" cannot stamp the form on an unrelated endpoint. One value per slot per
+sentence, leftmost cue wins. Slot ownership of contested PTM nouns (phosphorylation,
+methylation, ...) goes to the aspect enum, where the pinned model lists them as aspects;
+bare "binding" is left out because the `("binding", "to")` predicate trigger already owns
+the event and the overlap would double-encode it.
+
 Dataset-format notes (`PileNerBiomedScript`): `tokens`/`ner_tags` are python-repr strings
 (`ast.literal_eval`, malformed rows skip); orphan `I-` tags promote to single-token spans
 rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
