@@ -23,3 +23,9 @@ equality finds only 7/259 (naive whitespace split) and 0/259 (gliner2 splitter),
 token-level variant (substring of some token) still only 77/259 (29.7%), which is why the locate
 is char-level. Declared-probe verification: `rows_in=50 rows_out=50`, 100% of rows emit entities,
 232 entity mentions. Rows are short (median 113 tokens, max 158), no filter block needed.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [json extraction](json-extraction.md) -- the sibling structured-extraction corpus
+- [output](output.md) -- the records its 50 rows emit

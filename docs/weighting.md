@@ -230,3 +230,9 @@ tier prior by more than the band allows).
 Both zero forms keep records in avro and exclude them at export duplication. Neither
 removes them from dedup inputs -- a 0-weight record can still *lose* a collision (it just
 never wins one against anything heavier).
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [yaml config](yaml-config.md) -- the field reference for `weight` and `trust`
+- [ingests](ingests.md) -- the declared row keys the priors table covers

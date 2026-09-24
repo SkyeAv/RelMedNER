@@ -71,3 +71,9 @@ rows_in for every split.
 Declared outputs are `[entities, relations]` for all six entries; pubmed_unsupervised rows
 and the 9 val_semeval self-loops ship fewer shapes, which the permitted-shapes contract
 allows.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows for the six splits and the full docs index.
+- [bc5cdr](bc5cdr.md) -- the other out-of-band local-avro delivery.
+- [output.md](output.md) -- the records the container rows emit.

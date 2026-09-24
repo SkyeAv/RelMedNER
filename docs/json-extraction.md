@@ -44,3 +44,9 @@ Declared-probe yields over the first 200 rows of each entry (`probe.py --declare
 entries (200/200 each, rows_in=rows_out=200, no drops); entity rows Jiraya 193, owkin 68,
 sandeeppanem 27, roborovski 0 (the Person marker is rare by design); ProfessorBob and
 HenriqueGodoy entities are not declared.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows for the six per-source ingests and the full docs index
+- [ingests](ingests.md) -- the resolution chain its rows enter
+- [output](output.md) -- the declared-shapes contract its structures ship under

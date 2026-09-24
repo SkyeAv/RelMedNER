@@ -14,3 +14,9 @@ Mined rows flow through the same resolution chain and quality gates as the
 `anthonyyazdaniml/gliner-biomed-curated-corpus` fullmap entries above; the miner itself
 is documented under [How fullmap mining works](fullmap-mining.md) and not
 re-described here.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table row and the full docs index
+- [fullmap mining](fullmap-mining.md) -- the miner its abstracts flow through
+- [weighting](weighting.md) -- the tier and trust prior for its row key

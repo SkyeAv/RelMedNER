@@ -21,3 +21,9 @@ land in Beam counters under the `relmedner.dedup` namespace; on DirectRunner run
 pipeline logs one summary line afterwards, `dedup: exact -<n> near -<n> of <total>
 records`. On the Flink cluster the same counters surface in the Flink UI / REST job
 metrics.
+
+## Related
+
+- [README index](../README.md) -- the full docs index
+- [output](output.md) -- the records the dedup stage merges before the Avro write
+- [weighting](weighting.md) -- how weight decides which duplicate survives a collision

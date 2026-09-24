@@ -47,3 +47,9 @@ export.
 - Deliberate omissions: the SNOMED id columns and `CUI_1`/`CUI_2` never stream (provenance
   only; `CUI_1` is empty on 252 rows and `CUI_2` on 250), and `document_id` is a deidentified
   hash unusable as text.
+
+## Related
+
+- [README index](../README.md) -- the ingest-table rows for the four subsets and the full docs index
+- [yaml config](yaml-config.md) -- the `hf_parquet` source kind these entries use
+- [ingests](ingests.md) -- the resolution chain and gates
