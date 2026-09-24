@@ -127,10 +127,10 @@ class RowFilters(StrictBase):
 
 
 class DatasetBase(StrictBase):
-    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges"})
+    NON_PAYLOAD_FIELDS: ClassVar[frozenset[str]] = frozenset({"source", "filters", "trust", "trust_edges", "sample_rate"})
     """names that never enter the packed payload: "source" is the dict key today; "filters",
-    "trust", and "trust_edges" are validation-time keyword-only fields, so none can shift an
-    existing tuple position"""
+    "trust", "trust_edges", and "sample_rate" are validation-time keyword-only fields, so none can
+    shift an existing tuple position"""
 
     tuple_fields: ClassVar[tuple[str, ...]]
     """the explicit field packing order frozen by tests/test_ingests.py EXPECTED locks; concrete
@@ -164,6 +164,15 @@ class DatasetBase(StrictBase):
     """declarative row filters applied by the stream after match_on; appended LAST (after trust)
     and excluded from tuple_fields, so it cannot shift any frozen payload position"""
 
+    sample_rate: float = Field(1.0, gt=0.0, le=1.0)
+    """fraction of this source's PASSING rows to keep, in [0 exclusive, 1]: the platform-wide
+    lever for mixing ratios (docs/weighting.md). Sampling is deterministic per row CONTENT
+    (blake2b of the source key plus the row, streams.py) and runs AFTER the row filters, so a
+    resumable pipeline re-makes the same keeps/drops on replay and a dropped row never
+    attributes to a quality reason. 1.0 (default) keeps everything; 0.25 on a 7M-row source
+    mines a quarter of it. Excluded from tuple_fields like filters: it shifts no frozen payload
+    position and rides the stream_args envelope"""
+
     @property
     def row_key(self: Self) -> str:
         """the name streamed rows are stamped with (DataStream.rows yields it per row); the
@@ -173,11 +182,12 @@ class DatasetBase(StrictBase):
     def to_tuple(self: Self) -> tuple[str, tuple[Any, ...]]:
         return (self.source, tuple(self.freeze(getattr(self, name)) for name in type(self).tuple_fields))
 
-    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None]:
-        """the (source, payload, filters) envelope build_stream unpacks; the payload stays the
-        frozen 2-tuple shape cli.py and the EXPECTED locks depend on, filters ride keyword-only"""
+    def to_stream_args(self: Self) -> tuple[str, tuple[Any, ...], RowFilters | None, float]:
+        """the (source, payload, filters, sample_rate) envelope build_stream unpacks; the payload
+        stays the frozen 2-tuple shape cli.py and the EXPECTED locks depend on, filters and
+        sample_rate ride keyword-only"""
         source, payload = self.to_tuple()
-        return (source, payload, self.filters)
+        return (source, payload, self.filters, self.sample_rate)
 
 
 class MatchOn(StrictBase):
@@ -432,9 +442,9 @@ class YamlIngests(StrictBase):
         entry[1][2] helper index the payload positionally"""
         return tuple(dataset.to_tuple() for dataset in self.datasets)
 
-    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None], ...]:
-        """the pipeline's Create stage feeds build_stream, which unpacks each 3-tuple as
-        (source, payload, filters)"""
+    def stream_args(self: Self) -> tuple[tuple[str, tuple[Any, ...], RowFilters | None, float], ...]:
+        """the pipeline's Create stage feeds build_stream, which unpacks each 4-tuple as
+        (source, payload, filters, sample_rate)"""
         return tuple(dataset.to_stream_args() for dataset in self.datasets)
 
     def weights_by_source(self: Self) -> dict[str, float]:

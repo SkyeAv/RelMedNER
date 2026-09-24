@@ -18,7 +18,7 @@ SOURCE_REGISTRY: dict[str, type[DataStream]] = {
 }
 
 
-def build_stream(source: str, payload: tuple[Any, ...], filters: RowFilters | None = None) -> DataStream:
-    """filters rides keyword-only from the (source, payload, filters) stream_args envelope; the
-    default keeps every existing positional 2-arg call valid"""
-    return SOURCE_REGISTRY[source](*payload, filters=filters)
+def build_stream(source: str, payload: tuple[Any, ...], filters: RowFilters | None = None, sample_rate: float = 1.0) -> DataStream:
+    """filters and sample_rate ride keyword-only from the (source, payload, filters, sample_rate)
+    stream_args envelope; the defaults keep every existing positional 2-arg call valid"""
+    return SOURCE_REGISTRY[source](*payload, filters=filters, sample_rate=sample_rate)

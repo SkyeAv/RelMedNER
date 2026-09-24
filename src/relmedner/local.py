@@ -24,11 +24,11 @@ class LocalAvroDataStream(DataStream):
 
     SOURCE: ClassVar[str] = "local"
 
-    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str, *, filters: RowFilters | None = None) -> None:
+    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str, *, filters: RowFilters | None = None, sample_rate: float = 1.0) -> None:
         # parameter order must match DatasetBase.to_tuple's field order, because build_stream
         # unpacks the declared payload positionally: task, weight, then the local-specific path;
-        # filters is keyword-only and rides the shared base __init__ (US-008)
-        super().__init__(task, weight, filters=filters)
+        # filters and sample_rate are keyword-only and ride the shared base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
         # the pipeline stamps every row with weights[source], so this key is LocalAvroDataset.row_key
         # verbatim: the declared path, not its basename (two distinct files may share a name and
         # must still be able to declare different weights)
@@ -116,11 +116,12 @@ class LocalDelimitedDataStream(DataStream):
         match_on: tuple[tuple[str, tuple[str, ...]], ...] | None = None,
         *,
         filters: RowFilters | None = None,
+        sample_rate: float = 1.0,
     ) -> None:
         # positional contract: the payload LocalDelimitedDataset.to_tuple produces (model field
         # order minus source); registry.build_stream splats it into this __init__;
-        # filters is keyword-only and rides the shared base __init__ (US-008)
-        super().__init__(task, weight, filters=filters)
+        # filters and sample_rate are keyword-only and ride the shared base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
         # the DECLARED path, not the resolved one and not its stem: the pipeline stamps every row
         # with weights[source], so this key is LocalDelimitedDataset.row_key verbatim, and two
         # distinct files sharing a basename must still be able to declare different weights

@@ -224,6 +224,13 @@
           ],
           "default": null
         },
+        "sample_rate": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Sample Rate",
+          "type": "number"
+        },
         "source": {
           "const": "hf",
           "title": "Source",
@@ -352,6 +359,13 @@
           ],
           "default": null
         },
+        "sample_rate": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Sample Rate",
+          "type": "number"
+        },
         "source": {
           "const": "hf_json",
           "title": "Source",
@@ -473,6 +487,13 @@
             }
           ],
           "default": null
+        },
+        "sample_rate": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Sample Rate",
+          "type": "number"
         },
         "source": {
           "const": "hf_parquet",
@@ -596,6 +617,13 @@
           ],
           "default": null
         },
+        "sample_rate": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Sample Rate",
+          "type": "number"
+        },
         "source": {
           "const": "local",
           "title": "Source",
@@ -676,6 +704,13 @@
             }
           ],
           "default": null
+        },
+        "sample_rate": {
+          "default": 1.0,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Sample Rate",
+          "type": "number"
         },
         "source": {
           "const": "local_delimited",

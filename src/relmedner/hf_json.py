@@ -40,11 +40,12 @@ class HuggingFaceJsonDataStream(DataStream):
         columns_out: tuple[str, ...],
         *,
         filters: RowFilters | None = None,
+        sample_rate: float = 1.0,
     ) -> None:
         # positional contract: the payload DatasetBase.to_tuple() produces for HuggingFaceJsonDataset
         # (model field order minus source); registry.build_stream splats it into this __init__;
-        # filters is keyword-only and rides the shared base __init__ (US-008)
-        super().__init__(task, weight, filters=filters)
+        # filters and sample_rate are keyword-only and ride the shared base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
         self.name: str = dataset
         self.dataset: str = dataset
         self.file: str = file
