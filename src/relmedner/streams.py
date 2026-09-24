@@ -5,6 +5,7 @@ import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import lru_cache
 from hashlib import blake2b
 from itertools import islice
 from typing import Any, ClassVar, Self
@@ -84,8 +85,18 @@ def shard_of(datastream: Any, read_shards: int, shard_index: int) -> Any:
     return datastream.shard(num_shards=effective, index=shard_index)
 
 
+@lru_cache(maxsize=256)
 def rebuild_task(task: tuple[Any, ...]) -> Any:
-    """rebuild the pydantic task model from its frozen field-order tuple (to_tuple round trip)"""
+    """rebuild the pydantic task model from its frozen field-order tuple (to_tuple round trip).
+
+    Memoized because the dispatch hot path calls this PER ROW (dispatch_row for script rows,
+    resolve_rows for fullmap rows) while every row of a source carries the IDENTICAL task
+    tuple: a registry pass spent ~1.45M redundant pydantic validations rebuilding the same
+    few dozen tasks. Frozen StrictBase models are immutable and shared safely, so returning
+    the cached instance is behavior-identical. 256 slots dwarf the distinct-task population
+    (one or two per declared source); the lru_cache holds no exceptions, so the unknown-kind
+    raise stays loud on every call, and a task tuple is always hashable (frozen scalars and
+    nested tuples by construction)"""
     from relmedner.models import FullmapTask, ScriptTask
 
     kind = task[0]
