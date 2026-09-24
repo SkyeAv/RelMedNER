@@ -72,6 +72,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `AGBonnet/augmented-clinical-notes` | `fullmap` (max_ngram=6, taxon=9606) | `note` | entities, relations | 30,000 |
 | `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
 | `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
+| `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -235,6 +236,24 @@ undeclared. The declared column is `doctor_response`, the clinician reply (the
 rows (wenceslaus 2026-09-24): mean 93.7 tokens per reply (median 83), 0 empty, 285 of 300 docs
 produce mentions at 6.19 mentions per doc, 84 relations. Consultation replies are informal
 clinical register, so the corpus is tiered silver in `docs/weighting.md` (distant labels).
+
+## JNLPBA
+
+`commanderstrife/jnlpba` (apache-2.0): the classic JNLPBA biomedical NER corpus (GENIA abstracts,
+IOB gold spans for protein, DNA, RNA, cell line, cell type and species-flavored labels). The hub
+repo ships an unsupported `jnlpba.py` loader script, but its `refs/convert/parquet` branch carries
+the splits as parquet files, so the declared read path is the bigbio/ehr_rel pattern: one
+`hf_parquet` file entry per split. The raw parquet loses the ClassLabel name table, so
+`JnlpbaScript` carries the fixed 19-tag vocabulary and decodes the int `ner_tags` itself; an
+out-of-vocabulary index decodes as background, never as a guessed span. The corpus's complete
+vocabulary (9 labels) is mapped: chemical -> ChemicalEntity, gene -> Gene, protein -> Protein,
+disease -> Disease, dna/rna -> NucleicAcidEntity, cell_line -> CellLine, cell_type -> Cell,
+species -> OrganismTaxon. Measured on the parquet refs (wenceslaus 2026-09-24): train 37,094
+rows / 985,102 tokens / 102,602 gold spans, validation 7,714 rows / 202,078 tokens / 17,324 gold
+spans. The repo's test parquet is byte-identical to its validation parquet (md5
+e446a9191dbf474bdb79f37b08183fb3 on both), so it is deliberately undeclared: declaring it would
+double-stream 7,714 duplicate rows (the agentlans/json-extraction precedent). Gold IOB spans are
+tiered gold in `docs/weighting.md` (human annotations).
 
 ## Install
 

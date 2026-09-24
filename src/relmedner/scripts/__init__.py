@@ -9,6 +9,7 @@ from relmedner.scripts.ehr_rel import EhrRelScript
 from relmedner.scripts.gliner_biomed import GlinerBiomedScript
 from relmedner.scripts.gliner_biomed_post import GlinerBiomedPostScript
 from relmedner.scripts.gliner_multilingual import GlinerMultilingualScript
+from relmedner.scripts.jnlpba import JnlpbaScript
 from relmedner.scripts.json_extraction import JsonExtractionScript
 from relmedner.scripts.knowledgator_biomed import KnowledgatorBiomedScript
 from relmedner.scripts.medical_entity_json import MedicalEntityJsonScript
@@ -33,6 +34,7 @@ __all__ = [
     "GlinerBiomedPostScript",
     "GlinerBiomedScript",
     "GlinerMultilingualScript",
+    "JnlpbaScript",
     "JsonExtractionScript",
     "KnowledgatorBiomedScript",
     "MedicalEntityJsonScript",

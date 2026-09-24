@@ -193,6 +193,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `AGBonnet/augmented-clinical-notes` | silver | 0.7 | 0.8 | LLM-augmented clinical-note paragraphs, unlabeled text, fullmap-mined distant labels (MIT) |
 | `openlifescienceai/medmcqa` | silver | 0.7 | 0.8 | entrance-exam explanation prose, fullmap-mined distant labels (apache-2.0) |
 | `OpenMed/MedDialog` | silver | 0.7 | 0.8 | patient-doctor consultation replies, fullmap-mined distant labels (apache-2.0) |
+| `commanderstrife/jnlpba` | gold | 1.0 | 1.0 | JNLPBA biomedical abstract IOB gold spans (apache-2.0) |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |
 | `TrialPanorama/TrialPanorama-database` | general | 0.5 | 0.7 | clinical-trial records, structured not prose |

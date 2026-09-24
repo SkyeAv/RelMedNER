@@ -477,6 +477,34 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("doctor_response",),
         ),
     ),
+    # commanderstrife/jnlpba declares one hf_parquet ingest per declared split off one repo id;
+    # the scalar file path is the entry-key discriminator, so each lock is keyed repo:file (the
+    # ehr_rel shape). The repo's test parquet is a byte-identical copy of validation and stays
+    # undeclared. Tuples frozen from live generate_tuples() output via probe --freeze.
+    "commanderstrife/jnlpba:jnlpba/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "JnlpbaScript", ("entities", "relations")),
+            1.0,
+            "commanderstrife/jnlpba",
+            "jnlpba/train/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
+    "commanderstrife/jnlpba:jnlpba/validation/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "JnlpbaScript", ("entities", "relations")),
+            1.0,
+            "commanderstrife/jnlpba",
+            "jnlpba/validation/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

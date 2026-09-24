@@ -465,3 +465,27 @@ datasets:
     <<: *hf-train
     dataset: OpenMed/MedDialog
     columns_out: [doctor_response]
+  # JNLPBA (commanderstrife/jnlpba, apache-2.0): the hub repo ships an unsupported loader script,
+  # but its refs/convert/parquet branch carries the splits as parquet, so train and validation
+  # declare their own hf_parquet file entries (the bigbio/ehr_rel read path). The repo's test
+  # parquet is byte-identical to its validation parquet (md5 e446a9191dbf474bdb79f37b08183fb3
+  # on both, wenceslaus 2026-09-24), so it is deliberately NOT declared: it would double-stream
+  # 7,714 duplicate rows (the agentlans/json-extraction precedent). row_key is the repo id, so
+  # both entries share one weight slot. The parquet builder names every file's split 'train'
+  # (the split field follows it; the semantic split lives in the file path, the ehr_rel
+  # convention). The raw parquet loses the ClassLabel name table, so
+  # JnlpbaScript carries the fixed 19-tag vocabulary.
+  - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: commanderstrife/jnlpba
+    file: jnlpba/train/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: commanderstrife/jnlpba
+    file: jnlpba/validation/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
