@@ -435,6 +435,20 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("text", "entities", "relations"),
         ),
     ),
+    # AGBonnet/augmented-clinical-notes declares one fullmap ingest off the default config; the
+    # tuple is frozen from live generate_tuples() output via probe --freeze.
+    "AGBonnet/augmented-clinical-notes": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "AGBonnet/augmented-clinical-notes",
+            None,
+            "train",
+            None,
+            ("note",),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

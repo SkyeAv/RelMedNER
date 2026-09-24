@@ -443,3 +443,10 @@ datasets:
     source: local
     weight: *weight
     path: bc5cdr/test.avro
+  # Augmented clinical notes (AGBonnet/augmented-clinical-notes, MIT): 30,000 clinical-note
+  # paragraphs (EHR-shaped text, mean 344 tokens) mined through the shared fullmap path; the
+  # config-less default load streams the single jsonl file, so no subset is declared.
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: AGBonnet/augmented-clinical-notes
+    columns_out: [note]

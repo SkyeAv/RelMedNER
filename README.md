@@ -69,6 +69,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `bigbio/chemprot` (`chemprot_full_source`, 3 splits) | `script` -> `ChemprotScript` | `text`, `entities`, `relations` | entities, relations | 2,432 |
 | `wcole3/biored-parquet` (train + validation + test) | `script` -> `BioredScript` | `passages`, `entities`, `relations` | entities, relations | 600 |
 | `OpenMed/drugprot-parquet` (train + validation) | `script` -> `DrugprotScript` | `text`, `entities`, `relations` | entities, relations | 4,250 |
+| `AGBonnet/augmented-clinical-notes` | `fullmap` (max_ngram=6, taxon=9606) | `note` | entities, relations | 30,000 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -199,6 +200,18 @@ AGONIST-INHIBITOR, ANTAGONIST, PRODUCT-OF, and SUBSTRATE_PRODUCT-OF stay native 
 permitted-shapes contract. Gold relations emit `evidence="asserted"`, never negated. Declared
 probe over the first 300 train rows: rows_in = rows_out = 300, 100% emit, 4,184 entity mentions,
 1,565 relations, 219 rows shipping the relations shape.
+
+## Augmented clinical notes
+
+`AGBonnet/augmented-clinical-notes` (MIT): 30,000 clinical-note paragraphs (a streaming count of
+the single `augmented_notes_30K.jsonl` file, wenceslaus 2026-09-24), an EHR-shaped unlabeled text
+corpus mined through the shared fullmap path at the repo defaults (max_ngram=6, taxon=9606).
+Measured over the first 200 rows: mean 343.8 tokens per note (median 343, min 341, max 360), 0
+empty notes, every one of the 200 notes produced mentions, 21.58 mentions per note, and 214
+relations over 200 notes. The rows are LLM-augmented (the `note` column paraphrases a source
+document), so the corpus is tiered silver in `docs/weighting.md`: mining scores the fiction, and
+the labels are distant, not gold. The declared column is `note` (not `full_note`), the
+paragraph-length clinical note itself.
 
 ## Install
 
