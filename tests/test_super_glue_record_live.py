@@ -70,6 +70,12 @@ def test_a_live_streamed_record_row_dispatches_end_to_end() -> None:
     # gets exactly what pipeline.run builds (pipeline.dispatch_args: trust-adjusted weights plus
     # the per-predicate edge trusts). A hand-built argument list here drifted to a TypeError once
     # already, invisible because the whole test is skipped unless RELMEDNER_LIVE_HF=1.
-    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
+    # Script.dispatch above stamps the stock weight 1.0 while the pipeline stamps this source's
+    # DECLARED weight, so compare on the stamped copy and then pin the stamp to the declaration
+    # (trust 1.0 and no trust_edges here, so declared == stamped). Deriving both from the parsed
+    # yaml keeps a tier retune from breaking the smoke.
+    Weights, EdgeTrusts = dispatch_args(Ingests)
+    PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Weights, EdgeTrusts)
     assert PipelineOutputs == Outputs
-    assert PipelineExample == Example
+    assert PipelineExample == Example.model_copy(update={"weight": Weights[Name]})
+    assert PipelineExample.weight == pytest.approx(Ingests.weights_by_source()[Name])

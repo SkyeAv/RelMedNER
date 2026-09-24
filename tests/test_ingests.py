@@ -85,7 +85,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "GlinerBiomedScript", ("entities", "relations")),
-            1.0,
+            1,
             "anthonyyazdaniml/gliner-biomed-pre-training",
             None,
             "train",
@@ -97,7 +97,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            1,
             "anthonyyazdaniml/gliner-biomed-curated-corpus",
             None,
             "train",
@@ -109,7 +109,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            1,
             "anthonyyazdaniml/gliner-biomed-balanced-curated-corpus",
             None,
             "train",
@@ -121,7 +121,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "GlinerBiomedPostScript", ("entities", "classifications", "structures", "relations")),
-            1.0,
+            0.7,
             "anthonyyazdaniml/gliner-biomed-post-training",
             None,
             "train",
@@ -133,7 +133,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "PileNerBiomedScript", ("entities",)),
-            1.0,
+            0.7,
             "disi-unibo-nlp/Pile-NER-biomed-IOB",
             None,
             "train",
@@ -145,7 +145,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "PileNerTypeScript", ("entities",)),
-            1.0,
+            0.7,
             "Universal-NER/Pile-NER-type",
             None,
             "train",
@@ -157,7 +157,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.5,
             "TrialPanorama/TrialPanorama-database",
             "studies",
             "all",
@@ -169,7 +169,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "SuperGlueMultiRCScript", ("classifications",)),
-            1.0,
+            0.3,
             "aps/super_glue",
             "multirc",
             "train",
@@ -184,7 +184,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "CtkpInterventionsScript", ("entities",)),
-            1.0,
+            1,
             "interventions/interventions.avro",
         ),
     ),
@@ -193,7 +193,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "Bc5CdrScript", ("entities", "relations")),
-            1.0,
+            1,
             "bc5cdr/train.avro",
         ),
     ),
@@ -201,7 +201,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "Bc5CdrScript", ("entities", "relations")),
-            1.0,
+            1,
             "bc5cdr/dev.avro",
         ),
     ),
@@ -209,7 +209,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "Bc5CdrScript", ("entities", "relations")),
-            1.0,
+            1,
             "bc5cdr/test.avro",
         ),
     ),
@@ -219,7 +219,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "MedMentionsScript", ("entities",)),
-            1.0,
+            1,
             "medmentions/train.avro",
         ),
     ),
@@ -227,7 +227,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "MedMentionsScript", ("entities",)),
-            1.0,
+            1,
             "medmentions/dev.avro",
         ),
     ),
@@ -235,7 +235,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local",
         (
             ("script", "MedMentionsScript", ("entities",)),
-            1.0,
+            1,
             "medmentions/test.avro",
         ),
     ),
@@ -243,7 +243,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "SentenceRexScript", ("relations",)),
-            1.0,
+            0.7,
             "knowledgator/sentence_rex",
             None,
             "train",
@@ -255,7 +255,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "KnowledgatorBiomedScript", ("entities",)),
-            1.0,
+            1,
             "knowledgator/biomed_NER",
             None,
             "train",
@@ -267,7 +267,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "GlinerMultilingualScript", ("entities",)),
-            1.0,
+            0.7,
             "knowledgator/gliner-multilingual-synthetic",
             None,
             "train",
@@ -279,7 +279,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_json",
         (
             ("script", "PubmedAbstractsScript", ("entities", "relations")),
-            1.0,
+            1,
             "knowledgator/PubMedAbstractsNER",
             "train.json",
             "train",
@@ -291,7 +291,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_json",
         (
             ("script", "DocredScript", ("entities", "relations")),
-            1.0,
+            1,
             "thunlp/docred",
             "data/train_annotated.json.gz",
             "train",
@@ -303,7 +303,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_json",
         (
             ("script", "DocredScript", ("entities", "relations")),
-            1.0,
+            1,
             "thunlp/docred",
             "data/train_distant.json.gz",
             "train",
@@ -315,7 +315,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_json",
         (
             ("script", "DocredScript", ("entities", "relations")),
-            1.0,
+            1,
             "thunlp/docred",
             "data/dev.json.gz",
             "train",
@@ -327,7 +327,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_json",
         (
             ("script", "DocredScript", ("entities",)),
-            1.0,
+            1,
             "thunlp/docred",
             "data/test.json.gz",
             "train",
@@ -339,7 +339,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "SuperGlueRecordScript", ("entities", "classifications")),
-            1.0,
+            0.3,
             "aps/super_glue",
             "record",
             "train",
@@ -351,7 +351,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "local_delimited",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "qualifiers/qualifier_corpus.tsv",
             ("text",),
             None,
@@ -367,7 +367,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     # match_on stays None)
     "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv": (
         "local_delimited",
-        (("fullmap", 6, "9606", True, ("entities", "relations")), 1.0, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
+        (("fullmap", 6, "9606", True, ("entities", "relations")), 0.7, "synthetic-ner-ade-tweets/ade_tweets_unannotated.tsv", ("text",), None),
     ),
     # nvidia/Nemotron-PII declares one ingest PER SPLIT off one repo id: entry_key qualifies on the
     # split when no subset is declared, so the two locks coexist instead of silently overwriting
@@ -375,7 +375,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "NemotronPiiScript", ("entities",)),
-            1.0,
+            0.4,
             "nvidia/Nemotron-PII",
             None,
             "train",
@@ -387,7 +387,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "NemotronPiiScript", ("entities",)),
-            1.0,
+            0.4,
             "nvidia/Nemotron-PII",
             None,
             "test",
@@ -402,7 +402,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "BioredScript", ("entities", "relations")),
-            1.0,
+            1,
             "wcole3/biored-parquet",
             None,
             "train",
@@ -414,7 +414,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "BioredScript", ("entities", "relations")),
-            1.0,
+            1,
             "wcole3/biored-parquet",
             None,
             "validation",
@@ -426,7 +426,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "BioredScript", ("entities", "relations")),
-            1.0,
+            1,
             "wcole3/biored-parquet",
             None,
             "test",
@@ -441,7 +441,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "DrugprotScript", ("entities", "relations")),
-            1.0,
+            1,
             "OpenMed/drugprot-parquet",
             None,
             "train",
@@ -453,7 +453,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "DrugprotScript", ("entities", "relations")),
-            1.0,
+            1,
             "OpenMed/drugprot-parquet",
             None,
             "validation",
@@ -467,7 +467,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "AGBonnet/augmented-clinical-notes",
             None,
             "train",
@@ -481,7 +481,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "openlifescienceai/medmcqa",
             None,
             "train",
@@ -495,7 +495,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "OpenMed/MedDialog",
             None,
             "train",
@@ -511,7 +511,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "JnlpbaScript", ("entities", "relations")),
-            1.0,
+            1,
             "commanderstrife/jnlpba",
             "jnlpba/train/0000.parquet",
             "train",
@@ -523,7 +523,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "JnlpbaScript", ("entities", "relations")),
-            1.0,
+            1,
             "commanderstrife/jnlpba",
             "jnlpba/validation/0000.parquet",
             "train",
@@ -537,7 +537,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "rjac/clinicaltrials.gov-summary_and_eligibility",
             None,
             "train",
@@ -553,7 +553,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.7,
             "hackint0sh/Text-Clinical-Records",
             None,
             "train",
@@ -567,7 +567,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_157",
             None,
             "train",
@@ -579,7 +579,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_171",
             None,
             "train",
@@ -591,7 +591,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_217",
             None,
             "train",
@@ -603,7 +603,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_237",
             None,
             "train",
@@ -615,7 +615,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_30",
             None,
             "train",
@@ -627,7 +627,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_84",
             None,
             "train",
@@ -639,7 +639,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("fullmap", 6, "9606", True, ("entities", "relations")),
-            1.0,
+            0.3,
             "tensorshield/reddit_dataset_85",
             None,
             "train",
@@ -653,7 +653,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "BioleafletsScript", ("entities", "relations")),
-            1.0,
+            0.7,
             "ruslan/bioleaflets-biomedical-ner",
             None,
             "train",
@@ -665,7 +665,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "BioleafletsScript", ("entities", "relations")),
-            1.0,
+            0.7,
             "ruslan/bioleaflets-biomedical-ner",
             None,
             "test",
@@ -679,7 +679,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures", "entities")),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "owkin-medical_knowledge_from_extracts",
             "train",
@@ -691,7 +691,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures", "relations")),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "ProfessorBob-relation_extraction",
             "train",
@@ -703,7 +703,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures", "entities")),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "roborovski-dolly-entity-extraction",
             "train",
@@ -715,7 +715,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures", "entities")),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "sandeeppanem-resume-json-extraction-5k",
             "train",
@@ -727,7 +727,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures", "entities")),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "Jiraya-html_to_json_information_extraction_dataset",
             "train",
@@ -739,7 +739,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "JsonExtractionScript", ("structures",)),
-            1.0,
+            0.7,
             "agentlans/json-extraction",
             "HenriqueGodoy-extract-0",
             "train",
@@ -749,13 +749,13 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     ),
     "Pennlaine/Medical-Entity-JSON-Extraction": (
         "hf",
-        (("script", "MedicalEntityJsonScript", ("entities",)), 1.0, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
+        (("script", "MedicalEntityJsonScript", ("entities",)), 0.7, "Pennlaine/Medical-Entity-JSON-Extraction", None, "test", None, ("text",)),
     ),
     "bigbio/chemprot:chemprot_full_source:train": (
         "hf",
         (
             ("script", "ChemprotScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chemprot",
             "chemprot_full_source",
             "train",
@@ -767,7 +767,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "ChemprotScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chemprot",
             "chemprot_full_source",
             "validation",
@@ -779,7 +779,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf",
         (
             ("script", "ChemprotScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chemprot",
             "chemprot_full_source",
             "test",
@@ -843,7 +843,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "ChiaScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chia",
             "chia_bigbio_kb/train/0000.parquet",
             "train",
@@ -855,7 +855,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "ChiaScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chia",
             "chia_fixed_source/train/0000.parquet",
             "train",
@@ -867,7 +867,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "ChiaScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chia",
             "chia_source/train/0000.parquet",
             "train",
@@ -879,7 +879,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "ChiaScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chia",
             "chia_without_scope_fixed_source/train/0000.parquet",
             "train",
@@ -891,7 +891,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "ChiaScript", ("entities", "relations")),
-            1.0,
+            1,
             "bigbio/chia",
             "chia_without_scope_source/train/0000.parquet",
             "train",
@@ -903,7 +903,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "GadBlurbScript", ("classifications",)),
-            1.0,
+            0.7,
             "bigbio/gad",
             "gad_blurb_bigbio_text/train/0000.parquet",
             "train",
@@ -915,7 +915,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "GadBlurbScript", ("classifications",)),
-            1.0,
+            0.7,
             "bigbio/gad",
             "gad_blurb_bigbio_text/validation/0000.parquet",
             "train",
@@ -927,7 +927,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
         "hf_parquet",
         (
             ("script", "GadBlurbScript", ("classifications",)),
-            1.0,
+            0.7,
             "bigbio/gad",
             "gad_blurb_bigbio_text/test/0000.parquet",
             "train",
@@ -943,7 +943,7 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     "fewrel/pubmed_unsupervised.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro")),
     "dakp-ner-export/examples.avro": (
         "local",
-        (("script", "DakpNerExportScript", ("entities", "classifications", "relations")), 1.0, "dakp-ner-export/examples.avro"),
+        (("script", "DakpNerExportScript", ("entities", "classifications", "relations")), 0.7, "dakp-ner-export/examples.avro"),
     ),
 }
 
