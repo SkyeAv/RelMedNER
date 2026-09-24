@@ -55,6 +55,7 @@ FANOUT: tuple[tuple[str, str], ...] = (
     ("docs/medmentions.md", "`chanzuckerberg/MedMentions` ST21pv (CC0): 4,392 PubMed docu"),
     ("docs/clinicaltrials-gov.md", "`rjac/clinicaltrials.gov-summary_and_eligibility` (MIT; upst"),
     ("docs/text-clinical-records.md", "`hackint0sh/Text-Clinical-Records` (MIT): 31,489 clinical-re"),
+    ("docs/dakp-ner-export.md", "The DAKP pipeline's `dakp.ner.export.v1` bundle, written by its `export_ner` stage"),
 )
 
 # the quick start is the only on-ramp for a new user and for CI reproduction

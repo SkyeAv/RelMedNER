@@ -201,6 +201,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `commanderstrife/jnlpba` | gold | 1.0 | 1.0 | JNLPBA biomedical abstract IOB gold spans (apache-2.0) |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | silver | 0.7 | 0.8 | trial eligibility criteria prose, fullmap-mined distant labels (MIT) |
 | `hackint0sh/Text-Clinical-Records` | silver | 0.7 | 0.8 | clinical-record prose, fullmap-mined distant labels (MIT) |
+| `dakp-ner-export/examples.avro` | silver | 0.7 | 0.8 | DAKP GLiNER-mined DailyMed / FAERS / EMA spans and assertion relations, model output not human gold |
 | `chanzuckerberg/MedMentions` (ST21pv) | gold | 1.0 | 1.0 | PubMed abstract gold UMLS-linked entity spans, 21 semantic types (CC0) |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `bigbio/gad` (train, validation, test; one row key) | silver | 0.7 | 0.8 | GAD gene-disease association labels, derived from database curation rather than span annotation |
