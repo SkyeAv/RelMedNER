@@ -36,8 +36,9 @@ def build_dataset(
         return
     Parser: YamlClusterParser = YamlClusterParser()
     ClusterSpec = Parser.parse_cluster()
-    # flink slots cannot outstrip the number of declared datasets; each dataset is one source bundle
-    parallelism: int = min(Parser.total_slots(), len(YamlIngestsParser().generate_tuples()))
+    # every slot does work: the pipeline's "fan rows out across workers" Reshuffle spreads streamed
+    # rows over all operators, so parallelism is no longer capped at one source bundle per dataset
+    parallelism: int = Parser.total_slots()
     rest_url: str = Parser.rest_url()
     # submission is detached (see runner_options), so the beam job server exits immediately;
     # snapshot the pre-existing jobs and then follow ours through the jobmanager REST api

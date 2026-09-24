@@ -478,7 +478,7 @@ mixed per-config schemas, so one file per entry is the shape that works.
 | field | required? | default | constraint | meaning |
 | --- | --- | --- | --- | --- |
 | `host` | yes | none | hostname or IP | worker address; all inter-host flink traffic rides ssh tunnels, so only :22 must be reachable |
-| `slots` | yes | none | >= 1 | Beam SDK worker slots on this node |
+| `slots` | yes | none | >= 1 | Flink task slots on this node; the job also starts one python SDK harness per slot of the largest node (`--sdk_worker_parallelism`), because one GIL-bound harness uses about one core, so size `slots` to the cores you want busy |
 | `memory` | yes | none | string like `16g` | memory given to the worker container |
 | `fullmap` | yes | none | host directory | directory holding the fullmap redb bundle (primary redb plus `<stem>.s<N>.redb` shards); bind-mounted read-only into the sdkworker at `/opt/fullmap` |
 | `outputs` | yes | none | host directory | directory the sdkworker writes avro shards into; shards are collected onto the head host when the job finishes |
