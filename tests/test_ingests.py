@@ -213,6 +213,32 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "bc5cdr/test.avro",
         ),
     ),
+    # MedMentions ST21pv declares one local avro ingest per split file (path is the row_key);
+    # tuples frozen from live generate_tuples() output via probe --freeze.
+    "medmentions/train.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/train.avro",
+        ),
+    ),
+    "medmentions/dev.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/dev.avro",
+        ),
+    ),
+    "medmentions/test.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/test.avro",
+        ),
+    ),
     "knowledgator/sentence_rex": (
         "hf",
         (

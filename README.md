@@ -73,6 +73,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
 | `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
 | `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
+| `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -254,6 +255,23 @@ spans. The repo's test parquet is byte-identical to its validation parquet (md5
 e446a9191dbf474bdb79f37b08183fb3 on both), so it is deliberately undeclared: declaring it would
 double-stream 7,714 duplicate rows (the agentlans/json-extraction precedent). Gold IOB spans are
 tiered gold in `docs/weighting.md` (human annotations).
+
+## MedMentions ST21pv
+
+`chanzuckerberg/MedMentions` ST21pv (CC0): 4,392 PubMed documents with 203,282 gold UMLS-linked
+entity spans over exactly 21 semantic types. The declared read path is the bc5cdr pattern: three
+local avro ingests (train 2,635 docs / 122,241 spans, dev 878 / 40,884, test 879 / 40,157), built
+out-of-band from the PubTator corpus with document-absolute offsets over title + newline +
+abstract; the converter's census slice-matched 203,282 of 203,282 annotations. The zameji hub
+mirror of this corpus was probed first and REJECTED: its token-index re-encoding left 33.6
+percent of spans unrecoverable on any shift 0-5 (wenceslaus 2026-09-24). `MedMentionsScript`
+trusts each span's own UMLS CUI as the curie (trust-gold, the bc5cdr MESH pattern), maps all 21
+semantic types through LABEL_MAP (T005 Virus, T007 Bacterium, T017/T022/T031 AnatomicalEntity,
+T033 ClinicalFinding, T037 Disease, T038 BiologicalProcess, T058 ClinicalIntervention, T062
+Study, T074 Device, T082 GeographicLocation, T091 Activity, T092 Agent, T097/T098
+PopulationOfIndividualOrganisms, T103 ChemicalEntity, T168 Food, T170 InformationContentEntity,
+T201 ClinicalAttribute, T204 OrganismTaxon), and ships no relations (the corpus annotates
+entities only). Gold spans are tiered gold in `docs/weighting.md`.
 
 ## Install
 

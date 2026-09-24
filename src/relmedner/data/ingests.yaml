@@ -489,3 +489,23 @@ datasets:
     file: jnlpba/validation/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
+  # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
+  # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
+  # (document-absolute offsets over title + newline + abstract; converter census slice-matched
+  # 203,282 of 203,282 annotations). The zameji hub mirror was probed first and rejected: its
+  # token-index re-encoding left 33.6 percent of spans unrecoverable on any shift 0-5
+  # (wenceslaus 2026-09-24). Gold UMLS-linked spans (single UMLS:C curie per annotation, all 21
+  # semantic types mapped); no relations ship. row_key is the path, so each file gets its own
+  # mixing-weight slot.
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/train.avro
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/dev.avro
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/test.avro
