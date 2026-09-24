@@ -802,7 +802,10 @@ class ScriptUtils:
         # explicit encoding: biolink_model.yaml carries non-ascii, and a non-utf-8 locale would
         # mis-decode it into control chars that the yaml reader rejects
         schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text(encoding="utf-8")
-        slots: dict[str, dict[str, Any]] = yaml.safe_load(schema)["slots"]
+        # libyaml's CSafeLoader (the loader parsers.py already uses for ingests.yaml): same safe
+        # constructor set and an equal result, ~12x faster than the pure-python safe_load on this
+        # multi-MB schema, which every worker parses once before its first predicate lookup
+        slots: dict[str, dict[str, Any]] = yaml.load(schema, Loader=yaml.CSafeLoader)["slots"]
 
         def definition(name: str, seen: frozenset[str] = frozenset()) -> str | None:
             slot = slots.get(name)

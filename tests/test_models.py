@@ -527,3 +527,18 @@ def test_run_config_rejects_unknown_dedup_mode_loudly() -> None:
     """REQ-INT-1: an unknown mode fails fast at model validation, never silently mid-run"""
     with pytest.raises(ValidationError):
         RunConfig(dedup_mode="bogus")
+
+
+def test_slot_descriptions_load_through_libyaml_and_match_the_pure_python_loader() -> None:
+    """the biolink slot table is parsed with CSafeLoader for speed; this pins that the result is
+    the same flattened table the pure-python safe_load produced, so the speedup can never change
+    a predicate description"""
+    from importlib.resources import files
+
+    import yaml
+
+    from relmedner.utils import ScriptUtils
+
+    schema = files("biolink_model").joinpath("schema/biolink_model.yaml").read_text(encoding="utf-8")
+    assert yaml.load(schema, Loader=yaml.CSafeLoader) == yaml.safe_load(schema)
+    assert ScriptUtils._load_slot_descriptions()["treats"]
