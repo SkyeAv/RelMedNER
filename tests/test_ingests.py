@@ -531,6 +531,20 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    # rjac/clinicaltrials.gov-summary_and_eligibility declares one fullmap ingest over the
+    # eligibility column; the tuple is frozen from live generate_tuples() output via probe --freeze.
+    "rjac/clinicaltrials.gov-summary_and_eligibility": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "rjac/clinicaltrials.gov-summary_and_eligibility",
+            None,
+            "train",
+            None,
+            ("eligibility",),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

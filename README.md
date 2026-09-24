@@ -73,6 +73,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
 | `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
 | `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
+| `rjac/clinicaltrials.gov-summary_and_eligibility` | `fullmap` (max_ngram=6, taxon=9606) | `eligibility` | entities, relations | 3,002 |
 | `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
@@ -272,6 +273,17 @@ Study, T074 Device, T082 GeographicLocation, T091 Activity, T092 Agent, T097/T09
 PopulationOfIndividualOrganisms, T103 ChemicalEntity, T168 Food, T170 InformationContentEntity,
 T201 ClinicalAttribute, T204 OrganismTaxon), and ships no relations (the corpus annotates
 entities only). Gold spans are tiered gold in `docs/weighting.md`.
+
+## ClinicalTrials.gov summaries + eligibility
+
+`rjac/clinicaltrials.gov-summary_and_eligibility` (MIT; upstream ClinicalTrials.gov registry data
+is public domain): 3,002 trial records pairing structured registry fields (nct id, status, title,
+summary, dates) with the eligibility criteria prose, the relational trial-database shape. One
+fullmap ingest mines `eligibility` (the densest clinical text; a second text column would collide
+on the fullmap entry key, so `brief_summary` stays undeclared). Measured over the first 300
+train rows (wenceslaus 2026-09-24): 300 of 300 docs with mentions at 17.87 mentions per doc, 295
+relations, 0 empty criteria strings. Criteria prose is tiered silver in `docs/weighting.md`
+(distant labels, unverified provenance).
 
 ## Install
 
