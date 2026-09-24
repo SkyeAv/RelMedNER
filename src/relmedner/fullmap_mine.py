@@ -37,6 +37,7 @@ import re
 import sys
 import types
 import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass
 from importlib.util import spec_from_file_location
 from pathlib import Path
@@ -47,6 +48,7 @@ from tablassert import rs
 from tablassert.fullmap import filter_and_rank, lookup_rows
 
 from relmedner.constants import (
+    FOLD_CACHE_TOKENS,
     FUNCTION_WORDS,
     GENELIKE_CATEGORIES,
     JUNKY_CATEGORIES,
@@ -72,6 +74,40 @@ ACRONYM: re.Pattern[str] = re.compile(r"^([A-Z][A-Z0-9]{1,7})$")
 EXPANSION_ACRO: re.Pattern[str] = re.compile(r"([A-Za-z][A-Za-z0-9\- ]{6,90}?)\s*\(\s*([A-Z][A-Z0-9]{1,7})\s*\)")
 GREEK: dict[str, str] = {"β": "beta", "α": "alpha", "γ": "gamma", "δ": "delta", "ω": "omega", "μ": "micro"}
 
+_FOLD_CACHE: OrderedDict[str, tuple[str, ...]] = OrderedDict()
+"""per-token fold results, bounded at FOLD_CACHE_TOKENS. Tokens recur across every n-gram of every
+document, so memoizing the per-character work is what makes fold_variant cheap. Safe because folding
+is per-character (greek map, NFKD, ascii-ignore, hyphen/slash to space, edge strip) and a space has
+combining class 0, so folding the joined string and folding each token give the same word list."""
+
+
+def _fold_text(text: str) -> tuple[str, ...]:
+    """the raw fold of one string: greek letters spelled out (before NFKD, which would strip them),
+    NFKD -> ascii, hyphen/slash -> space, non-word characters stripped at each part's edges"""
+    for glyph, name in GREEK.items():
+        text = text.replace(glyph, name)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    text = text.replace("-", " ").replace("/", " ")
+    return tuple(word for word in (EDGE_NONWORD.sub("", part) for part in text.split()) if word)
+
+
+def _fold_token(token: str) -> tuple[str, ...]:
+    """one token's fold, cached (see _FOLD_CACHE)"""
+    cached = _FOLD_CACHE.get(token)
+    if cached is not None:
+        _FOLD_CACHE.move_to_end(token)
+        return cached
+    folded = _fold_text(token)
+    while len(_FOLD_CACHE) >= FOLD_CACHE_TOKENS:
+        _FOLD_CACHE.popitem(last=False)
+    _FOLD_CACHE[token] = folded
+    return folded
+
+
+ACRO_PAREN: re.Pattern[str] = re.compile(r"\(\s*[A-Z][A-Z0-9]{1,7}\s*\)")
+"""cheap linear pre-filter: any EXPANSION_ACRO match implies a '(ACRO)' substring, so texts without
+one skip the lazy full-text scan in expansion_map"""
+
 
 def load_splitter(path: Path) -> Any:
     """instantiate gliner2's WhitespaceTokenSplitter without importing the torch-pulling package root"""
@@ -84,7 +120,7 @@ def load_splitter(path: Path) -> Any:
     return module.WhitespaceTokenSplitter()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Candidate:
     """one n-gram (or augmentation variant) with the document span it attributes to"""
 
@@ -145,49 +181,72 @@ class FullmapMiner:
     @classmethod
     def fold_variant(cls, words: list[str]) -> list[str]:
         """greek letters spelled out, hyphen/slash -> space, unicode NFKD -> ascii.
-        Greek replacement MUST precede ascii folding: NFKD decomposes 'β' to nothing."""
-        joined = " ".join(words)
-        for glyph, name in GREEK.items():
-            joined = joined.replace(glyph, name)
-        joined = unicodedata.normalize("NFKD", joined).encode("ascii", "ignore").decode()
-        joined = joined.replace("-", " ").replace("/", " ")
-        return [word for word in (EDGE_NONWORD.sub("", part) for part in joined.split()) if word]
+        Greek replacement MUST precede ascii folding: NFKD decomposes 'β' to nothing.
+        Folded per token and concatenated: equivalent to folding the joined string (folding is
+        per-character and a space has combining class 0, see _FOLD_CACHE), and the per-token memo
+        is what keeps the per-candidate call cheap."""
+        folded: list[str] = []
+        for word in words:
+            folded.extend(_fold_token(word))
+        return folded
 
     @classmethod
     def expansion_map(cls, text: str) -> dict[str, str]:
         """in-document acronym definitions: 'body mass index (BMI)' -> {'BMI': 'body mass index'}"""
+        if "(" not in text or not ACRO_PAREN.search(text):
+            return {}  # the pattern cannot match without a paren + '(ACRO)'; skip the full-text scan
         out: dict[str, str] = {}
         for match in EXPANSION_ACRO.finditer(text):
             out.setdefault(match.group(2), match.group(1).strip())
         return out
 
     @classmethod
-    def ngram_candidates(cls, doc: int, text: str, max_ngram: int) -> list[Candidate]:
-        """contiguous n-grams plus measured-safe augmentation variants"""
-        words = [cls.clean_token(token) for token in cls.tokenize(text)]
+    def ngram_candidates(cls, doc: int, text: str, max_ngram: int, tokens: list[str] | None = None) -> list[Candidate]:
+        """contiguous n-grams plus measured-safe augmentation variants.
+
+        `tokens` lets the caller pass the already-split document (resolve_batch needs the raw tokens
+        for offsets anyway) instead of paying the splitter twice per document.
+        """
+        words = [cls.clean_token(token) for token in (cls.tokenize(text) if tokens is None else tokens)]
         expansions = cls.expansion_map(text)
         candidates: list[Candidate] = []
+        # Per-token flags with prefix counts turn the three per-span scans from O(n) each into O(1):
+        # a span drops when it holds an empty (cleaned-away) word, when every word is numeric, or
+        # when every word is a function word. Same predicates, same drops, same order.
+        total = len(words)
+        prefix_empty = [0] * (total + 1)
+        prefix_numeric = [0] * (total + 1)
+        prefix_function = [0] * (total + 1)
+        for index, word in enumerate(words):
+            prefix_empty[index + 1] = prefix_empty[index] + (not word)
+            prefix_numeric[index + 1] = prefix_numeric[index] + bool(ALL_NUMERIC.match(word))
+            prefix_function[index + 1] = prefix_function[index] + (word.lower() in FUNCTION_WORDS)
         for n in range(1, max_ngram + 1):
-            for i in range(len(words) - n + 1):
-                span_words = words[i : i + n]
-                if any(not word for word in span_words):
+            for i in range(total - n + 1):
+                end = i + n
+                if prefix_empty[end] > prefix_empty[i]:
                     continue  # covers sentence-crossing: "." cleans to empty
-                if all(ALL_NUMERIC.match(word) for word in span_words):
+                if prefix_numeric[end] - prefix_numeric[i] == n:
                     continue
-                if all(word.lower() in FUNCTION_WORDS for word in span_words):
+                if prefix_function[end] - prefix_function[i] == n:
                     continue
+                span_words = words[i:end]
                 surface = " ".join(span_words)
                 keys = [surface]
-                folded = cls.fold_variant(span_words)
-                if len(folded) >= n and " ".join(folded) != surface:
-                    keys.append(" ".join(folded))
+                # A pure-ascii span with no hyphen or slash folds to itself (no greek, nothing for
+                # NFKD to decompose, no separator to split, edges already clean), so the fold key
+                # would fail the != surface test anyway: skip the fold for the vast majority.
+                if not surface.isascii() or "-" in surface or "/" in surface:
+                    folded = cls.fold_variant(span_words)
+                    if len(folded) >= n and " ".join(folded) != surface:
+                        keys.append(" ".join(folded))
                 if n == 1:
                     acro = ACRONYM.match(span_words[0])
                     if acro and acro.group(1) in expansions:
                         # agreement is by construction (the key IS the in-document expansion),
                         # so the bridge bypasses the strict unigram gate in span_accepted
                         candidates.append(Candidate(doc, i, i + n - 1, n, surface, expansions[acro.group(1)], bridged=True))
-                candidates.extend(Candidate(doc, i, i + n - 1, n, surface, key) for key in keys)
+                candidates.extend([Candidate(doc, i, i + n - 1, n, surface, key) for key in keys])
         return candidates
 
     # ---------------------------------------------------------------- batch resolution --
@@ -199,7 +258,8 @@ class FullmapMiner:
             report_zero_emission_triggers()
             return []
         db = db or cls.db()
-        candidate_groups = [cls.ngram_candidates(doc, text, task.max_ngram) for doc, (text, task) in enumerate(rows)]
+        tokens_per_doc = [cls.tokenize(text) for text, _task in rows]  # once: candidates + offsets
+        candidate_groups = [cls.ngram_candidates(doc, text, task.max_ngram, tokens_per_doc[doc]) for doc, (text, task) in enumerate(rows)]
         flat = [candidate for group in candidate_groups for candidate in group]
         if not flat:
             report_zero_emission_triggers()
@@ -209,11 +269,10 @@ class FullmapMiner:
         best = cls._best_rows(db, distinct, rows[0][1].taxon)
         mined: list[TrainingExample] = []
         offset = 0
-        for (text, task), group in zip(rows, candidate_groups, strict=True):
+        for (_text, task), group, tokens in zip(rows, candidate_groups, tokens_per_doc, strict=True):
             keys = norm[offset : offset + len(group)]
             offset += len(group)
             spans = cls._select_spans(group, keys, best)
-            tokens = cls.tokenize(text)
             entities = cls._entities(spans)
             relations = cls._relations(tokens, spans) if task.relations else []
             mined.append(TrainingExample(text=" ".join(tokens), entities=entities, relations=relations))
