@@ -4,8 +4,8 @@ import ast
 import json
 import re
 from collections import OrderedDict
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -66,13 +66,16 @@ def secondary_labels(surface: str) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class ResolvedMention:
-    """one NER span after the fullmap/fallback/raw resolution chain"""
+    """one NER span after the fullmap/fallback/raw resolution chain. span_index tags the source
+    position in the caller's span list so consumers can re-pair items with spans after the
+    multi-class fan-out (one span -> 1..n items) made positional zip unsafe"""
 
     mention: str
     category: str
     curie: str | None = None
     preferred_name: str | None = None
     origin: str = "raw"  # "fullmap" | "fallback" | "raw"
+    span_index: int = -1
 
 
 def _bucket(keys: str, categories: str) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -711,9 +714,30 @@ class ScriptUtils:
         normalized: dict[str, str] = dict(zip(distinct_mentions, rs.normalize_terms(distinct_mentions), strict=True))
         best: dict[str, list[dict[str, object]]] = cls._fullmap_best(normalized)
         resolved: list[ResolvedMention] = []
-        for mention, raw_label in spans:
-            resolved.extend(cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map))
+        for span_index, (mention, raw_label) in enumerate(spans):
+            resolved.extend(
+                replace(item, span_index=span_index) for item in cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map)
+            )
         return resolved
+
+    @staticmethod
+    def pair_spans(
+        spans: Sequence[tuple[int, int, str]], resolved: list[ResolvedMention]
+    ) -> list[tuple[tuple[int, int, str], list[ResolvedMention]]]:
+        """re-pair each input span with its resolved mentions after the multi-class fan-out made
+        positional zip unsafe (one span emits 1..n items, fan-out rows directly after their
+        primary, tagged via span_index). The primary is items[0]; every span yields a non-empty
+        group because _resolve always falls back to at least the raw mention. Raises ValueError
+        on an unresolvable shape instead of silently misaligning later spans"""
+        groups: dict[int, list[ResolvedMention]] = {}
+        for item in resolved:
+            if item.span_index < 0:
+                raise ValueError(f"resolved mention {item.mention!r} carries no span_index")
+            groups.setdefault(item.span_index, []).append(item)
+        pairs = [(spans[index], items) for index, items in sorted(groups.items())]
+        if [index for index, _items in sorted(groups.items())] != list(range(len(spans))):
+            raise ValueError("resolved mentions do not cover every input span exactly once")
+        return pairs
 
     _best_cache: ClassVar[OrderedDict[str, list[dict[str, object]] | None]] = OrderedDict()
     """process-wide LRU of normalized term -> its best fullmap row (None = no accepted row), so a

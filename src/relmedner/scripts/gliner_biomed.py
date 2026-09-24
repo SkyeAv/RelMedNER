@@ -24,8 +24,11 @@ class GlinerBiomedScript(Script):
             return TrainingExample(text=ScriptUtils.join_tokens(tokens))
         spans: list[tuple[int, int, str]] = ScriptUtils.mention_spans(tokens, ner)
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(ScriptUtils.mentions(tokens, ner))
-        # spans and mentions filter identically, so zip pairs each span with its resolution positionally
-        resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, resolved, strict=True)]
+        # the multi-class fan-out makes resolved longer than spans, so pair_spans re-pairs by
+        # span_index (items[0] is the primary) and every fan-out row extends resolved_spans
+        resolved_spans: list[tuple[int, int, str]] = [
+            (start, end, item.category) for (start, end, _), items in ScriptUtils.pair_spans(spans, resolved) for item in items
+        ]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),
             entities=ScriptUtils.group_entities(resolved),

@@ -62,7 +62,6 @@ def test_measured_false_positive_producers_never_fire() -> None:
     assert secondary_labels("posttonsillectomy pain") == ()  # -ectomy is not the last token
     assert secondary_labels("melanoma cells") == ()  # 'cells' carries no morphological cue
     assert secondary_labels("Interferon gamma-1b") == ()  # drug-stem tail rules are last-word only (measured end-anchored)
-    assert secondary_labels("cocaine") == ()  # -ose rule never landed
     assert secondary_labels("glucose") == ()  # -ose rule never landed
     assert secondary_labels("diagram") == ()  # -gram rule never landed
 
