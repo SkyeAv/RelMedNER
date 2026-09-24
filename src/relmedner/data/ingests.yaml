@@ -605,3 +605,13 @@ datasets:
     dataset: hackint0sh/Text-Clinical-Records
     columns_out: [text]
     filters: {drop_empty: true}
+  # DAKP NER export (dakp.ner.export.v1, DAKP f61b4b8, built 2026-09-24 on wenceslaus): 187,267
+  # TrainingExample-shaped records mined by DAKP's composite GLiNER backend over DailyMed
+  # contraindication / warning / indication sections (167,126), FAERS indication strings
+  # (18,649), and EMA therapeutic indications (1,492). An out-of-band local avro container
+  # (docs/dakp-ner-export.md); DakpNerExportScript sanitizes rather than decodes -- it realigns
+  # the export's case-only relation drift to in-text surfaces and drops what gliner2 rejects.
+  - task: {type: script, name: DakpNerExportScript, outputs: [entities, classifications, relations]}
+    source: local
+    weight: *weight
+    path: dakp-ner-export/examples.avro
