@@ -57,10 +57,15 @@ class NcbiDiseaseScript(Script):
         # one batched resolution round trip per row, never per mention
         resolved: list[ResolvedMention] = ScriptUtils.resolve_mentions(mentions, label_map=self.LABEL_MAP)
         labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
-        # spans and mentions filter identically, so zip pairs each span with its resolution
-        # positionally, and strict=True turns a dropped mention into an error instead of a silent
-        # misalignment of every later span
-        resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, labeled, strict=True)]
+        # the resolution chain can return MORE resolutions than spans (the fullmap multi-class
+        # fan-out adds a secondary class per mention), so a strict positional zip of spans with
+        # resolutions raised 'zip() argument 2 is longer than argument 1' on real hub rows and
+        # crashed the smoke pipeline at dispatch (wenceslaus 2026-09-24). pair_spans re-pairs by
+        # span_index instead, the JnlpbaScript / GlinerBiomedScript pattern: every fan-out item
+        # extends its span, and group_entities dedups the mention surfaces.
+        resolved_spans: list[tuple[int, int, str]] = [
+            (start, end, item.category) for (start, end, _), items in ScriptUtils.pair_spans(spans, resolved) for item in items
+        ]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),
             entities=ScriptUtils.group_entities(labeled),

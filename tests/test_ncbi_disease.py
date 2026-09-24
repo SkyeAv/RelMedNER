@@ -227,3 +227,25 @@ def test_a_handful_of_real_rows_yields_at_least_one_entity() -> None:
     assert total_entities >= 2
     assert examples[2].entities == []
     assert examples[2].text == ScriptUtils.join_tokens(ROW_EMPTY["tokens"])
+
+
+def test_a_resolution_fan_out_never_crashes_the_row(monkeypatch: pytest.MonkeyPatch) -> None:
+    """the fullmap resolution chain can return MORE resolutions than spans (the multi-class
+    fan-out adds a secondary class per mention), which a strict positional zip of spans with
+    resolutions turned into a pipeline-crashing ValueError on real hub rows (smoke, wenceslaus
+    2026-09-24). pair_spans re-pairs by span_index: every fan-out item extends its span, and
+    group_entities dedups the mention surfaces."""
+    import relmedner.scripts.ncbi_disease as mod
+
+    real_resolve = ScriptUtils.resolve_mentions
+    monkeypatch.setattr(
+        mod.ScriptUtils,
+        "resolve_mentions",
+        lambda mentions, label_map=None: real_resolve(mentions, label_map=label_map) * 2 if mentions else [],
+    )
+    example: TrainingExample = SCRIPT.run((ROW_APC["tokens"], ROW_APC["ner_tags"]))
+    assert example.entities, "the gold span must still emit under doubled resolutions"
+    for surface in surfaces_of(example):
+        assert surface in example.text
+    labels = {entity.label for entity in example.entities}
+    assert labels <= {"Disease"}
