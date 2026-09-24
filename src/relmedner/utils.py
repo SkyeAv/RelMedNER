@@ -729,10 +729,15 @@ class ScriptUtils:
         primary, tagged via span_index). The primary is items[0]; every span yields a non-empty
         group because _resolve always falls back to at least the raw mention. Raises ValueError
         on an unresolvable shape instead of silently misaligning later spans"""
+        untagged = [item for item in resolved if item.span_index < 0]
+        if untagged:
+            # legacy untagged lists (hand-built fixtures, external callers) are exactly the
+            # pre-fan-out shape, so pair them positionally; anything mixed or longer is ambiguous
+            if len(untagged) != len(resolved) or len(resolved) != len(spans):
+                raise ValueError("untagged resolved mentions do not match the span count exactly")
+            return list(zip(spans, [[item] for item in resolved], strict=True))
         groups: dict[int, list[ResolvedMention]] = {}
         for item in resolved:
-            if item.span_index < 0:
-                raise ValueError(f"resolved mention {item.mention!r} carries no span_index")
             groups.setdefault(item.span_index, []).append(item)
         pairs = [(spans[index], items) for index, items in sorted(groups.items())]
         if [index for index, _items in sorted(groups.items())] != list(range(len(spans))):
