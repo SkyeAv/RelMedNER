@@ -215,6 +215,26 @@ on the row key and refuses to stamp two entries that disagree.
 | `aps/super_glue` record | general | 0.3 | 0.6 | reading-comprehension transfer, non-med |
 | `tensorshield/reddit_dataset_*` (all 7 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
 
+### Effective corpus share (computed from README row counts x declared weights)
+
+| tier | declared rows | weight | effective rows |
+| --- | --- | --- | --- |
+| gold | 1,840,386 | 1.0 | 1,840,386 |
+| silver | 946,484 | 0.7 | 662,539 |
+| TrialPanorama | 1,332,141 | 0.5 | 666,071 |
+| ehr_rel | 11,223 | 0.5 | 5,612 |
+| Nemotron-PII | 200,000 | 0.4 | 80,000 |
+| super_glue | 127,973 | 0.3 | 38,392 |
+| reddit (pre-health-filter) | 10,917,725 | 0.3 x 0.25 sample | 818,829 |
+| total | 15,375,932 | | 4,111,828 |
+
+The declared-anthonyyazdaniml balanced-curated rows (158,890) are a strict subset of the
+curated corpus and are not added twice. The post-training corpus row count is unmeasured
+and excluded from both columns. Gold's effective share of the training mix rises from 12.0
+percent (the old everything-at-1.0 world) to 44.8 percent; the reddit number is an upper
+bound because the health-community `match_on` filter shrinks it further, so the true gold
+share is higher.
+
 Worked example (one entry, gold tier):
 
 ```yaml
