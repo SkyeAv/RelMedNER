@@ -552,8 +552,9 @@ class Relation(StrictBase):
     name: str = Field(...)
     fields: list[RelationField] = Field(...)
     description: str | None = Field(None)
-    """biolink slot definition for the predicate (ScriptUtils.predicate_description); emitted as
-    relation_descriptions and consumed by gliner2's processor as a label prompt"""
+    """curated overlay description for the predicate, biolink slot definition as fallback
+    (ScriptUtils.predicate_description); emitted as relation_descriptions and consumed by gliner2's
+    processor as a label prompt"""
     negated: bool = Field(False)
     """biolink Association.negated: True asserts the relation is false; this pipeline never
     asserts negations, so every emitted relation carries False (post-training-plan decision)"""

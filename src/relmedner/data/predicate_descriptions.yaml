@@ -1,0 +1,85 @@
+# Curated predicate descriptions for gliner2 relation_descriptions label prompts.
+#
+# Merged over the biolink slot definitions by ScriptUtils._load_slot_descriptions: these entries win,
+# biolink text remains the fallback for non-overlaid slots. Register: 1-2 short sentences, sentence
+# case, definition plus a contrastive boundary against confusable predicates, sparse inline exemplars.
+# No curation policy and no schema-engineering prose (those belong in docs, not in a label prompt).
+# Every gazetteer-declared predicate must carry an entry; tests/test_predicate_descriptions.py
+# enforces coverage, length bounds, and the cross-reference invariants.
+
+associated_with: >-
+  Holds between two entities observed together more often than chance, without claiming that one
+  causes or directly regulates the other. Broader than correlated_with: use that predicate only
+  when a quantitative correlation analysis supports the link.
+binds: >-
+  Holds between two chemical or biomolecular entities that form a stable direct physical complex.
+  Narrower than interacts_with: use that predicate when no direct binding is demonstrated.
+  E.g. "aspirin binds COX-1".
+biomarker_for: >-
+  Holds between a measurable chemical entity and a disease or phenotypic feature, where the entity
+  is used as an indicator of the presence or state of the disease or feature.
+caused_by: >-
+  Holds between an entity and the entity whose occurrence, existence, or activity brings it about.
+  Inverse of causes: use this direction when the effect is the subject and the cause the object.
+causes: >-
+  Holds between two entities where the occurrence, existence, or activity of one causes the
+  occurrence or generation of the other. Inverse of caused_by: use that direction when the effect
+  is the subject.
+correlated_with: >-
+  Holds between two concepts represented by variables for which a statistical correlation is
+  believed to exist, demonstrated with a correlation analysis method. Narrower than
+  associated_with: use that predicate when the evidence is general co-occurrence rather than a
+  computed correlation.
+decreases_amount_or_activity_of: >-
+  Holds between an entity and a gene, protein, or chemical whose amount or activity it lowers, such
+  as through downregulation, inhibition, or repression. Opposite direction of
+  increases_amount_or_activity_of.
+diagnoses: >-
+  Holds between a test, procedure, or clinical observation and the illness or condition it
+  identifies from symptoms or findings.
+expressed_in: >-
+  Holds between a gene or gene product and the anatomical entity in which it is expressed.
+has_adverse_event: >-
+  Holds between a therapeutic agent and an untoward medical occurrence in a patient during
+  treatment with that agent, whether or not the event is considered caused by the agent. Contrast
+  causes: use that predicate when the agent is asserted to bring the event about.
+has_phenotype: >-
+  Holds between a biological entity and a phenotype, construed broadly as any quality of an
+  organism part or a change in such qualities (e.g. abnormally increased temperature).
+in_taxon: >-
+  Connects an entity to its taxonomic classification. E.g. a gene located in the human genome is
+  in_taxon Homo sapiens.
+increases_amount_or_activity_of: >-
+  Holds between an entity and a gene, protein, or chemical whose amount or activity it raises, such
+  as through upregulation, activation, or induction. Opposite direction of
+  decreases_amount_or_activity_of.
+interacts_with: >-
+  Holds between any two entities that directly or indirectly interact in a physical or functional
+  way. Broader than binds: use binds only for stable direct physical complexes.
+located_in: >-
+  Holds between a material entity and the material entity or site within which it is located, when
+  it is not considered a part of that entity.
+occurs_in: >-
+  Holds between a process and the material entity or site within which the process occurs.
+part_of: >-
+  Holds between a part and its whole (material entities or processes).
+participates_in: >-
+  Holds between a continuant and a process in which it is somehow involved.
+precedes: >-
+  Holds between two processes, where one completes before the other begins.
+preventative_for_condition: >-
+  Holds between a substance, procedure, or activity and a medical condition it stops from
+  manifesting in the first place. Contrast treats: use that predicate when the intervention
+  ameliorates, stabilizes, or cures a condition that is already present.
+superclass_of: >-
+  Holds between two classes where the subject class is a superclass of the object class, meaning
+  the object is a subtype of the subject.
+treated_by: >-
+  Holds between a medical condition (disease or phenotypic feature) and an intervention that
+  treats it, meaning the intervention ameliorates, stabilizes, or cures the condition. Inverse of
+  treats: use this direction when the condition is the subject.
+treats: >-
+  Holds between an intervention (substance, procedure, or activity) and a medical condition it
+  ameliorates, stabilizes, or cures in some patient population. Contrast
+  preventative_for_condition when the intervention stops the condition from manifesting, and use
+  treated_by when the condition is the subject. E.g. "metformin treats type 2 diabetes".

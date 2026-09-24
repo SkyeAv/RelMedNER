@@ -50,7 +50,7 @@ spells Fluconazole. The script:
   so they ride as raw tails (TemporalIntervalQualifier, FrequencyQualifier,
   TemporalContextQualifier) rather than an invented one;
 - carries `negated` and `evidence` through (asserted for drug -> object relations, mined for
-  qualifier attachments) and attaches each predicate's biolink slot description;
+  qualifier attachments) and attaches each predicate's curated overlay description;
 - keeps a classification only when its true label is one of its own labels.
 
 ## Measured yield
