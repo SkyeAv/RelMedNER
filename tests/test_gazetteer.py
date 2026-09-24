@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from tablassert.biolink import Predicates, Qualifiers
+from tablassert.biolink import ENUM_RANGED_QUALIFIERS, Predicates, Qualifiers
 
 from relmedner import gazetteer
 from relmedner.constants import NEGATIVE_NAME_PREFIX
@@ -10,11 +10,15 @@ from relmedner.gazetteer import (
     MAX_TRIGGER_DISTANCE,
     NEGATION_CUES,
     PREDICATE_TRIGGERS,
+    QUALIFIER_ENUM_TRIGGERS,
+    QUALIFIER_HOST_SIDES,
+    QUALIFIER_HOST_WINDOW,
     QUALIFIER_RANGES,
     QUALIFIER_TRIGGERS,
     SENTENCE_BREAKS,
     extract_relations,
     find_triggers,
+    validate_enum_qualifier_table,
     validate_qualifier_table,
     validate_trigger_table,
 )
@@ -607,3 +611,189 @@ def test_validate_qualifier_table_rejects_uppercase_and_duplicate_phrases() -> N
 def test_validate_qualifier_table_accepts_empty_phrase_tuples_for_type_gazetteer_slots() -> None:
     """anatomy/sex/population attach by DAKP's type map with no cue regex, so empty is correct"""
     assert validate_qualifier_table(dict.fromkeys(("anatomical_context_qualifier", "sex_qualifier", "population_context_qualifier"), ())) is None
+
+
+# --------------------------------------------------------------------- enum qualifier slots --
+
+
+def test_the_enum_qualifier_slots_are_the_translator_ingest_tier() -> None:
+    """the four live, heavily used, enum-ranged qualifiers of the NCATSTranslator/translator-
+    ingests pattern (ChEMBL/GtoPdb/SemMedDB/CTD/DrugCentral edges); qualified_predicate ships
+    more often but is a predicate rewrite, not a context value, and species_context_qualifier
+    is tablassert-disabled, so neither is in the table"""
+    assert set(QUALIFIER_ENUM_TRIGGERS) == {
+        "object_direction_qualifier",
+        "object_aspect_qualifier",
+        "causal_mechanism_qualifier",
+        "subject_form_or_variant_qualifier",
+    }
+    assert QUALIFIER_HOST_SIDES == {
+        "object_direction_qualifier": "tail",
+        "object_aspect_qualifier": "tail",
+        "causal_mechanism_qualifier": "tail",
+        "subject_form_or_variant_qualifier": "head",
+    }
+    assert set(QUALIFIER_ENUM_TRIGGERS) & set(QUALIFIER_TRIGGERS) == set()
+    assert QUALIFIER_HOST_WINDOW == {"subject_form_or_variant_qualifier": 1}
+
+
+def test_the_enum_phrase_tables_are_pinned() -> None:
+    """silent cue drift would change qualifier recall unnoticed, mirroring the predicate pins;
+    contested PTM nouns belong to the aspect enum, bare "binding" stays out because the
+    ("binding", "to") predicate trigger already owns the event"""
+    assert [len(phrases) for phrases in QUALIFIER_ENUM_TRIGGERS.values()] == [4, 20, 19, 12]
+    assert QUALIFIER_ENUM_TRIGGERS["object_direction_qualifier"] == {
+        ("increased",): "increased",
+        ("decreased",): "decreased",
+        ("upregulated",): "upregulated",
+        ("downregulated",): "downregulated",
+    }
+    assert ("phosphorylation",) in QUALIFIER_ENUM_TRIGGERS["object_aspect_qualifier"]
+    assert ("phosphorylation",) not in QUALIFIER_ENUM_TRIGGERS["causal_mechanism_qualifier"]
+    assert ("binding",) not in QUALIFIER_ENUM_TRIGGERS["causal_mechanism_qualifier"]
+    assert QUALIFIER_ENUM_TRIGGERS["causal_mechanism_qualifier"][("competitive", "inhibition")] == "competitive_inhibition"
+    assert QUALIFIER_ENUM_TRIGGERS["subject_form_or_variant_qualifier"][("mutant",)] == "mutant_form"
+
+
+def test_every_enum_value_is_in_its_live_biolink_range() -> None:
+    """module import runs validate_enum_qualifier_table over the builtin table; deriving the
+    same check explicitly keeps the pin honest when the pinned model moves"""
+    for slot, phrases in QUALIFIER_ENUM_TRIGGERS.items():
+        allowed = ENUM_RANGED_QUALIFIERS[slot]
+        assert all(value in allowed for value in phrases.values())
+
+
+# ------------------------------------------------------------------------- enum extraction --
+
+
+def test_aspect_and_direction_compose_onto_one_statement() -> None:
+    """the Translator co-occurrence pattern (chembl_qualifiers.json): one statement carries
+    aspect and direction as separate enum-valued qualifiers"""
+    Tokens: list[str] = "Aspirin inhibits COX2 whose expression is downregulated".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Protein")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("decreases_amount_or_activity_of", "Aspirin", "COX2"),
+        expected_relation("object_aspect_qualifier", "COX2", "expression"),
+        expected_relation("object_direction_qualifier", "COX2", "downregulated"),
+    ]
+
+
+def test_object_enum_qualifiers_host_the_statement_tail_not_the_head() -> None:
+    """object_* slots qualify the statement object: the cue may sit near the head, but the
+    host is the nearest endpoint on the slot's bound side"""
+    Tokens: list[str] = "Aspirin expression strongly and profoundly inhibits diabetes progression".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (6, 7, "Disease")]
+    Relations = extract_relations(Tokens, Spans)
+    Aspect = [relation for relation in Relations if relation.name == "object_aspect_qualifier"]
+    assert len(Aspect) == 1
+    assert Aspect[0].fields[0].value == "diabetes progression"
+    assert Aspect[0].fields[1].value == "expression"
+
+
+def test_a_cue_far_beyond_the_trigger_window_from_its_side_never_fires() -> None:
+    """the window guard applies against the bound-side host: an object_aspect cue stranded
+    far from every tail is dropped even though a statement fired"""
+    Tokens: list[str] = (
+        "Expression was seen in the context of many previous studies of similar design as reported by aspirin inhibits diabetes".split()
+    )
+    Spans: list[tuple[int, int, str]] = [(16, 16, "Drug"), (18, 18, "Disease")]
+    assert [relation.name for relation in extract_relations(Tokens, Spans)] == ["decreases_amount_or_activity_of"]
+
+
+def test_the_variant_form_qualifier_binds_the_adjacent_head() -> None:
+    """SemMedDB stamps variant-bearing subjects with subject_form_or_variant_qualifier; the
+    adjectival cue must sit next to the head ("Mutant KRAS"), not float across the sentence"""
+    Tokens: list[str] = "Mutant KRAS activates RAF in cancer cells".split()
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Gene"), (3, 3, "Protein")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("increases_amount_or_activity_of", "KRAS", "RAF"),
+        expected_relation("subject_form_or_variant_qualifier", "KRAS", "mutant_form"),
+    ]
+
+
+def test_a_form_cue_on_the_tail_side_never_stamps_the_head() -> None:
+    """'Aspirin inhibits mutant COX2': the variant belongs to the object, so a head-bound
+    form slot must stay silent rather than mislabel the subject as variant"""
+    Tokens: list[str] = "Aspirin inhibits mutant COX2".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (3, 3, "Protein")]
+    assert [relation.name for relation in extract_relations(Tokens, Spans)] == ["decreases_amount_or_activity_of"]
+
+
+def test_the_longest_mechanism_phrase_supplies_the_underscored_enum_token() -> None:
+    """greedy scan folds 'competitive inhibition' into one cue and the emitted value is the
+    canonical enum token, never the surface"""
+    Tokens: list[str] = "Metformin activates AMPK through competitive inhibition of complex I".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Gene")]
+    assert extract_relations(Tokens, Spans) == [
+        expected_relation("increases_amount_or_activity_of", "Metformin", "AMPK"),
+        expected_relation("causal_mechanism_qualifier", "AMPK", "competitive_inhibition"),
+    ]
+
+
+def test_enum_qualifiers_only_fire_where_a_statement_already_fired() -> None:
+    """a qualifier qualifies a STATEMENT; no fired predicate, no host, no emission"""
+    Tokens: list[str] = "Mutant KRAS and RAF were examined".split()
+    Spans: list[tuple[int, int, str]] = [(1, 1, "Gene"), (3, 3, "Protein")]
+    assert extract_relations(Tokens, Spans) == []
+
+
+def test_an_enum_cue_never_crosses_a_sentence_break_to_its_host() -> None:
+    Tokens: list[str] = ["Aspirin", "inhibits", "COX2", ".", "whose", "expression", "is", "downregulated"]
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Protein")]
+    assert [relation.name for relation in extract_relations(Tokens, Spans)] == ["decreases_amount_or_activity_of"]
+
+
+def test_one_enum_value_per_slot_per_sentence() -> None:
+    """biolink qualifiers are single-valued per statement: the leftmost cue wins"""
+    Tokens: list[str] = "Aspirin inhibits COX2 expression and prostaglandin expression".split()
+    Spans: list[tuple[int, int, str]] = [(0, 0, "Drug"), (2, 2, "Protein")]
+    Relations = extract_relations(Tokens, Spans)
+    assert [relation.name for relation in Relations].count("object_aspect_qualifier") == 1
+
+
+# ------------------------------------------------------------------- enum table validation --
+
+
+def test_validate_enum_qualifier_table_rejects_slots_that_could_never_validate() -> None:
+    """severity_qualifier is attached to no class in the pinned model (UNSATISFIABLE) and
+    onset_qualifier is CURIE-ranged: a token value could never validate on either"""
+    with pytest.raises(ValueError, match="not a live enum-ranged"):
+        validate_enum_qualifier_table({"severity_qualifier": {("mild",): "mild"}})
+    with pytest.raises(ValueError, match="not a live enum-ranged"):
+        validate_enum_qualifier_table({"onset_qualifier": {("sudden",): "sudden"}})
+
+
+def test_validate_enum_qualifier_table_rejects_bad_slots_and_values() -> None:
+    with pytest.raises(ValueError, match="Qualifiers member"):
+        validate_enum_qualifier_table({"flavor_qualifier": {("sweet",): "sweet"}})
+    with pytest.raises(ValueError, match="tablassert-disabled"):
+        validate_enum_qualifier_table({"species_context_qualifier": {("human",): "human"}})
+    with pytest.raises(ValueError, match="already a DAKP context slot"):
+        validate_enum_qualifier_table({"sex_qualifier": {("male",): "male"}})
+    with pytest.raises(ValueError, match="outside its live enum range"):
+        validate_enum_qualifier_table({"object_direction_qualifier": {("elevated",): "elevated"}})
+
+
+def test_validate_enum_qualifier_table_rejects_cross_table_phrase_claims() -> None:
+    with pytest.raises(ValueError, match="collides with a predicate trigger"):
+        validate_enum_qualifier_table({"object_aspect_qualifier": {("binds", "to"): "activity"}})
+    with pytest.raises(ValueError, match="claimed by both"):
+        validate_enum_qualifier_table({"object_direction_qualifier": {("twice", "daily"): "increased"}})
+
+
+def test_validate_enum_qualifier_table_rejects_a_side_contradicting_the_slot_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """a subject_* slot binding the tail (or object_* the head) would host the variant form
+    on the wrong statement endpoint"""
+    monkeypatch.setitem(QUALIFIER_HOST_SIDES, "subject_form_or_variant_qualifier", "tail")
+    with pytest.raises(ValueError, match="names a subject but binds the tail"):
+        validate_enum_qualifier_table(dict(QUALIFIER_ENUM_TRIGGERS))
+
+
+def test_validate_enum_qualifier_table_rejects_an_out_of_range_host_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(QUALIFIER_HOST_WINDOW, "object_aspect_qualifier", MAX_TRIGGER_DISTANCE + 1)
+    with pytest.raises(ValueError, match="invalid host window"):
+        validate_enum_qualifier_table(dict(QUALIFIER_ENUM_TRIGGERS))
