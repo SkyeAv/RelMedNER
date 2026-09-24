@@ -59,6 +59,30 @@ def test_a_kp_match_becomes_an_entity_carrying_its_gold_curie() -> None:
     assert Example.entities[0].mentions == ["ketoconazole 2% shampoo"]
 
 
+def test_the_same_surface_under_two_categories_ships_multiclass() -> None:
+    """multi-class contract: when the KP ever emits one matched_text under two distinct biolink
+    categories (snapshot 20260920 never does -- measured, see docs/ctkp-interventions.md), the
+    surface must ship under BOTH labels with each label keeping its own gold curie evidence"""
+    Record: dict[str, Any] = record(
+        name="semaglutide",
+        description="semaglutide is given subcutaneously.",
+        matches=[
+            match(curie="CHEBI:176885", category="SmallMolecule", preferred_name="semaglutide", matched_text="semaglutide"),
+            match(curie="MESH:C000654876", category="ChemicalEntity", preferred_name="semaglutide", matched_text="semaglutide"),
+        ],
+    )
+    Example: TrainingExample = SCRIPT.run((Record,))
+
+    # 'semaglutide' carries the -tide suffix, so the surface ALSO earns the PeptideDrug
+    # secondary label on top of both KP categories (docs/secondary-labels.md)
+    by_label = {entity.label: entity.mentions for entity in Example.entities}
+    assert by_label == {
+        "SmallMolecule": ["semaglutide"],
+        "ChemicalEntity": ["semaglutide"],
+        "PeptideDrug": ["semaglutide"],
+    }
+
+
 def test_multiple_matches_group_under_their_own_labels() -> None:
     Record: dict[str, Any] = record(
         name="Nab-paclitaxel plus Gemcitabine",

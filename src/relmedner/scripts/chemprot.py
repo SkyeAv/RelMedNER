@@ -102,12 +102,12 @@ class ChemprotScript(Script):
         # raw labels surface PascalCased (biolink-style casing) while mapped and fallback entries
         # already name a biolink class and stay untouched
         labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
-        # spans and mentions filter identically, so zip pairs each span with its resolution
-        # positionally, and strict=True turns a dropped mention into an error instead of a silent
-        # misalignment of every later span
+        # the multi-class fan-out makes resolved longer than spans, so pair_spans re-pairs by
+        # span_index: items[0] is the primary, a misaligned shape raises instead of silently
+        # misaligning every later span. Fan-out rows share the surface, so the bridge needs it once
         surfaces: dict[str, str] = {}
-        for (_start, _end, entity_id), item in zip(spans, labeled, strict=True):
-            surfaces[entity_id] = item.mention
+        for (_start, _end, entity_id), items in ScriptUtils.pair_spans(spans, labeled):
+            surfaces[entity_id] = items[0].mention
         relations: list[Relation] = []
         for relation in self.relation_structs(relations_value) or []:
             predicate: str | None = self.gold_predicate(relation, surfaces)

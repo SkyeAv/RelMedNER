@@ -48,7 +48,9 @@ def test_flat_rows_ship_entities_and_relations_with_every_surface_in_the_text() 
     example = Chia.run((TEXT, BASE_ENTITIES, BASE_RELATIONS))
 
     assert "entities" in example.populated() and "relations" in example.populated()
-    assert len(example.entities) == 4
+    # four primary entities plus PeptideDrug, the measured secondary label on 'lanreotide'
+    # (-otide tail rule, docs/secondary-labels.md)
+    assert len(example.entities) == 5
     assert len(example.relations) == 2
     for surface in mention_surfaces(example) + relation_surfaces(example):
         assert surface in example.text, surface
@@ -62,7 +64,7 @@ def test_bigbio_passage_rows_reconstruct_the_text_and_ignore_events_and_corefere
     example = Chia.run((passages, BASE_ENTITIES, BASE_RELATIONS))
 
     assert "entities" in example.populated() and "relations" in example.populated()
-    assert len(example.entities) == 4
+    assert len(example.entities) == 5
     assert len(example.relations) == 2
     for surface in mention_surfaces(example) + relation_surfaces(example):
         assert surface in example.text, surface

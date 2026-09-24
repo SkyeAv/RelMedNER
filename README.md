@@ -127,6 +127,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/medical-entity-json-extraction.md](docs/medical-entity-json-extraction.md) -- the 50-row consumer-health vignette corpus and its JSON-in-assistant-turn decode.
 - [docs/bc5cdr.md](docs/bc5cdr.md) -- the BC5CDR avro containers built out-of-band from the NCBI CDR BioC XML corpus (gold chemical/disease spans trusted at MeSH CURIEs, gold CID relations as `causes` surface pairs).
 - [docs/quality-heuristics.md](docs/quality-heuristics.md) -- the C4/Gopher-style row-quality heuristic filters, their lineage, cost contract, and the measure-first threshold workflow.
+- [docs/secondary-labels.md](docs/secondary-labels.md) -- the measured morphological secondary labels (INN stems, disease/procedure morphology), the fullmap multi-class fan-out, and the CURIE code-structure rule table.
 - [docs/reddit-corpora.md](docs/reddit-corpora.md) -- the seven general-Reddit `tensorshield` dumps, their `match_on` health-community anchor, and the 100k-row inclusion bar.
 - [docs/biored.md](docs/biored.md) -- the BioRED gold corpus over the `wcole3/biored-parquet` mirror, its end-exclusive span convention, and the concept-pair relation collapse.
 - [docs/chia.md](docs/chia.md) -- the CHIA eligibility-criteria corpus, its five `hf_parquet` subsets, and the measured label-map and offset caveats.

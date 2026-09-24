@@ -4,8 +4,8 @@ import ast
 import json
 import re
 from collections import OrderedDict
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, replace
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -15,7 +15,14 @@ from tablassert import rs
 from tablassert.biolink import Categories, Predicates
 from tablassert.fullmap import fullmap_db_path, lookup_rows
 
-from relmedner.constants import FULLMAP_BEST_CACHE_TERMS, FULLMAP_DIR
+from relmedner.constants import (
+    FULLMAP_BEST_CACHE_TERMS,
+    FULLMAP_DIR,
+    SECONDARY_MIN_TOKEN,
+    SECONDARY_SUFFIX_LABELS,
+    SECONDARY_SUFFIX_STOP,
+    SECONDARY_TAIL_LABELS,
+)
 from relmedner.models import Entity
 
 
@@ -33,15 +40,42 @@ def strip_biolink_prefix(value: str) -> str:
     return value[len(BIOLINK_PREFIX) :] if value.startswith(BIOLINK_PREFIX) else value
 
 
+def secondary_labels(surface: str) -> tuple[str, ...]:
+    """secondary (never biolink) labels for a mention surface, from the measured end-anchored
+    morphological rules in constants (see docs/secondary-labels.md). Membership tests only --
+    no regex: the measured 37-branch regex loop costs ~46us/span, this ~1.8us. Each rule fires
+    at most once per surface. Suffix rules check the LAST token only (every rule is end-anchored,
+    so 'melanoma cells' never fires -oma); tail rules match the exact last token or last two
+    words ('insulin resistance' is a disease span and must not fire InsulinDrug)."""
+    tail: str = surface.rsplit(" ", 1)[-1].lower()
+    found: list[str] = []
+    if len(tail) >= SECONDARY_MIN_TOKEN and tail not in SECONDARY_SUFFIX_STOP:
+        for suffix, label in SECONDARY_SUFFIX_LABELS.items():
+            if len(tail) > len(suffix) and tail.endswith(suffix):
+                found.append(label)
+                break
+    words: list[str] = surface.lower().rsplit(" ", 2)
+    for width in (2, 1):
+        if len(words) >= width:
+            label = SECONDARY_TAIL_LABELS.get(" ".join(words[-width:]))
+            if label is not None:
+                found.append(label)
+                break
+    return tuple(dict.fromkeys(found))
+
+
 @dataclass(frozen=True)
 class ResolvedMention:
-    """one NER span after the fullmap/fallback/raw resolution chain"""
+    """one NER span after the fullmap/fallback/raw resolution chain. span_index tags the source
+    position in the caller's span list so consumers can re-pair items with spans after the
+    multi-class fan-out (one span -> 1..n items) made positional zip unsafe"""
 
     mention: str
     category: str
     curie: str | None = None
     preferred_name: str | None = None
     origin: str = "raw"  # "fullmap" | "fallback" | "raw"
+    span_index: int = -1
 
 
 def _bucket(keys: str, categories: str) -> tuple[tuple[str, ...], frozenset[str]]:
@@ -550,11 +584,14 @@ class ScriptUtils:
         name rather than an arbitrary string, while a mapped entry already names a biolink class.
         No parallel label sequence is needed: _resolve copies the raw label into
         ResolvedMention.category on the raw path, so for those items the category IS the label.
+
+        rebuild through dataclasses.replace, NOT a fresh constructor: ResolvedMention carries the
+        span_index tag (plus curie and preferred_name) that pair_spans re-pairs by after the
+        multi-class fan-out, and a constructor call that names only mention/category/origin resets
+        span_index to -1. That silently turned a mixed tagged/untagged list into a ValueError in
+        pair_spans for every row carrying a raw label alongside a fanned-out one.
         """
-        return [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=cls.pascal_label(item.category), origin=item.origin)
-            for item in resolved
-        ]
+        return [item if item.origin != "raw" else replace(item, category=cls.pascal_label(item.category)) for item in resolved]
 
     @staticmethod
     def mention_spans(tokens: list[str], ner: list[Any]) -> list[tuple[int, int, str]]:
@@ -673,14 +710,44 @@ class ScriptUtils:
     @classmethod
     def resolve_mentions(cls, spans: list[tuple[str, str]], label_map: dict[str, str] | None = None) -> list[ResolvedMention]:
         """fullmap first, static fallback second, raw label last (kept for zero-shot training);
-        label_map is the caller's dataset-specific vocabulary merged over the shared FALLBACK_LABEL_MAP"""
+        label_map is the caller's dataset-specific vocabulary merged over the shared FALLBACK_LABEL_MAP.
+        One mention may resolve to MULTIPLE mentions (multi-class fan-out, see _fullmap_best)"""
         fallback_map: dict[str, str] = {**cls.FALLBACK_LABEL_MAP, **label_map} if label_map else cls.FALLBACK_LABEL_MAP
         distinct_mentions: list[str] = list(dict.fromkeys(mention for mention, _ in spans))
         normalized: dict[str, str] = dict(zip(distinct_mentions, rs.normalize_terms(distinct_mentions), strict=True))
-        best: dict[str, dict[str, object]] = cls._fullmap_best(normalized)
-        return [cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map) for mention, raw_label in spans]
+        best: dict[str, list[dict[str, object]]] = cls._fullmap_best(normalized)
+        resolved: list[ResolvedMention] = []
+        for span_index, (mention, raw_label) in enumerate(spans):
+            resolved.extend(
+                replace(item, span_index=span_index) for item in cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map)
+            )
+        return resolved
 
-    _best_cache: ClassVar[OrderedDict[str, dict[str, object] | None]] = OrderedDict()
+    @staticmethod
+    def pair_spans(
+        spans: Sequence[tuple[int, int, str]], resolved: list[ResolvedMention]
+    ) -> list[tuple[tuple[int, int, str], list[ResolvedMention]]]:
+        """re-pair each input span with its resolved mentions after the multi-class fan-out made
+        positional zip unsafe (one span emits 1..n items, fan-out rows directly after their
+        primary, tagged via span_index). The primary is items[0]; every span yields a non-empty
+        group because _resolve always falls back to at least the raw mention. Raises ValueError
+        on an unresolvable shape instead of silently misaligning later spans"""
+        untagged = [item for item in resolved if item.span_index < 0]
+        if untagged:
+            # legacy untagged lists (hand-built fixtures, external callers) are exactly the
+            # pre-fan-out shape, so pair them positionally; anything mixed or longer is ambiguous
+            if len(untagged) != len(resolved) or len(resolved) != len(spans):
+                raise ValueError("untagged resolved mentions do not match the span count exactly")
+            return list(zip(spans, [[item] for item in resolved], strict=True))
+        groups: dict[int, list[ResolvedMention]] = {}
+        for item in resolved:
+            groups.setdefault(item.span_index, []).append(item)
+        pairs = [(spans[index], items) for index, items in sorted(groups.items())]
+        if [index for index, _items in sorted(groups.items())] != list(range(len(spans))):
+            raise ValueError("resolved mentions do not cover every input span exactly once")
+        return pairs
+
+    _best_cache: ClassVar[OrderedDict[str, list[dict[str, object]] | None]] = OrderedDict()
     """process-wide LRU of normalized term -> its best fullmap row (None = no accepted row), so a
     term seen in an earlier row never pays another redb + polars round trip. Exact, not a
     heuristic: filter_and_rank with column_context=False ranks every term independently of the
@@ -691,33 +758,37 @@ class ScriptUtils:
     _BEST_FIELDS: ClassVar[tuple[str, ...]] = ("CATEGORY_NAME", "CURIE", "PREFERRED_NAME")
 
     @classmethod
-    def _fullmap_best(cls, normalized: dict[str, str]) -> dict[str, dict[str, object]]:
-        """one best-ranked fullmap row per normalized mention, opened read-only/shared-lock;
-        cached terms skip the lookup, only the misses go to redb in one batch"""
+    def _fullmap_best(cls, normalized: dict[str, str]) -> dict[str, list[dict[str, object]]]:
+        """best-ranked fullmap rows per normalized mention, fan-out applied, LRU-cached: cached
+        terms skip the lookup, only the misses go to redb in one batch. Rows stay sorted best-first
+        per term; _fanout_rows keeps the winner plus identity-agreeing cross-category rows so one
+        surface can resolve under several biolink categories (measured multi-class seam: 5,400
+        CTKP/MedMentions surfaces carry identity-agreeing rows in distinct categories, 98%
+        namespace-crossing -- CHEBI SmallMolecule + UMLS Protein for the same "semaglutide")"""
         terms: set[str] = {norm for norm in normalized.values() if norm}
         if not terms:
             return {}
         cache = cls._best_cache
         misses: list[str] = sorted(term for term in terms if term not in cache)
         if misses:
-            fetched: dict[str, dict[str, object]] = cls._fetch_best(misses)
+            fetched: dict[str, list[dict[str, object]]] = cls._fetch_best(misses)
             for term in misses:
                 cache[term] = fetched.get(term)
             while len(cache) > FULLMAP_BEST_CACHE_TERMS:
                 cache.popitem(last=False)
-        best: dict[str, dict[str, object]] = {}
+        best: dict[str, list[dict[str, object]]] = {}
         for term in terms:
             # a term evicted between the store and this read (miss batch larger than the bound)
             # is re-fetched rather than silently reported as unresolved
-            row = cache[term] if term in cache else cls._fetch_best([term]).get(term)
+            rows = cache[term] if term in cache else cls._fetch_best([term]).get(term)
             if term in cache:
                 cache.move_to_end(term)
-            if row is not None:
-                best[term] = row
+            if rows is not None:
+                best[term] = rows
         return best
 
     @classmethod
-    def _fetch_best(cls, terms: list[str]) -> dict[str, dict[str, object]]:
+    def _fetch_best(cls, terms: list[str]) -> dict[str, list[dict[str, object]]]:
         """the uncached path: one lookup_rows round trip, then the ranking below"""
         rows: list[dict[str, object]] = lookup_rows(cls.fullmap_db(), terms)
         if not rows:
@@ -725,8 +796,8 @@ class ScriptUtils:
         return cls._rank_best(rows)
 
     @classmethod
-    def _rank_best(cls, rows: list[dict[str, object]]) -> dict[str, dict[str, object]]:
-        """one best-ranked lookup_rows row per term, in plain python.
+    def _rank_best(cls, rows: list[dict[str, object]]) -> dict[str, list[dict[str, object]]]:
+        """best-ranked lookup_rows rows per term, fan-out applied, in plain python.
 
         This is filter_and_rank(column_context=False) + "keep the first row per term" expressed
         directly: polars builds and collects a lazy plan per call, and at one call per script row
@@ -736,12 +807,13 @@ class ScriptUtils:
         - taxon filter: keep TAXON_ID == FULLMAP_TAXON or 0
         - PR: 1 when PREFERRED_NAME == term, else 5 when the level-one normalizations agree
           (NLP_LEVEL is 1 for every row, so the filter_and_rank guard always holds), else 10
-        - best per term: min (PR, NLP_LEVEL, CURIE), which is exactly the head of
-          deduplicate_result's sort for that term
+        - ordering: min (PR, NLP_LEVEL, CURIE), which is exactly the head of deduplicate_result's
+          sort for that term
 
-        Ties that differ only in SOURCE_NAME/VERSION are resolved arbitrarily by polars too, and
-        the returned fields are CURIE-derived, so the result is unchanged. Requires distinct terms
-        (the caller passes a sorted set): a repeated term would multiply rows in the polars join.
+        The fan-out deviates from "keep the first row" on purpose: all rows of a term stay ranked
+        best-first and _fanout_rows keeps the winner plus identity-agreeing cross-category rows.
+        Requires distinct terms (the caller passes a sorted set): a repeated term would multiply
+        rows in the join.
         """
         taxon: int = int(cls.FULLMAP_TAXON)
         kept: list[dict[str, object]] = [row for row in rows if int(row["TAXON_ID"]) in (taxon, 0)]
@@ -750,17 +822,38 @@ class ScriptUtils:
         # one Rust batch call for both sides of the level-one comparison
         surfaces: list[str] = sorted({str(row["PREFERRED_NAME"]) for row in kept} | {str(row["term"]) for row in kept})
         normalized: dict[str, str] = dict(zip(surfaces, rs.normalize_terms(surfaces), strict=True))
-        best: dict[str, tuple[tuple[int, int, str], dict[str, object]]] = {}
+        ranked: dict[str, list[tuple[tuple[int, int, str], dict[str, object]]]] = {}
         for row in kept:
             term: str = str(row["term"])
             name: str = str(row["PREFERRED_NAME"])
             curie: str = str(row["CURIE"])
             rank = 1 if name == term else (5 if normalized[name] == normalized[term] else 10)
             order: tuple[int, int, str] = (rank, 1, curie)
-            current = best.get(term)
-            if current is None or order < current[0]:
-                best[term] = (order, {field: row[field] for field in cls._BEST_FIELDS})
-        return {term: payload for term, (_order, payload) in best.items()}
+            ranked.setdefault(term, []).append((order, {field: row[field] for field in cls._BEST_FIELDS}))
+        best: dict[str, list[dict[str, object]]] = {}
+        for term, entries in ranked.items():
+            entries.sort(key=lambda item: item[0])
+            best[term] = cls._fanout_rows([payload for _order, payload in entries])
+        return best
+
+    @classmethod
+    def _fanout_rows(cls, rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        """winner plus at most one cross-category row with the SAME preferred name (case-insensitive).
+        Identity agreement is the fan-out gate: 'semaglutide' resolves to CHEBI SmallMolecule AND
+        UMLS Protein (one entity, two vocabularies), while an 'insulin measurement' Procedure row
+        carries a different name and must not ride along."""
+        winner: dict[str, object] = rows[0]
+        keep: list[dict[str, object]] = [winner]
+        name: str = str(winner["PREFERRED_NAME"]).lower()
+        categories: set[str] = {str(winner["CATEGORY_NAME"])}
+        for row in rows[1:]:
+            if len(keep) >= 2:
+                break
+            category = str(row["CATEGORY_NAME"])
+            if category not in categories and str(row["PREFERRED_NAME"]).lower() == name:
+                keep.append(row)
+                categories.add(category)
+        return keep
 
     @classmethod
     def _resolve(
@@ -768,40 +861,58 @@ class ScriptUtils:
         mention: str,
         raw_label: str,
         normalized: str | None,
-        best: dict[str, dict[str, object]],
+        best: dict[str, list[dict[str, object]]],
         fallback_map: dict[str, str],
-    ) -> ResolvedMention:
-        row: dict[str, object] | None = best.get(normalized) if normalized else None
-        if row is not None:
-            category = strip_biolink_prefix(str(row["CATEGORY_NAME"]))
-            curie = str(row["CURIE"])
-            # the shared gate falls through on rejection: the mention keeps its fallback/raw path
-            # instead of keeping a semantically incompatible fullmap category
-            if cls.is_biolink_category(category) and ResolutionGate.accept(mention, raw_label, curie, category):
-                return ResolvedMention(
-                    mention=mention,
-                    category=category,
-                    curie=curie,
-                    preferred_name=str(row["PREFERRED_NAME"]),
-                    origin="fullmap",
-                )
+    ) -> list[ResolvedMention]:
+        """fan-out-capable resolution: one mention -> up to two fullmap mentions (winner plus an
+        identity-agreeing cross-category row), else the single fallback/raw mention. The shared
+        gate falls through on rejection: the mention keeps its fallback/raw path instead of keeping
+        a semantically incompatible fullmap category"""
+        rows: list[dict[str, object]] = best.get(normalized, []) if normalized else []
+        winner = rows[0] if rows else None
+        if winner is not None:
+            resolved: list[ResolvedMention] = []
+            for row in rows:
+                category = strip_biolink_prefix(str(row["CATEGORY_NAME"]))
+                curie = str(row["CURIE"])
+                if cls.is_biolink_category(category) and ResolutionGate.accept(mention, raw_label, curie, category):
+                    resolved.append(
+                        ResolvedMention(
+                            mention=mention,
+                            category=category,
+                            curie=curie,
+                            preferred_name=str(row["PREFERRED_NAME"]),
+                            origin="fullmap",
+                        )
+                    )
+            if resolved:
+                return resolved
         fallback: str | None = cls.lookup_label(fallback_map, raw_label)
         if fallback is not None and cls.is_biolink_category(fallback):
-            return ResolvedMention(mention=mention, category=fallback, origin="fallback")
-        return ResolvedMention(mention=mention, category=raw_label, origin="raw")
+            return [ResolvedMention(mention=mention, category=fallback, origin="fallback")]
+        return [ResolvedMention(mention=mention, category=raw_label, origin="raw")]
 
     @classmethod
     def group_entities(cls, resolved: list[ResolvedMention]) -> list[Entity]:
         """group resolved mentions by category with one fullmap evidence string per label --
-        the shared entity shape every Script emits"""
+        the shared entity shape every Script emits. Each mention also expands with its measured
+        secondary labels (docs/secondary-labels.md): the morphological rules ride the same
+        grouping, so one surface can ship under its biolink category AND a secondary class"""
         mentions_by_label: dict[str, list[str]] = {}
         evidence_by_label: dict[str, tuple[str | None, str | None]] = {}
         for item in resolved:
-            mentions = mentions_by_label.setdefault(item.category, [])
-            if item.mention not in mentions:
-                mentions.append(item.mention)
-            if item.curie is not None and item.category not in evidence_by_label:
-                evidence_by_label[item.category] = (item.curie, item.preferred_name)
+            for label in (item.category, *secondary_labels(item.mention)):
+                mentions = mentions_by_label.setdefault(label, [])
+                if item.mention not in mentions:
+                    mentions.append(item.mention)
+                if item.curie is not None and label == item.category and label not in evidence_by_label:
+                    # evidence rides ONLY the resolved category: the fullmap CURIE evidences the
+                    # ontology class this surface resolved to, not a morphological secondary label.
+                    # A secondary label has no biolink definition either, so inheriting the evidence
+                    # would ship the bare "[fullmap: CURIE | name]" string as its entire description
+                    # -- per-row provenance inside a label prompt, which the end-to-end contract in
+                    # tests/test_outputs.py forbids for every non-biolink label.
+                    evidence_by_label[label] = (item.curie, item.preferred_name)
         return [
             Entity(
                 label=label,

@@ -85,10 +85,12 @@ class SyntheticNerAdeTweetsScript(Script):
         # raw labels surface PascalCased (biolink-style casing) while mapped and fallback entries
         # already name a biolink class and stay untouched
         labeled: list[ResolvedMention] = ScriptUtils.pascal_raw_labels(resolved)
-        # spans and mentions filter identically, so zip pairs each span with its resolution
-        # positionally, and strict=True turns a dropped mention into an error instead of a silent
-        # misalignment of every later span
-        resolved_spans: list[tuple[int, int, str]] = [(start, end, item.category) for (start, end, _), item in zip(spans, labeled, strict=True)]
+        # the multi-class fan-out makes resolved longer than spans, so pair_spans re-pairs by
+        # span_index (items[0] is the primary; a misaligned shape raises instead of silently
+        # misaligning later spans) and every fan-out row extends resolved_spans with its category
+        resolved_spans: list[tuple[int, int, str]] = [
+            (start, end, item.category) for (start, end, _), items in ScriptUtils.pair_spans(spans, labeled) for item in items
+        ]
         return TrainingExample(
             text=ScriptUtils.join_tokens(tokens),
             entities=ScriptUtils.group_entities(labeled),

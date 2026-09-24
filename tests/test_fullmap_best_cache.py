@@ -35,9 +35,9 @@ def fetches(monkeypatch: pytest.MonkeyPatch) -> list[list[str]]:
     calls: list[list[str]] = []
     monkeypatch.setattr(ScriptUtils, "_best_cache", OrderedDict())
 
-    def fake(cls: type[ScriptUtils], terms: list[str]) -> dict[str, dict[str, object]]:
+    def fake(cls: type[ScriptUtils], terms: list[str]) -> dict[str, list[dict[str, object]]]:
         calls.append(list(terms))
-        return {term: ROW for term in terms if term == "aspirin"}
+        return {term: [ROW] for term in terms if term == "aspirin"}
 
     monkeypatch.setattr(ScriptUtils, "_fetch_best", classmethod(fake))
     return calls
@@ -48,7 +48,7 @@ def test_a_term_seen_in_an_earlier_row_never_reaches_redb_again(fetches: list[li
     answer from the cache equals the answer from the first fetch"""
     first = ScriptUtils._fullmap_best({"Aspirin": "aspirin", "foo": "foo"})
     second = ScriptUtils._fullmap_best({"aspirin": "aspirin", "foo": "foo", "bar": "bar"})
-    assert first == second == {"aspirin": ROW}
+    assert first == second == {"aspirin": [ROW]}
     assert fetches == [["aspirin", "foo"], ["bar"]]
 
 
@@ -81,7 +81,7 @@ def test_the_cache_is_bounded_and_evicts_least_recently_used(fetches: list[list[
 def test_a_miss_batch_larger_than_the_bound_still_answers_every_term(fetches: list[list[str]], monkeypatch: pytest.MonkeyPatch) -> None:
     """eviction during the store must not turn a resolved term into a silent miss"""
     monkeypatch.setattr(utils, "FULLMAP_BEST_CACHE_TERMS", 1)
-    assert ScriptUtils._fullmap_best({"a": "aspirin", "b": "b", "c": "c"}) == {"aspirin": ROW}
+    assert ScriptUtils._fullmap_best({"a": "aspirin", "b": "b", "c": "c"}) == {"aspirin": [ROW]}
     assert len(ScriptUtils._best_cache) <= 1
 
 
@@ -105,7 +105,9 @@ def _polars_best(rows: list[dict[str, object]], terms: list[str]) -> dict[str, d
 
 def test_the_python_ranking_matches_the_polars_reference_on_a_hand_built_table() -> None:
     """taxon filtering, the exact/normalized/other PR tiers, and the CURIE tie-break must all
-    agree with filter_and_rank + first-row-per-term, or every resolved mention could shift"""
+    agree with filter_and_rank + first-row-per-term, or every resolved mention could shift. The
+    fan-out keeps the polars winner first; this table has no identity-agreeing cross-category
+    rows, so the winners alone must equal the polars reference exactly"""
     rows = [
         row("aspirin", "CHEBI:15365", "aspirin", "ChemicalEntity"),  # PR 1: exact name
         row("aspirin", "NCBIGene:1", "Aspirin Gene", "Gene"),  # PR 10, loses on rank
@@ -116,10 +118,27 @@ def test_the_python_ranking_matches_the_polars_reference_on_a_hand_built_table()
     ]
     rows[-1] = {**rows[-1], "TAXON_ID": 7227}
     terms = ["aspirin", "head ache", "flu", "drosophila"]
-    assert ScriptUtils._rank_best(rows) == _polars_best(rows, terms)
-    assert set(ScriptUtils._rank_best(rows)) == {"aspirin", "head ache", "flu"}
-    assert ScriptUtils._rank_best(rows)["aspirin"]["CURIE"] == "CHEBI:15365"
-    assert ScriptUtils._rank_best(rows)["head ache"]["CURIE"] == "SNOMED:25064002"
+    ranked = ScriptUtils._rank_best(rows)
+    winners = {term: entries[0] for term, entries in ranked.items()}
+    assert winners == _polars_best(rows, terms)
+    assert set(ranked) == {"aspirin", "head ache", "flu"}
+    assert ranked["aspirin"][0]["CURIE"] == "CHEBI:15365"
+    assert ranked["head ache"][0]["CURIE"] == "SNOMED:25064002"
+
+
+def test_identity_agreeing_cross_category_rows_fan_out_and_strangers_do_not() -> None:
+    """the fan-out contract: same preferred name (case-insensitive) in a DIFFERENT category rides
+    along (one entity, two vocabularies); a different-name row and a same-category duplicate
+    never extend the list"""
+    rows = [
+        row("semaglutide", "CHEBI:167574", "Semaglutide", "SmallMolecule"),
+        row("semaglutide", "UMLS:C3885068", "semaglutide", "Protein"),
+        row("semaglutide", "UMLS:C0202098", "Insulin measurement", "Procedure"),
+        row("semaglutide", "CHEBI:167574", "Semaglutide", "SmallMolecule"),  # duplicate row
+    ]
+    ranked = ScriptUtils._rank_best(rows)
+    assert len(ranked["semaglutide"]) == 2
+    assert {entry["CATEGORY_NAME"] for entry in ranked["semaglutide"]} == {"SmallMolecule", "Protein"}
 
 
 def test_a_table_that_survives_no_taxon_filter_resolves_to_nothing() -> None:
