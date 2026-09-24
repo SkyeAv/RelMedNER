@@ -81,6 +81,8 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
 | `ncbi/ncbi_disease` (train + validation + test, one row key) | `script` (NcbiDiseaseScript) | `tokens`, `ner_tags` | entities, relations | 5,433 + 924 + 941 (probe census of the refs/convert/parquet files, wenceslaus 2026-09-24) |
 | `bigbio/linnaeus` | `script` (LinnaeusScript) | `passages`, `entities` | entities | 95 (probe census of the refs/convert/parquet file, wenceslaus 2026-09-24) |
+| `bigbio/osiris` | `script` (OsirisScript) | `passages`, `entities` | entities | 105 (probe census of the refs/convert/parquet file, laptop 2026-09-24) |
+| `bigbio/pubmed_qa` (5 labeled folds) | `script` (PubmedQaScript) | `QUESTION`, `CONTEXTS`, `final_decision` | classifications | 450 x 5 (probe census of the refs/convert/parquet files, laptop 2026-09-24) |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | `fullmap` (max_ngram=6, taxon=9606) | `eligibility` | entities, relations | 3,002 |
 | `hackint0sh/Text-Clinical-Records` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 31,489 |
 | `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
@@ -141,6 +143,8 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/jnlpba.md](docs/jnlpba.md) -- the `commanderstrife/jnlpba` IOB script ingest over train and validation.
 - [docs/ncbi-disease.md](docs/ncbi-disease.md) -- the `ncbi/ncbi_disease` gold disease-NER ingest over three parquet splits.
 - [docs/linnaeus.md](docs/linnaeus.md) -- the `bigbio/linnaeus` gold species-NER ingest and its trust-gold label stance.
+- [docs/osiris.md](docs/osiris.md) -- the `bigbio/osiris` gold variant-NER ingest and its offset-aware passage reconstruction.
+- [docs/pubmed-qa.md](docs/pubmed-qa.md) -- the `bigbio/pubmed_qa` gold/silver question-answering classification ingests.
 - [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
 - [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
 - [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.

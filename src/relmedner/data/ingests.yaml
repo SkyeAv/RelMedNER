@@ -673,6 +673,65 @@ datasets:
     file: linnaeus_bigbio_kb/train/0000.parquet
     split: train
     columns_out: [passages, entities]
+  # OSIRIS genetic-variant corpus (bigbio/osiris, cc-by-3.0): 105 PubMed-abstract documents
+  # with gold gene (689) and variant (541) mentions, 1,230 measured on the full split, two
+  # passages per row (title + abstract, gap 1 char) with global char offsets, 1,228/1,230
+  # spans end-exclusive verified (the 2 rest are sloppy-source trailing-space offsets the
+  # char bridge clamps or drops). The hub repo is script-only, so the osiris_bigbio_kb
+  # config reads its parquet off refs/convert/parquet. Trust-gold: spans ship under their
+  # own biolink classes (Gene / SequenceVariant), no fullmap re-resolution.
+  - task: {type: script, name: OsirisScript, outputs: [entities]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/osiris
+    file: osiris_bigbio_kb/train/0000.parquet
+    split: train
+    columns_out: [passages, entities]
+  # knowledgator/biomed_NER needs no second declaration here: main already streams it
+  # gold-tier through KnowledgatorBiomedScript over the hub hf source (the gap-fix screen on
+  # 2026-09-24 caught the duplicate row key before it shipped).
+  # PubMedQA (bigbio/pubmed_qa, mit): yes/no/maybe biomedical question answering over PubMed
+  # abstract contexts. The five expert-labeled folds (450 train + 50 validation each) are
+  # declared gold; row_key is the repo id, so all five entries share one weight slot via the
+  # same anchor. The 200k-row artificial split stays undeclared: the repo-id row key may
+  # carry only one weight (models.py weights_by_source), and its weak heuristic labels would
+  # need silver, which would conflict with the folds' gold. Labeled folds declare train only;
+  # validation rows stay undeclared.
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold0_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold1_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold2_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold3_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold4_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched

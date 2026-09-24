@@ -585,6 +585,87 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("passages", "entities"),
         ),
     ),
+    # bigbio/osiris declares one hf_parquet ingest over the osiris_bigbio_kb config. Tuple frozen
+    # from live generate_tuples() output via probe --freeze.
+    "bigbio/osiris:osiris_bigbio_kb/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "OsirisScript", ("entities",)),
+            1.0,
+            "bigbio/osiris",
+            "osiris_bigbio_kb/train/0000.parquet",
+            "train",
+            None,
+            ("passages", "entities"),
+        ),
+    ),
+    # bigbio/pubmed_qa declares five hf_parquet ingests off one repo id: the gold
+    # expert-labeled folds (one shared weight slot; the artificial split stays undeclared
+    # because the row key may carry only one weight). Tuples frozen from live
+    # generate_tuples() output via probe --freeze.
+    "bigbio/pubmed_qa:pubmed_qa_labeled_fold0_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "PubmedQaScript", ("classifications",)),
+            1.0,
+            "bigbio/pubmed_qa",
+            "pubmed_qa_labeled_fold0_source/train/0000.parquet",
+            "train",
+            None,
+            ("QUESTION", "CONTEXTS", "final_decision"),
+        ),
+    ),
+    "bigbio/pubmed_qa:pubmed_qa_labeled_fold1_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "PubmedQaScript", ("classifications",)),
+            1.0,
+            "bigbio/pubmed_qa",
+            "pubmed_qa_labeled_fold1_source/train/0000.parquet",
+            "train",
+            None,
+            ("QUESTION", "CONTEXTS", "final_decision"),
+        ),
+    ),
+    "bigbio/pubmed_qa:pubmed_qa_labeled_fold2_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "PubmedQaScript", ("classifications",)),
+            1.0,
+            "bigbio/pubmed_qa",
+            "pubmed_qa_labeled_fold2_source/train/0000.parquet",
+            "train",
+            None,
+            ("QUESTION", "CONTEXTS", "final_decision"),
+        ),
+    ),
+    "bigbio/pubmed_qa:pubmed_qa_labeled_fold3_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "PubmedQaScript", ("classifications",)),
+            1.0,
+            "bigbio/pubmed_qa",
+            "pubmed_qa_labeled_fold3_source/train/0000.parquet",
+            "train",
+            None,
+            ("QUESTION", "CONTEXTS", "final_decision"),
+        ),
+    ),
+    "bigbio/pubmed_qa:pubmed_qa_labeled_fold4_source/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "PubmedQaScript", ("classifications",)),
+            1.0,
+            "bigbio/pubmed_qa",
+            "pubmed_qa_labeled_fold4_source/train/0000.parquet",
+            "train",
+            None,
+            ("QUESTION", "CONTEXTS", "final_decision"),
+        ),
+    ),
+    # knowledgator/biomed_NER needs no second declaration: main already streams it gold-tier
+    # through KnowledgatorBiomedScript over the hub hf source (the gap-fix screen on
+    # 2026-09-24 caught the duplicate row key before it shipped).
     # rjac/clinicaltrials.gov-summary_and_eligibility declares one fullmap ingest over the
     # eligibility column; the tuple is frozen from live generate_tuples() output via probe --freeze.
     "rjac/clinicaltrials.gov-summary_and_eligibility": (

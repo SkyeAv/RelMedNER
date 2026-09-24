@@ -21,9 +21,11 @@ from relmedner.scripts.medical_entity_json import MedicalEntityJsonScript
 from relmedner.scripts.medmentions import MedMentionsScript
 from relmedner.scripts.ncbi_disease import NcbiDiseaseScript
 from relmedner.scripts.nemotron_pii import NemotronPiiScript
+from relmedner.scripts.osiris import OsirisScript
 from relmedner.scripts.pile_ner_biomed import PileNerBiomedScript
 from relmedner.scripts.pile_ner_type import PileNerTypeScript
 from relmedner.scripts.pubmed_abstracts import PubmedAbstractsScript
+from relmedner.scripts.pubmed_qa import PubmedQaScript
 from relmedner.scripts.sentence_rex import SentenceRexScript
 from relmedner.scripts.super_glue_multirc import SuperGlueMultiRCScript
 from relmedner.scripts.super_glue_record import SuperGlueRecordScript
@@ -53,9 +55,11 @@ __all__ = [
     "MedicalEntityJsonScript",
     "NcbiDiseaseScript",
     "NemotronPiiScript",
+    "OsirisScript",
     "PileNerBiomedScript",
     "PileNerTypeScript",
     "PubmedAbstractsScript",
+    "PubmedQaScript",
     "SentenceRexScript",
     "SuperGlueMultiRCScript",
     "SuperGlueRecordScript",
