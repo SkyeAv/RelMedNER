@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+from collections import OrderedDict
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import cache
@@ -14,7 +15,7 @@ from tablassert import rs
 from tablassert.biolink import Categories, Predicates
 from tablassert.fullmap import fullmap_db_path, lookup_rows
 
-from relmedner.constants import FULLMAP_DIR
+from relmedner.constants import FULLMAP_BEST_CACHE_TERMS, FULLMAP_DIR
 from relmedner.models import Entity
 
 
@@ -679,23 +680,56 @@ class ScriptUtils:
         best: dict[str, dict[str, object]] = cls._fullmap_best(normalized)
         return [cls._resolve(mention, raw_label, normalized.get(mention), best, fallback_map) for mention, raw_label in spans]
 
+    _best_cache: ClassVar[OrderedDict[str, dict[str, object] | None]] = OrderedDict()
+    """process-wide LRU of normalized term -> its best fullmap row (None = no accepted row), so a
+    term seen in an earlier row never pays another redb + polars round trip. Exact, not a
+    heuristic: filter_and_rank with column_context=False ranks every term independently of the
+    other terms in its batch, so a per-term memo returns what a fresh call would. Bounded by
+    FULLMAP_BEST_CACHE_TERMS and holding only the three fields _resolve reads, so worker memory
+    stays flat on long runs"""
+
+    _BEST_FIELDS: ClassVar[tuple[str, ...]] = ("CATEGORY_NAME", "CURIE", "PREFERRED_NAME")
+
     @classmethod
     def _fullmap_best(cls, normalized: dict[str, str]) -> dict[str, dict[str, object]]:
-        """one best-ranked fullmap row per normalized mention, opened read-only/shared-lock"""
-        valid: dict[str, str] = {mention: norm for mention, norm in normalized.items() if norm}
-        if not valid:
+        """one best-ranked fullmap row per normalized mention, opened read-only/shared-lock;
+        cached terms skip the lookup, only the misses go to redb in one batch"""
+        terms: set[str] = {norm for norm in normalized.values() if norm}
+        if not terms:
             return {}
+        cache = cls._best_cache
+        misses: list[str] = sorted(term for term in terms if term not in cache)
+        if misses:
+            fetched: dict[str, dict[str, object]] = cls._fetch_best(misses)
+            for term in misses:
+                cache[term] = fetched.get(term)
+            while len(cache) > FULLMAP_BEST_CACHE_TERMS:
+                cache.popitem(last=False)
+        best: dict[str, dict[str, object]] = {}
+        for term in terms:
+            # a term evicted between the store and this read (miss batch larger than the bound)
+            # is re-fetched rather than silently reported as unresolved
+            row = cache[term] if term in cache else cls._fetch_best([term]).get(term)
+            if term in cache:
+                cache.move_to_end(term)
+            if row is not None:
+                best[term] = row
+        return best
+
+    @classmethod
+    def _fetch_best(cls, terms: list[str]) -> dict[str, dict[str, object]]:
+        """the uncached path: one lookup_rows + filter_and_rank over the given distinct terms"""
         import polars as pl
         from tablassert.fullmap import filter_and_rank
 
-        rows: list[dict[str, object]] = lookup_rows(cls.fullmap_db(), sorted(set(valid.values())))
+        rows: list[dict[str, object]] = lookup_rows(cls.fullmap_db(), terms)
         if not rows:
             return {}
-        terms = pl.DataFrame({"term": list(valid.values()), "nlp_level": [1] * len(valid)})
-        matches = filter_and_rank(pl.DataFrame(rows), terms, cls.FULLMAP_TAXON, None, None, False)
+        frame = pl.DataFrame({"term": terms, "nlp_level": [1] * len(terms)})
+        matches = filter_and_rank(pl.DataFrame(rows), frame, cls.FULLMAP_TAXON, None, None, False)
         best: dict[str, dict[str, object]] = {}
-        for row in matches.iter_rows(named=True):
-            best.setdefault(str(row["term"]), row)  # sorted best-first; keep the first
+        for row in matches.select("term", *cls._BEST_FIELDS).iter_rows(named=True):
+            best.setdefault(str(row["term"]), {field: row[field] for field in cls._BEST_FIELDS})  # sorted best-first
         return best
 
     @classmethod

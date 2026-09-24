@@ -147,6 +147,10 @@ MIN_UNIGRAM_LENGTH: int = 3
 # beam BatchElements bounds for one redb round trip per batch; ~54k distinct candidate
 # surfaces per 100 docs and ~11.5us/key lookup make batches of rows (not terms) the unit.
 MIN_BATCH_ROWS: int = 200
+# script-path LRU bound on cached best fullmap rows (ScriptUtils._best_cache): each entry holds a
+# normalized term plus three short strings (~0.3 KB), so 200k terms stays near 60 MB per worker
+# while covering the recurring biomedical vocabulary a source repeats across rows
+FULLMAP_BEST_CACHE_TERMS: int = 200_000
 MAX_BATCH_ROWS: int = 2000
 
 # ------------------------------------------------------- training-row token cap knobs ----
