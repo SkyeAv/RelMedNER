@@ -7,11 +7,13 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError, select_declared_columns
+from relmedner.streams import DataStream, StreamedRow, StreamStats, select_declared_columns, shard_of
 
 
 class HuggingFaceDataStream(DataStream):
     SOURCE: ClassVar[str] = "hf"
+
+    SHARDED_READS: ClassVar[bool] = True
 
     def __init__(
         self: Self,
@@ -25,11 +27,14 @@ class HuggingFaceDataStream(DataStream):
         *,
         filters: RowFilters | None = None,
         sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
     ) -> None:
         # parameter order must match DatasetBase.to_tuple's field order (build_stream unpacks
         # the declared payload positionally): task, weight, then the hf-specific columns;
-        # filters and sample_rate are keyword-only and ride the shared base __init__
-        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
+        # filters, sample_rate, read_shards, and shard_index are keyword-only and ride the
+        # shared base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate, read_shards=read_shards, shard_index=shard_index)
         self.name: str = dataset
         self.dataset: str = dataset
         self.subset: str | None = subset
@@ -42,6 +47,11 @@ class HuggingFaceDataStream(DataStream):
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         datastream = load_dataset(self.dataset, self.subset, split=self.split, streaming=True)
+        # shard EARLY, before any operator: a streaming IterableDataset splits at its
+        # underlying file-shard granularity, so each reader streams its own file subset and
+        # no byte is downloaded twice
+        if self.read_shards > 1:
+            datastream = shard_of(datastream, self.read_shards, self.shard_index)
         datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # US-009: one stats record per pass over the source, reset here (not in stream()) so a
@@ -70,6 +80,7 @@ class HuggingFaceDataStream(DataStream):
         # fail-loud zero-yield guard (US-008, now covering the ALWAYS-ON cap): a declared filter
         # OR the token cap that drops every candidate row of a non-empty source is the
         # silent-empty-training-set bug; a genuinely empty source (0 candidates, e.g. everything
-        # match_on-dropped) is recorded, not guarded
-        if candidates > 0 and self.stats.rows_out == 0:
-            raise ZeroYieldError(f"filters {self.filters} dropped 100% of {candidates} rows from {self.name}")
+        # match_on-dropped) is recorded, not guarded. On a sharded read the guard degrades to
+        # a per-shard WARNING (streams.zero_yield_guard): a trailing file shard may legitimately
+        # hold zero passing rows
+        self.zero_yield_guard(candidates)

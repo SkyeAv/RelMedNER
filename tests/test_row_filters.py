@@ -454,13 +454,13 @@ def _hf_dataset(filters: RowFilters | None = None, sample_rate: float = 1.0) -> 
 
 
 def test_to_stream_args_appends_filters_and_sample_rate_after_the_frozen_payload() -> None:
-    """the payload stays the 2-tuple the EXPECTED locks pin; filters and sample_rate ride
-    envelope slots that cannot shift a frozen position"""
+    """the payload stays the 2-tuple the EXPECTED locks pin; filters, sample_rate, and
+    read_shards ride envelope slots that cannot shift a frozen position"""
     Filters: RowFilters = RowFilters(min_text_len=3)
 
-    assert _hf_dataset().to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 1.0)
-    assert _hf_dataset(Filters).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], Filters, 1.0)
-    assert _hf_dataset(sample_rate=0.25).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 0.25)
+    assert _hf_dataset().to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 1.0, 1)
+    assert _hf_dataset(Filters).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], Filters, 1.0, 1)
+    assert _hf_dataset(sample_rate=0.25).to_stream_args() == ("hf", _hf_dataset().to_tuple()[1], None, 0.25, 1)
     # the frozen payload itself never moves, whatever the envelope carries
     assert _hf_dataset(Filters, 0.5).to_tuple() == _hf_dataset().to_tuple()
 
@@ -468,7 +468,7 @@ def test_to_stream_args_appends_filters_and_sample_rate_after_the_frozen_payload
 def test_yaml_ingests_stream_args_round_every_declared_dataset() -> None:
     Ingests: YamlIngests = YamlIngests(datasets=[_hf_dataset(RowFilters(drop_empty=True), 0.5)])
 
-    assert Ingests.stream_args() == (("hf", _hf_dataset().to_tuple()[1], RowFilters(drop_empty=True), 0.5),)
+    assert Ingests.stream_args() == (("hf", _hf_dataset().to_tuple()[1], RowFilters(drop_empty=True), 0.5, 1, 0),)
     # generate_tuples keeps the frozen 2-tuple shape the cli parallelism count depends on
     assert Ingests.generate_tuples() == (("hf", _hf_dataset().to_tuple()[1]),)
 

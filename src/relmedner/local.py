@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, ClassVar, Self
 
-from fastavro import reader
+from fastavro import block_reader, reader
 
 from relmedner.constants import DATA, FULLMAP_DIR
 from relmedner.models import RowFilters
@@ -24,11 +24,24 @@ class LocalAvroDataStream(DataStream):
 
     SOURCE: ClassVar[str] = "local"
 
-    def __init__(self: Self, task: tuple[Any, ...], weight: float, path: str, *, filters: RowFilters | None = None, sample_rate: float = 1.0) -> None:
+    SHARDED_READS: ClassVar[bool] = True
+
+    def __init__(
+        self: Self,
+        task: tuple[Any, ...],
+        weight: float,
+        path: str,
+        *,
+        filters: RowFilters | None = None,
+        sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
+    ) -> None:
         # parameter order must match DatasetBase.to_tuple's field order, because build_stream
         # unpacks the declared payload positionally: task, weight, then the local-specific path;
-        # filters and sample_rate are keyword-only and ride the shared base __init__
-        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
+        # filters, sample_rate, read_shards, and shard_index are keyword-only and ride the shared
+        # base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate, read_shards=read_shards, shard_index=shard_index)
         # the pipeline stamps every row with weights[source], so this key is LocalAvroDataset.row_key
         # verbatim: the declared path, not its basename (two distinct files may share a name and
         # must still be able to declare different weights)
@@ -74,22 +87,39 @@ class LocalAvroDataStream(DataStream):
         # while the rows it yields stay byte-identical
         self.stats = StreamStats()
         with self.path.open("rb") as handle:
-            for record in reader(handle):
+            # read_shards fans the container out over WHOLE avro blocks: a block is the
+            # container's atomic compressed unit, so whole-block selection keeps every record
+            # whole. ordinal % read_shards == shard_index is deterministic and non-overlapping,
+            # and the union of all shards' rows is exactly the unsharded row list (the test
+            # locks this for several shard counts). Skipping a foreign block still pays its
+            # compressed bytes off disk, but pays no decompress and no decode -- decode is the
+            # part worth parallelizing
+            streams: Iterator[dict[str, Any]] = (
+                reader(handle)
+                if self.read_shards == 1
+                else (
+                    record for ordinal, block in enumerate(block_reader(handle)) if ordinal % self.read_shards == self.shard_index for record in block
+                )
+            )
+            for record in streams:
                 self.stats.rows_in += 1
-                # the text rule applies over the record's own values (same rule as the hf
-                # projection); the ALWAYS-ON token cap rides the same evaluator via
-                # effective_filters even when no filters were declared
-                reason: str | None = first_drop_reason(tuple(record.values()), self.effective_filters)
-                if reason is not None:
-                    self.stats.drop(reason)
-                    continue
-                self.stats.rows_out += 1
-                yield (self.name, (self.task, (record,)))
+                if self._admits_whole_record(record):
+                    yield (self.name, (self.task, (record,)))
             # fail-loud zero-yield guard (US-008, now covering the ALWAYS-ON cap): a declared
             # filter OR the token cap that drops every row of a non-empty source is the
             # silent-empty-training-set bug; an empty file (rows_in == 0) is not an error
-            if self.stats.rows_in > 0 and self.stats.rows_out == 0:
-                raise ZeroYieldError(f"filters {self.filters} dropped 100% of {self.stats.rows_in} rows from {self.name}")
+            self.zero_yield_guard(self.stats.rows_in)
+
+    def _admits_whole_record(self: Self, record: dict[str, Any]) -> bool:
+        """shared admission path for the sharded and unsharded reads: the text rule applies
+        over the record's own values (same rule as the hf projection), and the ALWAYS-ON token
+        cap rides the same evaluator via effective_filters even when no filters were declared"""
+        reason: str | None = first_drop_reason(tuple(record.values()), self.effective_filters)
+        if reason is not None:
+            self.stats.drop(reason)
+            return False
+        self.stats.rows_out += 1
+        return True
 
 
 class LocalDelimitedDataStream(DataStream):
@@ -117,11 +147,14 @@ class LocalDelimitedDataStream(DataStream):
         *,
         filters: RowFilters | None = None,
         sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
     ) -> None:
         # positional contract: the payload LocalDelimitedDataset.to_tuple produces (model field
         # order minus source); registry.build_stream splats it into this __init__;
-        # filters and sample_rate are keyword-only and ride the shared base __init__
-        super().__init__(task, weight, filters=filters, sample_rate=sample_rate)
+        # filters, sample_rate, read_shards, and shard_index are keyword-only and ride the shared
+        # base __init__
+        super().__init__(task, weight, filters=filters, sample_rate=sample_rate, read_shards=read_shards, shard_index=shard_index)
         # the DECLARED path, not the resolved one and not its stem: the pipeline stamps every row
         # with weights[source], so this key is LocalDelimitedDataset.row_key verbatim, and two
         # distinct files sharing a basename must still be able to declare different weights

@@ -18,7 +18,17 @@ SOURCE_REGISTRY: dict[str, type[DataStream]] = {
 }
 
 
-def build_stream(source: str, payload: tuple[Any, ...], filters: RowFilters | None = None, sample_rate: float = 1.0) -> DataStream:
-    """filters and sample_rate ride keyword-only from the (source, payload, filters, sample_rate)
-    stream_args envelope; the defaults keep every existing positional 2-arg call valid"""
-    return SOURCE_REGISTRY[source](*payload, filters=filters, sample_rate=sample_rate)
+def build_stream(
+    source: str,
+    payload: tuple[Any, ...],
+    filters: RowFilters | None = None,
+    sample_rate: float = 1.0,
+    read_shards: int = 1,
+    shard_index: int = 0,
+) -> DataStream:
+    """filters and sample_rate ride keyword-only from the stream_args envelope; read_shards
+    rides positionally as the envelope's fifth slot (to_stream_args splat callers) and
+    shard_index as the sixth, so the defaults keep every existing call valid. read_shards
+    over 1 raises here for sources whose DataStream does not shard its read (the base
+    __init__ owns the guard), so a mis-declared source fails at build time, never mid-run"""
+    return SOURCE_REGISTRY[source](*payload, filters=filters, sample_rate=sample_rate, read_shards=read_shards, shard_index=shard_index)
