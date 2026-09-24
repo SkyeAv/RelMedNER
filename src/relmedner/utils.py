@@ -584,11 +584,14 @@ class ScriptUtils:
         name rather than an arbitrary string, while a mapped entry already names a biolink class.
         No parallel label sequence is needed: _resolve copies the raw label into
         ResolvedMention.category on the raw path, so for those items the category IS the label.
+
+        rebuild through dataclasses.replace, NOT a fresh constructor: ResolvedMention carries the
+        span_index tag (plus curie and preferred_name) that pair_spans re-pairs by after the
+        multi-class fan-out, and a constructor call that names only mention/category/origin resets
+        span_index to -1. That silently turned a mixed tagged/untagged list into a ValueError in
+        pair_spans for every row carrying a raw label alongside a fanned-out one.
         """
-        return [
-            item if item.origin != "raw" else ResolvedMention(mention=item.mention, category=cls.pascal_label(item.category), origin=item.origin)
-            for item in resolved
-        ]
+        return [item if item.origin != "raw" else replace(item, category=cls.pascal_label(item.category)) for item in resolved]
 
     @staticmethod
     def mention_spans(tokens: list[str], ner: list[Any]) -> list[tuple[int, int, str]]:
