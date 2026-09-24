@@ -26,3 +26,6 @@ src/relmedner/data/fewrel/*.avro
 # NCBI CDR BioC XML corpus by /users/sgoetz/bc5cdr-staging/build_bc5cdr.py (rebuild
 # commands and builder receipts in docs/bc5cdr.md), so git carries the docs, not the blobs.
 src/relmedner/data/bc5cdr/*.avro
+# MedMentions ST21pv containers, same out-of-band policy: built on wenceslaus from the PubTator
+# corpus (see docs/medmentions.md), so git carries the docs, not the blobs.
+src/relmedner/data/medmentions/*.avro

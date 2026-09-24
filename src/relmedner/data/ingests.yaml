@@ -505,3 +505,103 @@ datasets:
     file: gad_blurb_bigbio_text/test/0000.parquet
     split: train
     columns_out: [text, labels]
+  # DrugProt gold (OpenMed/drugprot-parquet): the cc-by-4.0 parquet mirror of bigbio/drugprot,
+  # whose script-only hub loading is unsupported on this repo's datasets version. The config-less
+  # default load streams the hub's default config, so no subset is declared and entry_key
+  # split-qualifies the two locks (OpenMed/drugprot-parquet:train/:validation), the biored shape.
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
+  - task: {type: script, name: DrugprotScript, outputs: [entities, relations]}
+    source: hf
+    weight: *weight
+    split: validation
+    dataset: OpenMed/drugprot-parquet
+    columns_out: [text, entities, relations]
+  # Augmented clinical notes (AGBonnet/augmented-clinical-notes, MIT): 30,000 clinical-note
+  # paragraphs (EHR-shaped text, mean 344 tokens) mined through the shared fullmap path; the
+  # config-less default load streams the single jsonl file, so no subset is declared.
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: AGBonnet/augmented-clinical-notes
+    columns_out: [note]
+  # MedMCQA (openlifescienceai/medmcqa, apache-2.0): medical entrance-exam questions with expert
+  # explanations; the `exp` column is the reasoning prose the fullmap path mines. Rows with no
+  # explanation (36 of the first 300) drop on the declared drop_empty filter.
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: openlifescienceai/medmcqa
+    columns_out: [exp]
+    filters: {drop_empty: true}
+  # MedDialog (OpenMed/MedDialog, apache-2.0): 226,557 patient-doctor consultation dialogues;
+  # the `doctor_response` column is the clinical register the fullmap path mines (the
+  # dialogue_context column is empty on every sampled row).
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: OpenMed/MedDialog
+    columns_out: [doctor_response]
+  # JNLPBA (commanderstrife/jnlpba, apache-2.0): the hub repo ships an unsupported loader script,
+  # but its refs/convert/parquet branch carries the splits as parquet, so train and validation
+  # declare their own hf_parquet file entries (the bigbio/ehr_rel read path). The repo's test
+  # parquet is byte-identical to its validation parquet (md5 e446a9191dbf474bdb79f37b08183fb3
+  # on both, wenceslaus 2026-09-24), so it is deliberately NOT declared: it would double-stream
+  # 7,714 duplicate rows (the agentlans/json-extraction precedent). row_key is the repo id, so
+  # both entries share one weight slot. The parquet builder names every file's split 'train'
+  # (the split field follows it; the semantic split lives in the file path, the ehr_rel
+  # convention). The raw parquet loses the ClassLabel name table, so
+  # JnlpbaScript carries the fixed 19-tag vocabulary.
+  - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: commanderstrife/jnlpba
+    file: jnlpba/train/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: JnlpbaScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight
+    dataset: commanderstrife/jnlpba
+    file: jnlpba/validation/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
+  # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
+  # (document-absolute offsets over title + newline + abstract; converter census slice-matched
+  # 203,282 of 203,282 annotations). The zameji hub mirror was probed first and rejected: its
+  # token-index re-encoding left 33.6 percent of spans unrecoverable on any shift 0-5
+  # (wenceslaus 2026-09-24). Gold UMLS-linked spans (single UMLS:C curie per annotation, all 21
+  # semantic types mapped); no relations ship. row_key is the path, so each file gets its own
+  # mixing-weight slot.
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/train.avro
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/dev.avro
+  - task: {type: script, name: MedMentionsScript, outputs: [entities]}
+    source: local
+    weight: *weight
+    path: medmentions/test.avro
+  # ClinicalTrials.gov summary + eligibility (rjac/clinicaltrials.gov-summary_and_eligibility,
+  # MIT): 3,002 trial records pairing structured fields (nct id, status, title, dates) with the
+  # clinical criteria prose; the eligibility column is the densest clinical text (fullmap probe
+  # 300/300 docs with mentions at 17.87 mentions/doc, 295 relations over 300 rows). One fullmap
+  # ingest per repo+split (a second text column would collide on the entry key), so the
+  # brief_summary column stays undeclared.
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: rjac/clinicaltrials.gov-summary_and_eligibility
+    columns_out: [eligibility]
+  # Text-Clinical-Records (hackint0sh/Text-Clinical-Records, MIT): 31,489 clinical-record texts
+  # (EHR-shaped prose, mean 842 chars, median 513 on the first 300 sampled rows); 78 of the 300
+  # sampled rows carry an empty text and drop on the declared drop_empty filter. The kjappelbaum
+  # chemnlp-chemdner candidate was REJECTED before probing: no license declared on its card
+  # (unknown = reject).
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: hackint0sh/Text-Clinical-Records
+    columns_out: [text]
+    filters: {drop_empty: true}

@@ -25,9 +25,9 @@ shift 3
 UV_BIN="${UV_BIN:-$HOME/bin/uv}"
 # default must string-equal the literal the remote-gate.sh sed patch writes into constants.py:
 # tests/test_constants.py captures FULLMAP_DIR (this export) at collection and reloads it envless
-# against the patched literal, so a diverging default fails the envless-stability tests ($HOME on
-# this box is /users/sgoetz, but sed writes /home/sgoetz)
-FULLMAP="${RELMEDNER_FULLMAP_DIR:-/home/sgoetz/Desktop/fullmap}"
+# against the patched literal, so a diverging default fails the envless-stability tests (the sed
+# writes the remote $HOME form, /users/sgoetz/Desktop/fullmap on this box)
+FULLMAP="${RELMEDNER_FULLMAP_DIR:-$HOME/Desktop/fullmap}"
 SKILL_DIR="$TREE/.pi/skills/add-dataset"
 
 # the remote environment block from references/remote-wenceslaus.md: absolute uv (the snap uv on

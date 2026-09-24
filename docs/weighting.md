@@ -188,9 +188,20 @@ on the row key and refuses to stamp two entries that disagree.
 | `bc5cdr/train.avro` | gold | 1.0 | 1.0 | BioCreative V CDR, human-annotated gold chemical and disease spans |
 | `bc5cdr/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
 | `bc5cdr/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
+| `medmentions/train.avro` | gold | 1.0 | 1.0 | MedMentions ST21pv, human-annotated gold UMLS-linked spans (CC0) |
+| `medmentions/dev.avro` | gold | 1.0 | 1.0 | same corpus, dev split |
+| `medmentions/test.avro` | gold | 1.0 | 1.0 | same corpus, test split |
 | `bigbio/chemprot` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioCreative VI ChemProt, expert-annotated chemical-protein relations |
 | `bigbio/chia` (five declared ingests, one row key) | gold | 1.0 | 1.0 | CHIA, expert-annotated clinical-trial eligibility criteria (Kury et al., 2020) |
 | `wcole3/biored-parquet` (train, validation, test; one row key) | gold | 1.0 | 1.0 | BioRED, expert-annotated biomedical relations |
+| `OpenMed/drugprot-parquet` (train, validation; one row key) | gold | 1.0 | 1.0 | DrugProt, expert-annotated chemical-gene relations (cc-by-4.0 mirror) |
+| `AGBonnet/augmented-clinical-notes` | silver | 0.7 | 0.8 | LLM-augmented clinical-note paragraphs, unlabeled text, fullmap-mined distant labels (MIT) |
+| `openlifescienceai/medmcqa` | silver | 0.7 | 0.8 | entrance-exam explanation prose, fullmap-mined distant labels (apache-2.0) |
+| `OpenMed/MedDialog` | silver | 0.7 | 0.8 | patient-doctor consultation replies, fullmap-mined distant labels (apache-2.0) |
+| `commanderstrife/jnlpba` | gold | 1.0 | 1.0 | JNLPBA biomedical abstract IOB gold spans (apache-2.0) |
+| `rjac/clinicaltrials.gov-summary_and_eligibility` | silver | 0.7 | 0.8 | trial eligibility criteria prose, fullmap-mined distant labels (MIT) |
+| `hackint0sh/Text-Clinical-Records` | silver | 0.7 | 0.8 | clinical-record prose, fullmap-mined distant labels (MIT) |
+| `chanzuckerberg/MedMentions` (ST21pv) | gold | 1.0 | 1.0 | PubMed abstract gold UMLS-linked entity spans, 21 semantic types (CC0) |
 | `agentlans/json-extraction` (six declared ingests, one row key) | silver | 0.7 | 0.8 | harvested structured-extraction tasks; the card does not state label provenance |
 | `bigbio/gad` (train, validation, test; one row key) | silver | 0.7 | 0.8 | GAD gene-disease association labels, derived from database curation rather than span annotation |
 | `synthetic-ner-ade-tweets/ade_tweets.avro` | gold | 1.0 | 1.0 | declared gold: human BRAT standoff ADE spans over the tweet text |

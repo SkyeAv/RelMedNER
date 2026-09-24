@@ -47,6 +47,14 @@ FANOUT: tuple[tuple[str, str], ...] = (
     ("docs/biored.md", "BioRED gold (Luo et al. 2022"),
     ("docs/chia.md", "`bigbio/chia` is the CHIA corpus (Kury et al., Sci Data 2020)"),
     ("docs/gad.md", "Dataset-format notes (GadBlurbScript)"),
+    ("docs/drugprot.md", "DrugProt gold (Krallinger et al. 2021, BioCreative VII; cc-b"),
+    ("docs/augmented-clinical-notes.md", "`AGBonnet/augmented-clinical-notes` (MIT): 30,000 clinical-n"),
+    ("docs/medmcqa.md", "`openlifescienceai/medmcqa` (apache-2.0): medical entrance-e"),
+    ("docs/meddialog.md", "`OpenMed/MedDialog` (apache-2.0): 251,731 patient-doctor con"),
+    ("docs/jnlpba.md", "`commanderstrife/jnlpba` (apache-2.0): the classic JNLPBA bi"),
+    ("docs/medmentions.md", "`chanzuckerberg/MedMentions` ST21pv (CC0): 4,392 PubMed docu"),
+    ("docs/clinicaltrials-gov.md", "`rjac/clinicaltrials.gov-summary_and_eligibility` (MIT; upst"),
+    ("docs/text-clinical-records.md", "`hackint0sh/Text-Clinical-Records` (MIT): 31,489 clinical-re"),
 )
 
 # the quick start is the only on-ramp for a new user and for CI reproduction

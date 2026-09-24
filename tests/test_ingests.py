@@ -213,6 +213,32 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "bc5cdr/test.avro",
         ),
     ),
+    # MedMentions ST21pv declares one local avro ingest per split file (path is the row_key);
+    # tuples frozen from live generate_tuples() output via probe --freeze.
+    "medmentions/train.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/train.avro",
+        ),
+    ),
+    "medmentions/dev.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/dev.avro",
+        ),
+    ),
+    "medmentions/test.avro": (
+        "local",
+        (
+            ("script", "MedMentionsScript", ("entities",)),
+            1.0,
+            "medmentions/test.avro",
+        ),
+    ),
     "knowledgator/sentence_rex": (
         "hf",
         (
@@ -406,6 +432,133 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             "test",
             None,
             ("passages", "entities", "relations"),
+        ),
+    ),
+    # OpenMed/drugprot-parquet declares one ingest PER SPLIT off one repo id with no subset (the
+    # config-less load streams the default config), so entry_key split-qualifies the two locks,
+    # the biored shape. Tuples frozen from live generate_tuples() output via probe --freeze.
+    "OpenMed/drugprot-parquet:train": (
+        "hf",
+        (
+            ("script", "DrugprotScript", ("entities", "relations")),
+            1.0,
+            "OpenMed/drugprot-parquet",
+            None,
+            "train",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    "OpenMed/drugprot-parquet:validation": (
+        "hf",
+        (
+            ("script", "DrugprotScript", ("entities", "relations")),
+            1.0,
+            "OpenMed/drugprot-parquet",
+            None,
+            "validation",
+            None,
+            ("text", "entities", "relations"),
+        ),
+    ),
+    # AGBonnet/augmented-clinical-notes declares one fullmap ingest off the default config; the
+    # tuple is frozen from live generate_tuples() output via probe --freeze.
+    "AGBonnet/augmented-clinical-notes": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "AGBonnet/augmented-clinical-notes",
+            None,
+            "train",
+            None,
+            ("note",),
+        ),
+    ),
+    # openlifescienceai/medmcqa declares one fullmap ingest over the explanation column; the
+    # tuple is frozen from live generate_tuples() output via probe --freeze.
+    "openlifescienceai/medmcqa": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "openlifescienceai/medmcqa",
+            None,
+            "train",
+            None,
+            ("exp",),
+        ),
+    ),
+    # OpenMed/MedDialog declares one fullmap ingest over the doctor_response column; the tuple is
+    # frozen from live generate_tuples() output via probe --freeze.
+    "OpenMed/MedDialog": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "OpenMed/MedDialog",
+            None,
+            "train",
+            None,
+            ("doctor_response",),
+        ),
+    ),
+    # commanderstrife/jnlpba declares one hf_parquet ingest per declared split off one repo id;
+    # the scalar file path is the entry-key discriminator, so each lock is keyed repo:file (the
+    # ehr_rel shape). The repo's test parquet is a byte-identical copy of validation and stays
+    # undeclared. Tuples frozen from live generate_tuples() output via probe --freeze.
+    "commanderstrife/jnlpba:jnlpba/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "JnlpbaScript", ("entities", "relations")),
+            1.0,
+            "commanderstrife/jnlpba",
+            "jnlpba/train/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
+    "commanderstrife/jnlpba:jnlpba/validation/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "JnlpbaScript", ("entities", "relations")),
+            1.0,
+            "commanderstrife/jnlpba",
+            "jnlpba/validation/0000.parquet",
+            "train",
+            None,
+            ("tokens", "ner_tags"),
+        ),
+    ),
+    # rjac/clinicaltrials.gov-summary_and_eligibility declares one fullmap ingest over the
+    # eligibility column; the tuple is frozen from live generate_tuples() output via probe --freeze.
+    "rjac/clinicaltrials.gov-summary_and_eligibility": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "rjac/clinicaltrials.gov-summary_and_eligibility",
+            None,
+            "train",
+            None,
+            ("eligibility",),
+        ),
+    ),
+    # hackint0sh/Text-Clinical-Records declares one fullmap ingest over the text column with the
+    # drop_empty filter (78 of 300 sampled rows empty); the tuple is frozen from live
+    # generate_tuples() output via probe --freeze (filters ride outside the lock tuple, the
+    # medmcqa precedent).
+    "hackint0sh/Text-Clinical-Records": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "hackint0sh/Text-Clinical-Records",
+            None,
+            "train",
+            None,
+            ("text",),
         ),
     ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the

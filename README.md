@@ -74,6 +74,14 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `nvidia/Nemotron-PII` (train + test) | `script` -> `NemotronPiiScript` | `text`, `spans` | entities | 200,000 |
 | `bigbio/chemprot` (`chemprot_full_source`, 3 splits) | `script` -> `ChemprotScript` | `text`, `entities`, `relations` | entities, relations | 2,432 |
 | `wcole3/biored-parquet` (train + validation + test) | `script` -> `BioredScript` | `passages`, `entities`, `relations` | entities, relations | 600 |
+| `OpenMed/drugprot-parquet` (train + validation) | `script` -> `DrugprotScript` | `text`, `entities`, `relations` | entities, relations | 4,250 |
+| `AGBonnet/augmented-clinical-notes` | `fullmap` (max_ngram=6, taxon=9606) | `note` | entities, relations | 30,000 |
+| `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
+| `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
+| `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
+| `rjac/clinicaltrials.gov-summary_and_eligibility` | `fullmap` (max_ngram=6, taxon=9606) | `eligibility` | entities, relations | 3,002 |
+| `hackint0sh/Text-Clinical-Records` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 31,489 |
+| `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -122,6 +130,14 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/biored.md](docs/biored.md) -- the BioRED gold corpus over the `wcole3/biored-parquet` mirror, its end-exclusive span convention, and the concept-pair relation collapse.
 - [docs/chia.md](docs/chia.md) -- the CHIA eligibility-criteria corpus, its five `hf_parquet` subsets, and the measured label-map and offset caveats.
 - [docs/gad.md](docs/gad.md) -- the GAD gene-disease sentence corpus, its single declared subset, and the 21 subset-splits deliberately left out.
+- [docs/drugprot.md](docs/drugprot.md) -- the DrugProt chemical-protein gold corpus over the `OpenMed/drugprot-parquet` mirror and its relation map.
+- [docs/augmented-clinical-notes.md](docs/augmented-clinical-notes.md) -- the `AGBonnet/augmented-clinical-notes` fullmap ingest over clinical-note paragraphs.
+- [docs/medmcqa.md](docs/medmcqa.md) -- the `openlifescienceai/medmcqa` fullmap ingest over exam-question explanations.
+- [docs/meddialog.md](docs/meddialog.md) -- the `OpenMed/MedDialog` fullmap ingest over doctor replies.
+- [docs/jnlpba.md](docs/jnlpba.md) -- the `commanderstrife/jnlpba` IOB script ingest over train and validation.
+- [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
+- [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
+- [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.
 ## Install
 
     uv sync
