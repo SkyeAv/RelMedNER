@@ -241,10 +241,11 @@ tier prior by more than the band allows).
 
 `weight` is a mixing ratio over rows that all exist; `sample_rate` decides how many rows
 exist. Declare it per dataset entry (`sample_rate: 0.25` keeps a quarter). Use it when a
-source is too big for its intended influence: the seven reddit fullmap ingests (7M rows)
-mined end to end dominate the run; `sample_rate: 0.25` cuts their mining, dispatch, and
-dedup cost by 4x AND their share of the corpus by 4x, which `weight` cannot do (weights
-duplicate records at export, they never remove mining work).
+source is too big for its intended influence: the seven reddit fullmap ingests (7M raw rows
+before the health-community `match_on` filter) mined end to end would dominate the run;
+`sample_rate: 0.25` (declared on all seven via the shared `&reddit-sample` anchor) cuts
+their mining, dispatch, and dedup cost by 4x AND their share of the corpus by 4x, which
+`weight` cannot do (weights duplicate records at export, they never remove mining work).
 
 - Deterministic per row CONTENT: keep iff `blake2b(source key + row repr)` lands under
   `rate * 2**64`. A resumed or re-parallelized pass re-makes the identical decision per

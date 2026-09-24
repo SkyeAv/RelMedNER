@@ -21,6 +21,10 @@ x-defaults:
   weight-general: &weight-general 0.4
   # general 0.3 band: non-medical task transfer (super_glue) and noisy social text (reddit)
   weight-transfer: &weight-transfer 0.3
+  # reddit sampling (docs/weighting.md 'Sampling ratios'): a real keep/drop that cuts the
+  # seven corpora's mining, dispatch, and dedup cost AND their corpus share, which weight
+  # cannot do. Deterministic per row content, so resumed passes re-make the same decisions.
+  reddit-sample: &reddit-sample 0.25
   hf-train: &hf-train {source: hf, split: train, weight: *weight-gold}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
   # general 0.5 band: human-rated concept pairs with no prose context (ehr_rel) and
@@ -219,6 +223,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_157
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     # anchor sits on the LIST node (match_on: list[MatchOn], src/relmedner/models.py:95) so
     # match_on: *biomed_communities in the sibling entries resolves to a valid list
     match_on: &biomed_communities
@@ -282,6 +287,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_30
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -295,6 +301,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_84
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -308,6 +315,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_171
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -321,6 +329,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_85
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -334,6 +343,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_217
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -347,6 +357,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_237
     split: train
     weight: *weight-transfer
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
