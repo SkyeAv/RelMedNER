@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Iterable, Iterator
 
 import apache_beam as beam
+import numpy as np
 from apache_beam.metrics.metric import Metrics, MetricsFilter
 from apache_beam.runners.runner import PipelineResult
 
@@ -58,6 +59,45 @@ _rng = random.Random(DEDUP_SEED)
 _PERM_A: tuple[int, ...] = tuple(_rng.randint(1, _MERSENNE_PRIME - 1) for _ in range(DEDUP_NUM_PERM))
 _PERM_B: tuple[int, ...] = tuple(_rng.randint(0, _MERSENNE_PRIME - 1) for _ in range(DEDUP_NUM_PERM))
 
+# ------------------------------------------------ vectorized exact mod-(2**61 - 1) math ----
+# numpy has no 128-bit integers, so (a * h) mod p is computed exactly from 32-bit limbs, every
+# intermediate proven to fit uint64 (bounds noted per line). Mersenne reduction: 2**61 == 1 mod p,
+# so v mod p folds as (v & p) + (v >> 61). The result is byte-identical to the python int
+# arithmetic it replaces -- a wraparound would silently change every near-dedup decision, which is
+# why tests/test_dedup.py compares against the pure-python reference on random and long texts.
+
+_P64 = np.uint64(_MERSENNE_PRIME)
+_LOW32 = np.uint64(0xFFFFFFFF)
+_S29, _S32, _S61 = np.uint64(29), np.uint64(32), np.uint64(61)
+_LOW29 = np.uint64((1 << 29) - 1)
+_A_ARRAY = np.array(_PERM_A, dtype=np.uint64)[:, None]
+_B_ARRAY = np.array(_PERM_B, dtype=np.uint64)[:, None]
+_A_HI, _A_LO = _A_ARRAY >> _S32, _A_ARRAY & _LOW32  # a < 2**61: a_hi < 2**29, a_lo < 2**32
+
+
+def _fold(values: np.ndarray) -> np.ndarray:
+    """one Mersenne fold: any v < 2**64 -> (v & p) + (v >> 61) < 2**61 + 8"""
+    return (values & _P64) + (values >> _S61)
+
+
+def _reduce(values: np.ndarray) -> np.ndarray:
+    """full reduction into [0, p) for values < 2**64: two folds then one conditional subtract"""
+    folded = _fold(_fold(values))
+    return np.where(folded >= _P64, folded - _P64, folded)
+
+
+def _affine_mod(hashes: np.ndarray) -> np.ndarray:
+    """(a_j * h + b_j) mod p for every permutation j (rows) and shingle hash h (columns)"""
+    x = _reduce(hashes)[None, :]  # h mod p, so x < 2**61: x_hi < 2**29, x_lo < 2**32
+    x_hi, x_lo = x >> _S32, x & _LOW32
+    high = (_A_HI * x_hi) << np.uint64(3)  # a_hi*x_hi < 2**58, times 2**64 == 8 (mod p): < 2**61
+    mid = _A_HI * x_lo + _A_LO * x_hi  # < 2 * 2**61 = 2**62
+    # mid * 2**32 = (mid >> 29) * 2**61 + (mid & low29) * 2**32 == (mid >> 29) + (mid & low29) << 32
+    mid_mod = (mid >> _S29) + ((mid & _LOW29) << _S32)  # < 2**33 + 2**61
+    low = _fold(_A_LO * x_lo)  # a_lo*x_lo < 2**64 -> < 2**61 + 8
+    total = high + mid_mod + low + _B_ARRAY  # each < 2**61 + 2**33: sum < 2**63
+    return _reduce(total)
+
 
 def shingles(text: str, n: int = 5) -> tuple[str, ...]:
     """lowercased word n-grams (5-grams by default) of text.split(), in document order; empty
@@ -79,11 +119,15 @@ def signature(text: str) -> tuple[int, ...]:
     text's shingle hashes h, one value per fixed-seed permutation (a_j, b_j) drawn once at
     module load. Deterministic across calls AND processes. A text with no shingles (fewer
     than n tokens) returns the all-sentinel signature; the near-dedup stage must gate such
-    texts on MIN_NEAR_TOKENS before banding, short texts give noisy MinHash estimates."""
-    shingle_hashes = [base_hash(shingle) for shingle in shingles(text)]
-    if not shingle_hashes:
+    texts on MIN_NEAR_TOKENS before banding, short texts give noisy MinHash estimates.
+
+    Vectorized over a (num_perm x distinct shingles) uint64 matrix with exact limb arithmetic
+    (see _affine_mod); repeated shingles are hashed once since they cannot change a minimum."""
+    distinct = set(shingles(text))  # min over a multiset equals min over its set
+    if not distinct:
         return (_EMPTY_TEXT_SENTINEL,) * DEDUP_NUM_PERM
-    return tuple(min((a * h + b) % _MERSENNE_PRIME for h in shingle_hashes) for a, b in zip(_PERM_A, _PERM_B, strict=True))
+    hashes = np.fromiter((base_hash(shingle) for shingle in distinct), dtype=np.uint64, count=len(distinct))
+    return tuple(int(value) for value in _affine_mod(hashes).min(axis=1))
 
 
 def band_keys(sig: tuple[int, ...]) -> tuple[tuple[int, str], ...]:

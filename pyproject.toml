@@ -13,6 +13,8 @@ dependencies = [
     "dataclasses-avroschema[pydantic]>=0.70.9",
     "datasets>=5.0.1",
     "fastavro>=1.12.2",
+    # dedup MinHash signatures: vectorized exact mod-(2**61 - 1) arithmetic (relmedner.dedup)
+    "numpy>=2.4.6",
     # runtime, not dev: fullmap mining loads gliner2's word splitter inside the sdkworkers. the base
     # install is light (pydantic/requests/tqdm); torch only arrives via its local/train extras
     "gliner2>=0.1.0",
