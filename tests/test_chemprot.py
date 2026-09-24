@@ -327,8 +327,10 @@ def test_a_malformed_entity_entry_drops_only_itself() -> None:
     Offsets[2] = [805]  # T3 CD80 loses its end offset
     Example: TrainingExample = SCRIPT.run(row_16357751(entities=entities_with(offsets=Offsets)))
 
+    # secondary morphological labels may list one surface under several label groups, so the
+    # per-span-drop assertion counts DISTINCT surfaces (docs/secondary-labels.md)
     Surfaces: list[str] = [mention for entity in Example.entities for mention in entity.mentions]
-    assert len(Surfaces) == 4
+    assert len(set(Surfaces)) == 4
     assert "CD80" not in Surfaces
     assert "CD86" in Surfaces
 
@@ -342,7 +344,7 @@ def test_bool_and_non_int_offsets_drop_the_entry() -> None:
     Example: TrainingExample = SCRIPT.run(row_16357751(entities=entities_with(offsets=Offsets)))
 
     Surfaces: list[str] = [mention for entity in Example.entities for mention in entity.mentions]
-    assert len(Surfaces) == 3
+    assert len(set(Surfaces)) == 3
     assert "CD80" not in Surfaces and "CD86" not in Surfaces
     assert "methotrexate" in Surfaces
 
@@ -355,7 +357,7 @@ def test_a_non_string_entity_id_or_type_drops_the_entry() -> None:
     Example: TrainingExample = SCRIPT.run(row_16357751(entities=entities_with(type=Types)))
 
     Surfaces: list[str] = [mention for entity in Example.entities for mention in entity.mentions]
-    assert len(Surfaces) == 4
+    assert len(set(Surfaces)) == 4
     assert "tumor necrosis factor" not in Surfaces
     assert "CD28 receptor" in Surfaces
 
@@ -404,7 +406,7 @@ def test_out_of_bounds_and_reversed_offsets_drop_per_span() -> None:
     Example: TrainingExample = SCRIPT.run(row_16357751(entities=entities_with(offsets=Offsets)))
 
     Surfaces: list[str] = [mention for entity in Example.entities for mention in entity.mentions]
-    assert len(Surfaces) == 3
+    assert len(set(Surfaces)) == 3
     assert "CD80" not in Surfaces and "CD86" not in Surfaces
     assert "methotrexate" in Surfaces
 
@@ -647,6 +649,11 @@ def test_the_verbatim_cpr4_row_yields_29_entities_and_17_decreases_relations() -
             "Her2",
         ],
         "GeneFamily": ["tyrosine kinase", "kinase"],
+        # measured secondary morphological labels ride every resolved mention
+        # (docs/secondary-labels.md): -nib kinase inhibitors, -mab monoclonals, -receptor proteins
+        "KinaseInhibitorDrug": ["gefitinib", "erlotinib"],
+        "MonoclonalAntibodyDrug": ["cetuximab"],
+        "ReceptorProtein": ["Epidermal growth factor receptor", "epidermal growth factor receptor"],
     }
     assert sum(len(entity.mentions) for entity in Example.entities) == 24
     assert len(Example.relations) == 17

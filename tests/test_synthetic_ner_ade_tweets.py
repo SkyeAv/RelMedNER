@@ -186,7 +186,10 @@ def test_realistic_rows_yield_entities_and_rejoin_tokens(monkeypatch: pytest.Mon
         assert Example.entities != []
         assert Example.text == ScriptUtils.join_tokens(FullmapMiner.tokenize(Row["text"]))
     _, RowA = Script.dispatch("SyntheticNerAdeTweetsScript", (("entities",), (Rows[0],)))
-    assert {entity.label: entity.mentions for entity in RowA.entities} == {"DiseaseOrPhenotypicFeature": ["nasopharyngitis"]}
+    assert {entity.label: entity.mentions for entity in RowA.entities} == {
+        "DiseaseOrPhenotypicFeature": ["nasopharyngitis"],
+        "InflammatoryDisease": ["nasopharyngitis"],  # measured -ngitis secondary suffix rule
+    }
     _, RowB = Script.dispatch("SyntheticNerAdeTweetsScript", (("entities",), (Rows[1],)))
     assert {entity.label: entity.mentions for entity in RowB.entities} == {"DiseaseOrPhenotypicFeature": ["heart attack"]}
 
@@ -239,7 +242,9 @@ def test_dispatch_routes_through_the_registry_and_keeps_declared_outputs(monkeyp
 
     assert Outputs == ("entities",)
     assert Example.populated() == frozenset({"entities"})
-    assert mentions_of(Example) == ["nasopharyngitis"]
+    # nasopharyngitis rides under two labels (DiseaseOrPhenotypicFeature + InflammatoryDisease),
+    # so the flattened mention slots list it twice (docs/secondary-labels.md)
+    assert mentions_of(Example) == ["nasopharyngitis", "nasopharyngitis"]
 
 
 @pytest.mark.skipif(not ScriptUtils.fullmap_available(), reason="fullmap database is not mounted")

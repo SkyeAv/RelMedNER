@@ -712,7 +712,9 @@ def test_out_of_bounds_and_reversed_offsets_drop_per_span() -> None:
     reversed_span = dict(ROW_10491763["entities"][1])
     reversed_span["offsets"] = [[90, 74]]
     example = run((ROW_10491763["passages"], [oob, reversed_span, ROW_10491763["entities"][2]], []))
-    assert sum(len(entity.mentions) for entity in example.entities) == 1
+    # the surviving 'insulin' span may ride under several label groups (secondary morphological
+    # labels, docs/secondary-labels.md), so the per-span-drop contract counts DISTINCT surfaces
+    assert sorted({mention for entity in example.entities for mention in entity.mentions}) == ["insulin"]
     assert any("insulin" in entity.mentions for entity in example.entities)
 
 
