@@ -6,7 +6,8 @@ negatives) and `evidence` (`asserted` for gold-span scripts, `distant` for fullm
 spans, `sampled_negative` for grid-sampled non-observations from the post-training
 corpus). The gliner2 JSONL projection (`to_output()`) emits mention fields only, because
 gliner2 validates every relation value as a mention in the text -- sampled negatives
-therefore train under `not_<predicate>` relation names. Predicate slot definitions DO
+therefore train under `not_<predicate>` relation names. Predicate descriptions (curated overlay in
+`src/relmedner/data/predicate_descriptions.yaml`, biolink slot definition as fallback) DO
 ride the projection as `relation_descriptions` (the processor consumes them as label
 prompts), mirroring `entity_descriptions`.
 
