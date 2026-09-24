@@ -101,6 +101,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `agentlans/json-extraction` (`Jiraya-html_to_json_information_extraction_dataset`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures, entities | 3,035 |
 | `agentlans/json-extraction` (`HenriqueGodoy-extract-0`) | `script` -> `JsonExtractionScript` | `text`, `json`, `source` | structures | 2,606 |
 | `Pennlaine/Medical-Entity-JSON-Extraction` (test) | `script` -> `MedicalEntityJsonScript` | `text` | entities | 50 |
+| `dakp-ner-export/examples.avro` (DAKP `dakp.ner.export.v1`) | `script` -> `DakpNerExportScript` | whole avro record | entities, classifications, relations | 187,267 |
 
 Ingest resolution chains and gates (per-task relabeling, mining, distant supervision): [docs/ingests.md](docs/ingests.md).
 ## Documentation
@@ -138,6 +139,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
 - [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
 - [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.
+- [docs/dakp-ner-export.md](docs/dakp-ner-export.md) -- the DAKP GLiNER-mined DailyMed / FAERS / EMA export and the case-only relation drift its script realigns.
 ## Install
 
     uv sync

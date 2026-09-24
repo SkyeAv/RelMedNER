@@ -29,3 +29,6 @@ src/relmedner/data/bc5cdr/*.avro
 # MedMentions ST21pv containers, same out-of-band policy: built on wenceslaus from the PubTator
 # corpus (see docs/medmentions.md), so git carries the docs, not the blobs.
 src/relmedner/data/medmentions/*.avro
+# DAKP NER export container, same out-of-band policy: DAKP's export_ner stage writes it on
+# wenceslaus (dakp.ner.export.v1 bundle; see docs/dakp-ner-export.md), so git carries the docs.
+src/relmedner/data/dakp-ner-export/*.avro

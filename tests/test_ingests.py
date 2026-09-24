@@ -941,6 +941,10 @@ EXPECTED: dict[str, tuple[object, ...]] = {
     "fewrel/val_semeval.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_semeval.avro")),
     "fewrel/val_pubmed.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/val_pubmed.avro")),
     "fewrel/pubmed_unsupervised.avro": ("local", (("script", "FewRelScript", ("entities", "relations")), 1.0, "fewrel/pubmed_unsupervised.avro")),
+    "dakp-ner-export/examples.avro": (
+        "local",
+        (("script", "DakpNerExportScript", ("entities", "classifications", "relations")), 1.0, "dakp-ner-export/examples.avro"),
+    ),
 }
 
 
