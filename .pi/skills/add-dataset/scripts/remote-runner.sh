@@ -71,7 +71,10 @@ fi
 grep -n 'FULLMAP_DIR' src/relmedner/constants.py >> "$LOG" 2>&1
 
 run_suite() {  # run_suite [pytest args...]
-    "$UV_BIN" run pytest -q --no-header "$@" >> "$LOG" 2>&1
+    # pin the worker fan-out explicitly: pyproject addopts defaults to 4 for laptop RAM
+    # safety, and a gate host is not a laptop; XDIST overrides (auto is the right answer
+    # on wenceslaus). A later -n flag overrides the addopts default.
+    "$UV_BIN" run pytest -q --no-header -n "${XDIST:-auto}" "$@" >> "$LOG" 2>&1
     local code=$?
     receipt PYTEST_EXIT "$code"
     # the pytest tail line ("289 passed in 131.02s") is the pass-count regression signal
@@ -117,7 +120,7 @@ case "$MODE" in
     cov)
         "$UV_BIN" sync >> "$LOG" 2>&1
         receipt SYNC_EXIT "$?"
-        "$UV_BIN" run pytest -q --no-header --cov=relmedner --cov-report=term-missing --cov-fail-under=90 "$@" >> "$LOG" 2>&1
+        "$UV_BIN" run pytest -q --no-header -n "${XDIST:-auto}" --cov=relmedner --cov-report=term-missing --cov-fail-under=90 "$@" >> "$LOG" 2>&1
         receipt COV_EXIT "$?"
         receipt COVERAGE "$(grep -E '^TOTAL' "$LOG" | tail -1 | tr -s ' ' | tr -d '\r')"
         run_lint
