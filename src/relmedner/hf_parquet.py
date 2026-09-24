@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, ZeroYieldError, select_declared_columns
+from relmedner.streams import DataStream, StreamedRow, StreamStats, select_declared_columns, shard_of
 
 
 class HuggingFaceParquetDataStream(DataStream):
@@ -30,6 +30,8 @@ class HuggingFaceParquetDataStream(DataStream):
     """
 
     SOURCE: ClassVar[str] = "hf_parquet"
+
+    SHARDED_READS: ClassVar[bool] = True
 
     def __init__(
         self: Self,
@@ -65,6 +67,10 @@ class HuggingFaceParquetDataStream(DataStream):
         # no streaming kwarg, on purpose: the per-config parquet file is already typed arrow,
         # so the plain load returns the declared dtypes with no promotion step
         datastream = load_dataset("parquet", data_files=f"hf://datasets/{self.dataset}@refs/convert/parquet/{self.file}", split=self.split)
+        # shard BEFORE any operator: a built Dataset shards by row index (views over the same
+        # arrow table), so each reader walks its own contiguous slice
+        if self.read_shards > 1:
+            datastream = shard_of(datastream, self.read_shards, self.shard_index)
         datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
@@ -74,18 +80,24 @@ class HuggingFaceParquetDataStream(DataStream):
                     yield (self.name, (self.task, tuple(row.get(column) for column in self.columns_out)))
             return
 
-        rows_in = 0
-        rows_out = 0
+        # the counted path shares the US-009 shape (per-pass stats, match_on drops attributed
+        # before the candidate count) and the shared zero-yield guard, which degrades to a
+        # per-shard WARNING on a sharded read (streams.zero_yield_guard)
+        self.stats = StreamStats()
+        candidates = 0
         for row in datastream:
+            self.stats.rows_in += 1
             if not self.apply_match(row):
+                self.stats.drop("match_on")
                 continue
-            rows_in += 1
+            candidates += 1
             values: tuple[Any, ...] = tuple(row.get(column) for column in self.columns_out)
-            if first_drop_reason(values, self.filters) is not None:
+            reason: str | None = first_drop_reason(values, self.filters)
+            if reason is not None:
+                self.stats.drop(reason)
                 continue
-            rows_out += 1
+            self.stats.rows_out += 1
             yield (self.name, (self.task, values))
         # fail-loud zero-yield guard: a filter that drops every row of a non-empty source is the
-        # silent-empty-training-set bug; a genuinely empty source (rows_in == 0) is not an error
-        if rows_in > 0 and rows_out == 0:
-            raise ZeroYieldError(f"filters {self.filters} dropped 100% of {rows_in} rows from {self.name}")
+        # silent-empty-training-set bug; a genuinely empty source (0 candidates) is not an error
+        self.zero_yield_guard(candidates)

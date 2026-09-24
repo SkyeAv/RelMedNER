@@ -10,6 +10,9 @@ import pytest
 from fastavro import block_reader, parse_schema, reader, writer
 
 from relmedner.enums import DedupMode
+from relmedner.hf_json import HuggingFaceJsonDataStream
+from relmedner.hf_parquet import HuggingFaceParquetDataStream
+from relmedner.huggingface import HuggingFaceDataStream
 from relmedner.local import LocalAvroDataStream
 from relmedner.models import LocalAvroDataset, RowFilters, RunConfig, ScriptTask, YamlIngests
 from relmedner.pipeline import BeamPipeline
@@ -145,11 +148,11 @@ def test_sources_that_cannot_shard_reject_read_shards(tmp_path: Path) -> None:
     """an unshardable source declared with read_shards > 1 would either duplicate every row
     (every shard streaming the whole source) or silently stay serial, so validation raises
     at build time instead"""
-    Payload: tuple[Any, ...] = (TASK, 1.0, "hub/dataset", None, None, None, ("text",))
+    Payload: tuple[Any, ...] = (TASK, 1.0, str(tmp_path / "a.tsv"), ("text",))
     with pytest.raises(ValueError, match="does not shard"):
-        build_stream("hf", Payload, read_shards=2)
+        build_stream("local_delimited", Payload, read_shards=2)
     # the default stays constructible everywhere
-    build_stream("hf", Payload)
+    build_stream("local_delimited", Payload)
 
 
 # --------------------------------------------------------- stats and the guard --
@@ -215,3 +218,85 @@ def test_directrunner_sharded_matches_unsharded(tmp_path: Path, monkeypatch: pyt
         return Counter(json.dumps(record, sort_keys=True) for record in records)
 
     assert digest(sharded) == digest(plain)
+
+
+# ------------------------------------------------------------------ hub sources --
+
+
+def streaming_fixture(tmp_path: Path, shards: int, rows_per_shard: int) -> Any:
+    """a real streaming IterableDataset over `shards` local parquet files: the same file-shard
+    structure a hub IterableDataset reports through num_shards, loaded through the same
+    packaged parquet builder the production streaming path uses"""
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    files: list[str] = []
+    for shard in range(shards):
+        table = pa.table({"text": [f"row {shard * rows_per_shard + i}" for i in range(rows_per_shard)]})
+        path = tmp_path / f"shard-{shard}.parquet"
+        pq.write_table(table, path)
+        files.append(str(path))
+    import datasets
+
+    return datasets.load_dataset("parquet", data_files=files, split="train", streaming=True)
+
+
+def hf_stream(source: str, monkeypatch: pytest.MonkeyPatch, fixture: Any, read_shards: int, shard_index: int, **kwargs: Any) -> Any:
+    module = {"hf": "relmedner.huggingface", "hf_json": "relmedner.hf_json", "hf_parquet": "relmedner.hf_parquet"}[source]
+    monkeypatch.setattr(f"{module}.load_dataset", lambda *args, **kwargs: fixture)
+    payload: tuple[Any, ...] = (TASK, 1.0, "org/dataset", None, None, None, ("text",))
+    stream_class: Any = {"hf": HuggingFaceDataStream, "hf_json": HuggingFaceJsonDataStream, "hf_parquet": HuggingFaceParquetDataStream}[source]
+    return stream_class(*payload, read_shards=read_shards, shard_index=shard_index, **kwargs)
+
+
+@pytest.mark.parametrize("source", ["hf", "hf_json", "hf_parquet"])
+def test_hub_shard_union_equals_the_unsharded_row_list(source: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """the hub split is transparent too: streaming datasets split at file-shard granularity
+    (no row read twice), built datasets split by row index, and either way the union of all
+    shards' rows equals the unsharded row list"""
+    if source == "hf":
+        fixture: Any = streaming_fixture(tmp_path, shards=4, rows_per_shard=6)
+    else:
+        from datasets import Dataset
+
+        fixture = Dataset.from_dict({"text": [f"row {i}" for i in range(24)]})
+    unsharded: list[Any] = [repr(row) for row in hf_stream(source, monkeypatch, fixture, 1, 0).rows()]
+    assert len(unsharded) == 24
+
+    union: Counter[str] = Counter()
+    for shard_index in range(2):
+        union.update(repr(row) for row in hf_stream(source, monkeypatch, fixture, 2, shard_index).rows())
+    assert union == Counter(unsharded)
+
+
+def test_hub_overshard_clamps_to_the_dataset_shard_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """a declared read_shards above what the dataset can split must neither raise nor hand
+    whole shards to index 0 (the hub layer's overshard failure modes): every instance clamps
+    to the same effective count, extra indices yield nothing, and the union still covers
+    every row exactly once"""
+    fixture: Any = streaming_fixture(tmp_path, shards=4, rows_per_shard=6)
+    union: Counter[str] = Counter()
+    for shard_index in range(8):
+        rows: list[Any] = list(hf_stream("hf", monkeypatch, fixture, 8, shard_index).rows())
+        if shard_index < 4:
+            assert rows, "an effective shard must carry its file shards' rows"
+        else:
+            assert rows == [], "an index beyond the clamp yields nothing without error"
+        union.update(repr(row) for row in rows)
+    assert len(union) == 24
+
+
+def test_hub_sharded_zero_yield_warns_instead_of_raising(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
+    """the hf zero-yield guard degrades to a per-shard WARNING on a sharded read and keeps
+    its raise on the ordinary single-pass read"""
+    from datasets import Dataset
+
+    fixture = Dataset.from_dict({"text": [f"row {i}" for i in range(10)]})
+    sharded = hf_stream("hf_json", monkeypatch, fixture, 2, 1, filters=RowFilters(max_text_len=1))
+    with caplog.at_level(logging.WARNING, logger="relmedner.quality"):
+        assert list(sharded.rows()) == []
+    assert any("candidate rows, 0 passed" in record.getMessage() for record in caplog.records)
+
+    whole = hf_stream("hf_json", monkeypatch, fixture, 1, 0, filters=RowFilters(max_text_len=1))
+    with pytest.raises(ZeroYieldError):
+        list(whole.rows())

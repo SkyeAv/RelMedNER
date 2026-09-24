@@ -65,6 +65,25 @@ class StreamStats:
         return line
 
 
+def shard_of(datastream: Any, read_shards: int, shard_index: int) -> Any:
+    """select one reader's shard of a loaded hub dataset, clamped to what the dataset can
+    actually split. The clamp is the load-bearing part: oversharding is broken at the hub
+    layer (a streaming IterableDataset with fewer file shards than requested raises or, for
+    generator-backed sources, silently hands whole shards to index 0), so every shard
+    instance derives the SAME effective count from the dataset itself -- min(declared,
+    available) -- and an index beyond it yields nothing. Streaming IterableDatasets shard at
+    file granularity (no duplicated bytes); built map-style Datasets shard by row index
+    (views over the same arrow table). Must run BEFORE any operator touches the dataset, so
+    the split lands at the source"""
+    total: int | None = getattr(datastream, "num_shards", None)
+    if total is None:
+        total = len(datastream) if hasattr(datastream, "__len__") else 1
+    effective: int = min(read_shards, max(total, 1))
+    if shard_index >= effective:
+        return iter(())
+    return datastream.shard(num_shards=effective, index=shard_index)
+
+
 def rebuild_task(task: tuple[Any, ...]) -> Any:
     """rebuild the pydantic task model from its frozen field-order tuple (to_tuple round trip)"""
     from relmedner.models import FullmapTask, ScriptTask
