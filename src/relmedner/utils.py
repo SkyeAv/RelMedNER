@@ -905,7 +905,13 @@ class ScriptUtils:
                 mentions = mentions_by_label.setdefault(label, [])
                 if item.mention not in mentions:
                     mentions.append(item.mention)
-                if item.curie is not None and label not in evidence_by_label:
+                if item.curie is not None and label == item.category and label not in evidence_by_label:
+                    # evidence rides ONLY the resolved category: the fullmap CURIE evidences the
+                    # ontology class this surface resolved to, not a morphological secondary label.
+                    # A secondary label has no biolink definition either, so inheriting the evidence
+                    # would ship the bare "[fullmap: CURIE | name]" string as its entire description
+                    # -- per-row provenance inside a label prompt, which the end-to-end contract in
+                    # tests/test_outputs.py forbids for every non-biolink label.
                     evidence_by_label[label] = (item.curie, item.preferred_name)
         return [
             Entity(

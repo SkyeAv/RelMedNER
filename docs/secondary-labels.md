@@ -26,8 +26,11 @@ caenorhabditis for -itis, encephalitides for -tide). Tests pin all of it
 (tests/test_secondary_labels.py).
 
 Secondary labels are never biolink classes (a test enforces it), so they never merge with primary
-labels or take biolink descriptions; when the mention carries fullmap evidence the description is
-the evidence string alone.
+labels or take biolink descriptions, and they carry NO description at all: the fullmap CURIE
+evidences the ontology class the surface resolved to, not the morphological one, so the evidence
+string stays on the primary label. Shipping it on the secondary label would put per-row
+provenance inside a gliner2 label prompt, which the end-to-end contract in `tests/test_outputs.py`
+forbids for every non-biolink label.
 
 ## Multi-class fan-out (one entity, two vocabularies)
 

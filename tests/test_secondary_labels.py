@@ -94,9 +94,14 @@ def test_group_entities_expands_with_the_secondary_label() -> None:
     by_label = {entity.label: entity for entity in entities}
     assert set(by_label) == {"Protein", "MonoclonalAntibodyDrug"}
     assert by_label["MonoclonalAntibodyDrug"].mentions == ["pembrolizumab"]
-    # a non-biolink label has no biolink definition by design, so the description is the
-    # evidence string alone (the primary label carries definition + evidence)
-    assert by_label["MonoclonalAntibodyDrug"].description == "[fullmap: CHEBI:1 | Pembrolizumab]"
+    # a secondary label carries NO description: the fullmap CURIE evidences the resolved biolink
+    # category, not the morphological class, and a non-biolink label has no definition of its own.
+    # Letting it inherit the evidence would ship the bare "[fullmap: ...]" string as the whole
+    # description, i.e. per-row provenance inside a label prompt, which tests/test_outputs.py
+    # forbids for every non-biolink label. The primary label keeps definition + evidence.
+    assert by_label["MonoclonalAntibodyDrug"].description is None
+    assert by_label["Protein"].description is not None
+    assert "[fullmap: CHEBI:1 | Pembrolizumab]" in by_label["Protein"].description
 
 
 def test_group_entities_secondary_without_curie_ships_undescribed() -> None:
