@@ -31,6 +31,21 @@ occurs-in-text rule. Records the KP never normalized fall back to their AACT
 deliberately absent from `LABEL_MAP`, so those rows ship text with no entity and the
 declared-outputs filter drops them.
 
+Multi-class mentions (one surface under two labels) are supported end to end -- the script
+fans out per match row, `group_entities` groups by category, and gliner2's per-query boundary
+targets train overlapping spans natively; the fan-out contract is pinned by
+`test_the_same_surface_under_two_categories_ships_multiclass`. The snapshot never triggers it:
+measured over all 1,020,749 records (20260920 build, wenceslaus), every `matched_text` carries
+exactly one KP category -- the 177,979 multi-hit interventions are distinct surfaces, so one
+surface resolves to one category upstream in the KP NameResolver, not in this build
+(`build_ctkp2.sh` keeps all hits; `sort -u` removes only exact duplicate rows). Ancestor
+propagation (span also ships under its biolink parent) was measured and rejected: all 451,234
+mentions would gain a parent label and the propagated labels are structural middle classes
+(MolecularEntity 221,842, ChemicalEntityOrProteinOrPolypeptide 87,772, ActivityAndBehavior
+65,450) that fire ~100% correlated with their child -- bloat without disambiguation signal.
+Genuinely multi-class spans (a peptide drug under two sibling vocabularies) therefore need a
+second curated mapping source joined per surface, not a policy over this snapshot.
+
 Measured over the first 20,000 records: 83% ship with at least one entity, across 12
 biolink classes (SmallMolecule, Procedure, Drug, Device, BehavioralFeature,
 ChemicalEntity, DiagnosticAid, Protein, BiologicalEntity, MolecularMixture, Food,

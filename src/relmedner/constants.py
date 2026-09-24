@@ -259,3 +259,99 @@ PUBMED_ESEARCH_URL: str = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch
 # in NCBI's window accounting); with NCBI_API_KEY set the client uses a 0.11s delay for 9 rps.
 PUBMED_THROTTLE_SECONDS: float = 0.29
 PUBMED_THROTTLE_SECONDS_KEYED: float = 0.11
+
+# ----------------------------------------------------------------------------- secondary labels --
+# Morphological rules that attach a SECONDARY (never biolink) label to a mention whose surface
+# carries the cue, teaching the model pharmacological / morphological classes the biolink
+# categories cannot express. Every rule was measured against MedMentions ST21pv gold
+# (203,282 spans): kept rules fire on >= 0.90 dominant-type concentration, dropped ones
+# (-ase generic: 'disease'/'database'/'Embase' all fire it, 0.705; -algia 0.714; -cept 0.700)
+# are absent by design. All checks are END-ANCHORED suffix/tail-word membership tests -- no
+# regex -- because a 37-branch regex loop measures ~46us/span vs ~1.8us/span for endswith
+# (measured, wenceslaus 2026-09-25). See docs/secondary-labels.md.
+
+# last token (lowercased) endswith key -> secondary label; plural variants are explicit keys.
+# measured concentration in parentheses (MedMentions gold dominant type).
+SECONDARY_SUFFIX_LABELS: dict[str, str] = {
+    "mab": "MonoclonalAntibodyDrug",
+    "mabs": "MonoclonalAntibodyDrug",  # 0.989
+    "nib": "KinaseInhibitorDrug",
+    "nibs": "KinaseInhibitorDrug",  # 1.000
+    "pril": "AceInhibitorDrug",
+    "prils": "AceInhibitorDrug",  # 1.000
+    "sartan": "AngiotensinAntagonist",
+    "sartans": "AngiotensinAntagonist",  # 1.000
+    "olol": "BetaBlockerDrug",
+    "olols": "BetaBlockerDrug",  # 1.000
+    "statin": "StatinDrug",
+    "statins": "StatinDrug",  # 1.000
+    "coxib": "Cox2InhibitorDrug",
+    "coxibs": "Cox2InhibitorDrug",  # 1.000
+    "gliptin": "GliptinDrug",
+    "gliptins": "GliptinDrug",  # 1.000
+    "caine": "LocalAnestheticDrug",
+    "caines": "LocalAnestheticDrug",  # 0.935
+    "dipine": "CalciumChannelBlocker",
+    "dipines": "CalciumChannelBlocker",  # 1.000
+    "prazole": "ProtonPumpInhibitor",
+    "prazoles": "ProtonPumpInhibitor",  # 1.000
+    "tidine": "H2AntagonistDrug",
+    "tidines": "H2AntagonistDrug",  # 1.000
+    "floxacin": "QuinoloneAntibiotic",
+    "floxacins": "QuinoloneAntibiotic",  # 1.000
+    "mycin": "AntibioticMycin",
+    "mycins": "AntibioticMycin",  # 0.982
+    "cillin": "PenicillinAntibiotic",
+    "cillins": "PenicillinAntibiotic",  # 1.000
+    "cycline": "TetracyclineAntibiotic",
+    "cyclines": "TetracyclineAntibiotic",  # 1.000
+    "tide": "PeptideDrug",
+    "tides": "PeptideDrug",  # 0.975
+    "itis": "InflammatoryDisease",  # 0.991
+    "oma": "NeoplasticProcess",
+    "omas": "NeoplasticProcess",  # 0.960
+    "emia": "BloodCellDisease",
+    "emias": "BloodCellDisease",  # 0.924
+    "pathy": "OrganDisease",
+    "pathys": "OrganDisease",  # 0.958
+    "ectomy": "SurgicalRemoval",
+    "ectomys": "SurgicalRemoval",  # 0.992
+    "oscopy": "Endoscopy",
+    "oscopies": "Endoscopy",  # 0.953
+    "plasty": "SurgicalRepair",
+    "plasties": "SurgicalRepair",  # 0.988
+    "therapy": "TherapyProcedure",  # 0.971 ('therapies' is a different word, kept off)
+    "cyte": "CellType",
+    "cytes": "CellType",  # 0.985
+}
+
+# exact last-token / last-two-word phrases -> secondary label; no length gate, no suffix scan.
+# 'insulin' etc. are LAST-word checks so 'insulin resistance' (a disease span) never fires.
+SECONDARY_TAIL_LABELS: dict[str, str] = {
+    "insulin": "InsulinDrug",
+    "insulins": "InsulinDrug",  # 0.966
+    "vaccine": "Vaccine",
+    "vaccines": "Vaccine",  # 0.979
+    "interferon": "InterferonDrug",
+    "interferons": "InterferonDrug",  # 1.000
+    "biopsy": "BiopsyAssay",
+    "biopsies": "BiopsyAssay",  # 0.981
+    "receptor": "ReceptorProtein",
+    "receptors": "ReceptorProtein",  # 0.895
+    "gene": "GeneMention",
+    "genes": "GeneMention",  # 0.937
+    "growth factor": "GrowthFactorProtein",
+    "growth factors": "GrowthFactorProtein",  # 0.917
+}
+
+# tokens that must never fire a suffix rule: measured off-type producers (MedMentions FP samples)
+SECONDARY_SUFFIX_STOP: frozenset[str] = frozenset(
+    "disease diseases ease increase decrease release lease crease tease case base phase "
+    "chase erase vase purchase rease embase database databases myostatin myostatins trauma "
+    "comma dogma drama aroma enigma karma llama magma glycemia glycaemia academia empathy "
+    "telepathy nucleotide nucleotides oligonucleotide encephalitides".split()
+)
+
+# minimum last-token length for a suffix rule (the measured rules carried two or more characters
+# before the stem, so a 6-char floor keeps 'cocaine'-class hits while 'asa'-style fragments die)
+SECONDARY_MIN_TOKEN: int = 6
