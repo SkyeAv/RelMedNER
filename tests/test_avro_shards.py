@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastavro import reader
 
 from relmedner.avro_shards import ShardWriter, merge_shards, shards_for
@@ -62,3 +63,44 @@ def test_merging_without_shards_leaves_an_existing_target_untouched(tmp_path: Pa
 
     assert merge_shards(Target, SCHEMA) == Target
     assert Target.read_bytes() == b"already merged"
+
+
+def test_merge_copies_blocks_and_keeps_every_record_across_many_blocks(tmp_path: Path) -> None:
+    """merge_shards splices encoded blocks instead of re-encoding records; a shard large enough to
+    span several avro blocks must still come back record-for-record, so a block-boundary bug
+    (dropped tail block, duplicated pending block) cannot hide behind a tiny fixture"""
+    Target: Path = tmp_path / "relmedner.avro"
+    Writer: ShardWriter = ShardWriter(str(Target), SCHEMA)
+    write_bundle(Writer, [{"a": index} for index in range(50_000)])
+    write_bundle(Writer, [{"a": -1}])
+
+    merge_shards(Target, SCHEMA)
+    with Target.open("rb") as fo:
+        assert sorted(row["a"] for row in reader(fo)) == sorted([*range(50_000), -1])
+
+
+def test_merge_refuses_a_shard_written_under_another_schema(tmp_path: Path) -> None:
+    """block copying is only sound when every shard header matches the merge schema and codec;
+    a foreign shard must fail loudly rather than splice bytes the merged header mis-describes"""
+    from fastavro import writer as avro_writer
+
+    Target: Path = tmp_path / "relmedner.avro"
+    other: dict = {"name": "r", "type": "record", "fields": [{"name": "b", "type": "string"}]}
+    with (tmp_path / "relmedner.avro.part-foreign").open("wb") as fo:
+        avro_writer(fo, other, [{"b": "x"}])
+
+    with pytest.raises(ValueError, match="does not match the merge schema"):
+        merge_shards(Target, SCHEMA)
+
+
+def test_merge_refuses_a_shard_written_with_another_codec(tmp_path: Path) -> None:
+    """same schema, different codec: deflate blocks copied under a null-codec header would be
+    unreadable, so the codec is part of the header check"""
+    from fastavro import writer as avro_writer
+
+    Target: Path = tmp_path / "relmedner.avro"
+    with (tmp_path / "relmedner.avro.part-deflate").open("wb") as fo:
+        avro_writer(fo, SCHEMA, [{"a": 1}], codec="deflate")
+
+    with pytest.raises(ValueError, match="does not match the merge schema"):
+        merge_shards(Target, SCHEMA)
