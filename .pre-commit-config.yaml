@@ -1,19 +1,21 @@
 repos:
   - repo: local
     hooks:
-      # commit stage stays sub-second: ruff check + format check only. Running the whole suite on
-      # every commit cost ~80s and trained people to pass --no-verify, which gates nothing.
+      # commit stage stays sub-second AND permissive: ruff check on the staged files only.
+      # No format check, no suite: running the whole suite per commit cost ~80s and trained
+      # people to pass --no-verify, which gates nothing.
       - id: lint
-        name: make lint
-        entry: make lint
+        name: ruff check (staged files)
+        entry: uv run ruff check
         language: system
-        pass_filenames: false
+        types: [file, python]
         stages: [pre-commit]
-      # the suite moves to the push boundary, where it runs once per pushed batch instead of once
-      # per commit and still blocks anything broken from reaching origin
-      - id: test
-        name: make test
-        entry: make test
+      # the push boundary runs static checks + the fast suite once per pushed batch (no
+      # coverage measurement). The measured 90% coverage gate is the wenceslaus full gate's
+      # job (make test / remote-gate.sh cov), never the laptop's.
+      - id: prepush
+        name: make prepush
+        entry: make prepush
         language: system
         pass_filenames: false
         stages: [pre-push]

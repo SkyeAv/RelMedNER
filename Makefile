@@ -1,4 +1,4 @@
-.PHONY: test test-fast lint fmt deploy teardown
+.PHONY: test test-fast lint fmt deploy teardown prepush
 
 # the full gate: every test, measured, with a floor so new code cannot land untested.
 # 90 leaves headroom under the current 94% while still failing on a regression.
@@ -18,6 +18,11 @@ test-fast:
 lint:
 	uv run ruff check ./src ./tests
 	uv run ruff format --check ./src ./tests
+
+# push boundary: static checks + the fast suite, no coverage measurement. The measured
+# 90% coverage gate belongs to the wenceslaus full gate (make test / remote-gate.sh cov);
+# the laptop never pays for it.
+prepush: lint test-fast
 
 fmt:
 	uv run ruff check --fix ./src ./tests
