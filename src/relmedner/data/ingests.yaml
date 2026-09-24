@@ -450,3 +450,11 @@ datasets:
     <<: *hf-train
     dataset: AGBonnet/augmented-clinical-notes
     columns_out: [note]
+  # MedMCQA (openlifescienceai/medmcqa, apache-2.0): medical entrance-exam questions with expert
+  # explanations; the `exp` column is the reasoning prose the fullmap path mines. Rows with no
+  # explanation (36 of the first 300) drop on the declared drop_empty filter.
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: openlifescienceai/medmcqa
+    columns_out: [exp]
+    filters: {drop_empty: true}

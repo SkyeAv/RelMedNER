@@ -70,6 +70,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `wcole3/biored-parquet` (train + validation + test) | `script` -> `BioredScript` | `passages`, `entities`, `relations` | entities, relations | 600 |
 | `OpenMed/drugprot-parquet` (train + validation) | `script` -> `DrugprotScript` | `text`, `entities`, `relations` | entities, relations | 4,250 |
 | `AGBonnet/augmented-clinical-notes` | `fullmap` (max_ngram=6, taxon=9606) | `note` | entities, relations | 30,000 |
+| `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -212,6 +213,17 @@ relations over 200 notes. The rows are LLM-augmented (the `note` column paraphra
 document), so the corpus is tiered silver in `docs/weighting.md`: mining scores the fiction, and
 the labels are distant, not gold. The declared column is `note` (not `full_note`), the
 paragraph-length clinical note itself.
+
+## MedMCQA
+
+`openlifescienceai/medmcqa` (apache-2.0): medical entrance-exam questions; the train split alone
+is 182,822 rows (validation 4,183, test 6,150, datasets-server size endpoint, undeclared). The
+declared column is `exp`, the expert explanation: measured over the first 300 train rows, 36
+rows (12%) carry no explanation and drop on the declared `drop_empty` filter, 264 ship, 234
+docs produce mentions at 8.1 mentions per doc, and 158 relations over the 300-row sample.
+Explanations are short (mean 532 chars), so the yield per row is the lowest of the fullmap
+mining bases; the volume is what makes the corpus useful. Exam prose is tiered silver in
+`docs/weighting.md` (distant labels, unverified provenance).
 
 ## Install
 
