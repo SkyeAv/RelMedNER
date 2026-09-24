@@ -144,7 +144,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/ncbi-disease.md](docs/ncbi-disease.md) -- the `ncbi/ncbi_disease` gold disease-NER ingest over three parquet splits.
 - [docs/linnaeus.md](docs/linnaeus.md) -- the `bigbio/linnaeus` gold species-NER ingest and its trust-gold label stance.
 - [docs/osiris.md](docs/osiris.md) -- the `bigbio/osiris` gold variant-NER ingest and its offset-aware passage reconstruction.
-- [docs/pubmed-qa.md](docs/pubmed-qa.md) -- the `bigbio/pubmed_qa` gold/silver question-answering classification ingests.
+- [docs/pubmed-qa.md](docs/pubmed-qa.md) -- the `bigbio/pubmed_qa` gold question-answering classification ingests.
 - [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
 - [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
 - [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.
