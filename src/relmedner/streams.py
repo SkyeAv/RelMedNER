@@ -102,6 +102,18 @@ def select_declared_columns(dataset: Any, columns_out: tuple[str, ...], match_on
 class DataStream(ABC):
     SOURCE: ClassVar[str]
 
+    SHARDED_READS: ClassVar[bool] = False
+    """whether rows() knows how to select only its shard of the source; a subclass that
+    flips this to True must make the (read_shards, shard_index) pair deterministic and
+    non-overlapping, with the union of all shards' rows equal to the unsharded row list"""
+
+    read_shards: int = 1
+    """class-level default so bare test doubles that never call the shared __init__ still
+    stream() and report; real sources get the declared value through the base __init__"""
+
+    shard_index: int = 0
+    """which shard of read_shards this instance streams; see SHARDED_READS"""
+
     task: tuple[Any, ...]
     """the whole frozen task tuple (discriminated by its leading type value), carried
     positionally in the frozen payload tuple; the pipeline rebuilds the task model from it
@@ -125,7 +137,16 @@ class DataStream(ABC):
     reaches even unfiltered sources; rows under the cap stay byte-identical, only over-cap rows
     are new drops on the declared-None path"""
 
-    def __init__(self, task: tuple[Any, ...] = (), weight: float = 1.0, *, filters: RowFilters | None = None, sample_rate: float = 1.0) -> None:
+    def __init__(
+        self,
+        task: tuple[Any, ...] = (),
+        weight: float = 1.0,
+        *,
+        filters: RowFilters | None = None,
+        sample_rate: float = 1.0,
+        read_shards: int = 1,
+        shard_index: int = 0,
+    ) -> None:
         """the single shared entry point every DataStream subclass builds on: it owns the
         frozen payload's leading fields, so each subclass ctor only adds its source-specific
         ones after super().__init__(task, weight).
@@ -135,12 +156,23 @@ class DataStream(ABC):
         the source-specific fields. US-008 added that keyword-only filters parameter (the
         defaults keep no-arg test doubles constructible); it rides here rather than each subclass
         ctor so every source shares one filter slot. sample_rate rides the same way: the
-        declared mixing-ratio fraction stream() keeps, defaulting to everything.
+        declared mixing-ratio fraction stream() keeps, defaulting to everything. read_shards
+        and shard_index ride the stream_args envelope the same way: the declared fan-out of
+        this source's read over whole-bundle shard instances, defaulting to one full pass.
         """
         self.task: tuple[Any, ...] = tuple(task)
         self.weight: float = weight
         self.filters: RowFilters | None = filters
         self.sample_rate: float = sample_rate
+        # fail loud BEFORE the pipeline submits: an unshardable source declared with
+        # read_shards > 1 would otherwise either duplicate every row (every shard streaming
+        # the whole source) or silently stay serial
+        if read_shards < 1 or not 0 <= shard_index < read_shards:
+            raise ValueError(f"invalid shard envelope: read_shards={read_shards}, shard_index={shard_index}")
+        if read_shards > 1 and not type(self).SHARDED_READS:
+            raise ValueError(f"{type(self).__name__} does not shard its read yet; declare read_shards only on sources that support it")
+        self.read_shards: int = read_shards
+        self.shard_index: int = shard_index
         # computed ONCE: the evaluator always gets a RowFilters, so the ALWAYS-ON token cap
         # applies even when the dataset declared none; self.filters keeps the DECLARED value
         self.effective_filters: RowFilters = filters if filters is not None else RowFilters()
@@ -194,4 +226,24 @@ class DataStream(ABC):
         try:
             yield from rows
         finally:
-            _QUALITY_LOG.info("ingest quality %s: %s", self.name, self.stats.report())
+            _QUALITY_LOG.info("ingest quality %s: %s", self._stats_label(), self.stats.report())
+
+    def _stats_label(self: Self) -> str:
+        """the quality-line label: the declared row key, suffix-tagged when this pass is one
+        shard of a fanned-out read so K shard lines stay attributable"""
+        return self.name if self.read_shards == 1 else f"{self.name}[shard {self.shard_index}/{self.read_shards}]"
+
+    def zero_yield_guard(self: Self, candidates: int) -> None:
+        """fail loud when a WHOLE pass kept zero candidate rows (US-008: the silent-empty-
+        training-set bug made impossible to recreate through filters OR the ALWAYS-ON cap).
+        The caller owns what counts as a candidate (local avro counts records read, the hf
+        streams count post-match_on rows). On a sharded read one shard may legitimately hold
+        zero passing rows (a trailing file shard under the cap), so the raise degrades to a
+        WARNING carrying the shard label; row-count truth for sharded sources stays with the
+        probe receipts and the downstream census"""
+        if candidates <= 0 or self.stats.rows_out > 0:
+            return
+        if self.read_shards > 1:
+            _QUALITY_LOG.warning("ingest quality %s: %d candidate rows, 0 passed", self._stats_label(), candidates)
+            return
+        raise ZeroYieldError(f"filters {self.filters} dropped 100% of {candidates} rows from {self.name}")
