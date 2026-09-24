@@ -74,6 +74,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
 | `commanderstrife/jnlpba` | `script` (JnlpbaScript) | `tokens`, `ner_tags` | entities, relations | 37,094 train + 7,714 validation |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | `fullmap` (max_ngram=6, taxon=9606) | `eligibility` | entities, relations | 3,002 |
+| `hackint0sh/Text-Clinical-Records` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 31,489 |
 | `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
@@ -284,6 +285,15 @@ on the fullmap entry key, so `brief_summary` stays undeclared). Measured over th
 train rows (wenceslaus 2026-09-24): 300 of 300 docs with mentions at 17.87 mentions per doc, 295
 relations, 0 empty criteria strings. Criteria prose is tiered silver in `docs/weighting.md`
 (distant labels, unverified provenance).
+
+## Text-Clinical-Records
+
+`hackint0sh/Text-Clinical-Records` (MIT): 31,489 clinical-record texts, the EHR-shaped prose
+register. Measured over the first 300 train rows (wenceslaus 2026-09-24): mean 842 chars (median
+513), 78 of 300 rows empty (dropped on the declared `drop_empty` filter), 195 of the 222
+surviving docs produce mentions at 9.57 mentions per doc, 61 relations. The kjappelbaum
+chemnlp-chemdner candidate was rejected before probing: no license declared on its card (unknown
+= reject). Clinical-record prose is tiered silver in `docs/weighting.md` (distant labels).
 
 ## Install
 

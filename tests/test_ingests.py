@@ -545,6 +545,22 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("eligibility",),
         ),
     ),
+    # hackint0sh/Text-Clinical-Records declares one fullmap ingest over the text column with the
+    # drop_empty filter (78 of 300 sampled rows empty); the tuple is frozen from live
+    # generate_tuples() output via probe --freeze (filters ride outside the lock tuple, the
+    # medmcqa precedent).
+    "hackint0sh/Text-Clinical-Records": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "hackint0sh/Text-Clinical-Records",
+            None,
+            "train",
+            None,
+            ("text",),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

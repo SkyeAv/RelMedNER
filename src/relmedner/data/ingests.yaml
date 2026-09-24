@@ -519,3 +519,13 @@ datasets:
     <<: *hf-train
     dataset: rjac/clinicaltrials.gov-summary_and_eligibility
     columns_out: [eligibility]
+  # Text-Clinical-Records (hackint0sh/Text-Clinical-Records, MIT): 31,489 clinical-record texts
+  # (EHR-shaped prose, mean 842 chars, median 513 on the first 300 sampled rows); 78 of the 300
+  # sampled rows carry an empty text and drop on the declared drop_empty filter. The kjappelbaum
+  # chemnlp-chemdner candidate was REJECTED before probing: no license declared on its card
+  # (unknown = reject).
+  - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
+    <<: *hf-train
+    dataset: hackint0sh/Text-Clinical-Records
+    columns_out: [text]
+    filters: {drop_empty: true}
