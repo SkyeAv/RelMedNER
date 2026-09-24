@@ -182,18 +182,27 @@ committed weight: [docs/weighting.md](docs/weighting.md).
 
 ## Testing
 
-    make test        # full gate: every test, measured, 90% coverage floor
-    make test-fast   # iteration loop: parallel, no coverage measurement
-    make lint        # ruff check + format check
+    make test              # full gate: every test, measured, 90% coverage floor
+    make test-fast         # iteration loop: parallel, no coverage measurement
+    make lint              # ruff check + format check
+    make prepush           # what the push hook runs: lint + test-fast
 
-Pre-commit runs `make lint` only (sub-second); the suite runs at the pre-push boundary, so it gates
-once per pushed batch instead of taxing every commit. Install both hook types once:
+Worker fan-out defaults to 4 (`addopts`), the safe ceiling for a 30 GB laptop (each worker
+imports 150-335 MB of interpreter + relmedner + apache_beam state). A big host passes the
+knob instead: `make test XDIST=auto`.
+
+Pre-commit runs `ruff check` on the staged files only (sub-second); the push boundary runs
+`make prepush` (lint + the fast suite, no coverage measurement), so tests gate once per
+pushed batch instead of taxing every commit. The measured 90% coverage floor belongs to the
+wenceslaus full gate (`make test` / the add-dataset remote gate in `cov` mode), never to the
+laptop. Install both hook types once:
 
     uv run pre-commit install -t pre-commit -t pre-push
 
-The default suite is fully offline: the ReCoRD live smoke (`tests/test_super_glue_record_live.py`)
-streams one real hub row and runs only when `RELMEDNER_LIVE_HF=1` is set, so hub downloads never
-happen in the default run.
+The default suite is fully offline: every live-hub smoke (the nine `tests/test_*_live.py`
+files and the every-ingest pipeline smoke in `tests/test_outputs.py`) runs only when
+`RELMEDNER_LIVE_HF=1` is set, and the fullmap-gated tests skip when the bundle is not
+mounted, so hub downloads never happen in the default run.
 
 The suite can also run on the wenceslaus box to keep the laptop unloaded. The remote shell is
 bash-only and the snap `uv` on its PATH is broken, so sync with rsync and invoke uv by absolute
@@ -204,7 +213,7 @@ path; `PYTHONUTF8=1` is required for the remote pytest (UTF-8 locale gaps):
       /home/skyeav/Code/ISB/RelMedNER-worktrees/super-glue-record/ \
       wenceslaus:~/Code/RelMedNER-worktrees/super-glue-record/
     ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && ~/.local/bin/uv sync'
-    ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && PYTHONUTF8=1 ~/.local/bin/uv run pytest -q'
+    ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && PYTHONUTF8=1 ~/.local/bin/uv run pytest -q -n auto'
     ssh wenceslaus 'cd ~/Code/RelMedNER-worktrees/super-glue-record && ~/.local/bin/uv run ruff check ./src ./tests && ~/.local/bin/uv run ruff format --check ./src ./tests'
 
 ### Agent skills
