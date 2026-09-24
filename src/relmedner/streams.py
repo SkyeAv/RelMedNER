@@ -75,6 +75,29 @@ def rebuild_task(task: tuple[Any, ...]) -> Any:
     return model(**dict(zip(model.model_fields, task, strict=True)))
 
 
+def select_declared_columns(dataset: Any, columns_out: tuple[str, ...], match_on: tuple[tuple[str, Any], ...]) -> Any:
+    """prune a hub dataset to the columns this declaration actually reads.
+
+    Every hf source iterated whole rows, so the hub decoder materialized every column of every
+    row into a python dict and the stream then read two or three of them: the seven reddit
+    fullmap ingests declare `text` + `communityName` out of ~30 columns, and they are the
+    largest sources in the registry. Projecting first makes the decoder skip the rest
+    (on-the-fly for a streaming IterableDataset, at the arrow level for a built Dataset).
+
+    Returns the dataset unchanged when there is nothing to prune (every column is needed) or when
+    the schema is unknown (`features` falsy), so a source whose features only arrive with the
+    first row keeps working. A declared column the dataset does not have is left out rather than
+    raised for: `row.get(column)` already yields None for it, which is how the docred test split
+    (no `labels` key) ships entities only.
+    """
+    features = getattr(dataset, "features", None)
+    if not features:
+        return dataset
+    needed: list[str] = list(dict.fromkeys([*columns_out, *(column for column, _values in match_on)]))
+    wanted: list[str] = [name for name in needed if name in features]
+    return dataset if len(wanted) == len(features) else dataset.select_columns(wanted)
+
+
 class DataStream(ABC):
     SOURCE: ClassVar[str]
 

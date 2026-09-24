@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
+from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError, select_declared_columns
 
 
 class HuggingFaceJsonDataStream(DataStream):
@@ -58,6 +58,7 @@ class HuggingFaceJsonDataStream(DataStream):
     def rows(self: Self) -> Iterator[StreamedRow]:
         # no streaming kwarg, on purpose: see the class docstring cold-cache hazard
         datastream = load_dataset("json", data_files=f"hf://datasets/{self.dataset}/{self.file}", split=self.split)
+        datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # every pass counts (US-009 shape), INCLUDING the declared-filters-None one: the
         # historical None fast path skipped stats, the evaluator, and the quality line, which

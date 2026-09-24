@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError
+from relmedner.streams import DataStream, StreamedRow, StreamStats, ZeroYieldError, select_declared_columns
 
 
 class HuggingFaceDataStream(DataStream):
@@ -41,6 +41,7 @@ class HuggingFaceDataStream(DataStream):
 
     def rows(self: Self) -> Iterator[StreamedRow]:
         datastream = load_dataset(self.dataset, self.subset, split=self.split, streaming=True)
+        datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # US-009: one stats record per pass over the source, reset here (not in stream()) so a
         # direct rows() call is accounted identically; counting rides the same loop for the

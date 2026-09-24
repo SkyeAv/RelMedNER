@@ -7,7 +7,7 @@ from datasets import load_dataset
 
 from relmedner.models import RowFilters
 from relmedner.row_filters import first_drop_reason
-from relmedner.streams import DataStream, StreamedRow, ZeroYieldError
+from relmedner.streams import DataStream, StreamedRow, ZeroYieldError, select_declared_columns
 
 
 class HuggingFaceParquetDataStream(DataStream):
@@ -61,6 +61,7 @@ class HuggingFaceParquetDataStream(DataStream):
         # no streaming kwarg, on purpose: the per-config parquet file is already typed arrow,
         # so the plain load returns the declared dtypes with no promotion step
         datastream = load_dataset("parquet", data_files=f"hf://datasets/{self.dataset}@refs/convert/parquet/{self.file}", split=self.split)
+        datastream = select_declared_columns(datastream, self.columns_out, self.match_on)
 
         # filters is None: the historical unfiltered path, byte-identical (no counting, no guard)
         if self.filters is None:
