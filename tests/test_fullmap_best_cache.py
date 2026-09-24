@@ -81,7 +81,7 @@ def test_the_cache_is_bounded_and_evicts_least_recently_used(fetches: list[list[
 def test_a_miss_batch_larger_than_the_bound_still_answers_every_term(fetches: list[list[str]], monkeypatch: pytest.MonkeyPatch) -> None:
     """eviction during the store must not turn a resolved term into a silent miss"""
     monkeypatch.setattr(utils, "FULLMAP_BEST_CACHE_TERMS", 1)
-    assert ScriptUtils._fullmap_best({"a": "aspirin", "b": "b", "c": "c"}) == {"aspirin": ROW}
+    assert ScriptUtils._fullmap_best({"a": "aspirin", "b": "b", "c": "c"}) == {"aspirin": [ROW]}
     assert len(ScriptUtils._best_cache) <= 1
 
 
