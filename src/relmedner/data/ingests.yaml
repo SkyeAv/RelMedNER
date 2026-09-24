@@ -648,6 +648,21 @@ datasets:
     file: ncbi_disease/test/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
+  # LINNAEUS species corpus (bigbio/linnaeus, cc-by-4.0): 100 PMC full-text articles with gold
+  # species mentions (4,259 measured on the full split) and NCBI taxon normalization. The hub
+  # repo is script-only, so the canonical linnaeus_bigbio_kb config reads its parquet off
+  # refs/convert/parquet (the bigbio/ehr_rel read path; the builder names the split 'train').
+  # Every span is end-exclusive (4,259/4,259 verified), single-part, one gapless passage per
+  # row. The _source and filtered_ configs re-render the same documents and are deliberately
+  # not declared (double-stream). Offsets are char offsets, so LinnaeusScript runs the shared
+  # char bridge and ships the re-joined token stream.
+  - task: {type: script, name: LinnaeusScript, outputs: [entities]}
+    source: hf_parquet
+    weight: *weight
+    dataset: bigbio/linnaeus
+    file: linnaeus_bigbio_kb/train/0000.parquet
+    split: train
+    columns_out: [passages, entities]
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched

@@ -570,6 +570,21 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("tokens", "ner_tags"),
         ),
     ),
+    # bigbio/linnaeus declares one hf_parquet ingest over the canonical linnaeus_bigbio_kb
+    # config (the _source and filtered_ re-renders of the same documents stay undeclared). Tuple
+    # frozen from live generate_tuples() output via probe --freeze.
+    "bigbio/linnaeus:linnaeus_bigbio_kb/train/0000.parquet": (
+        "hf_parquet",
+        (
+            ("script", "LinnaeusScript", ("entities",)),
+            1.0,
+            "bigbio/linnaeus",
+            "linnaeus_bigbio_kb/train/0000.parquet",
+            "train",
+            None,
+            ("passages", "entities"),
+        ),
+    ),
     # rjac/clinicaltrials.gov-summary_and_eligibility declares one fullmap ingest over the
     # eligibility column; the tuple is frozen from live generate_tuples() output via probe --freeze.
     "rjac/clinicaltrials.gov-summary_and_eligibility": (
