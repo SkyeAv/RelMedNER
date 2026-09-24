@@ -5,7 +5,7 @@ import string
 from collections.abc import Mapping
 
 from pydantic import ValidationError
-from tablassert.biolink import Predicates, Qualifiers
+from tablassert.biolink import ENUM_RANGED_QUALIFIERS, Predicates, Qualifiers
 
 from relmedner.constants import JUNKY_CATEGORIES, NEGATIVE_NAME_PREFIX
 from relmedner.models import GazetteerSpec, Relation, RelationField
@@ -530,6 +530,53 @@ def _qualifiers(
     return relations
 
 
+def _enum_qualifiers(
+    tokens: list[str],
+    endpoints: list[tuple[int, int, str]],
+    tails: frozenset[tuple[int, int, str]],
+) -> list[Relation]:
+    """attach enum-valued Translator-pattern qualifiers to statement endpoints. Like the DAKP
+    subset, a qualifier only fires where a predicate relation already fired (it qualifies a
+    *statement*); the cue phrase contributes the closed-vocabulary value itself (the enum
+    token, not a surface), and the host is the nearest endpoint on the slot's bound side
+    (QUALIFIER_HOST_SIDES) within the slot's host window across no sentence break. One value
+    per slot per sentence: the leftmost cue occurrence wins, and the greedy scan already folds
+    "competitive inhibition" into the longer phrase so the bare cue never double-fires."""
+    relations: list[Relation] = []
+    if not endpoints:
+        # a qualifier qualifies a STATEMENT: with no fired predicate relation there is no host
+        return relations
+    leftmost: dict[str, tuple[int, int]] = {}
+    for cue_start, cue_end, slot in _scan(_ENUM_PHRASE_TABLE, tokens):
+        if slot not in leftmost:
+            leftmost[slot] = (cue_start, cue_end)
+    for slot, (cue_start, cue_end) in leftmost.items():
+        side = QUALIFIER_HOST_SIDES[slot]
+        candidates = [endpoint for endpoint in endpoints if (endpoint in tails) == (side == "tail")]
+        if not candidates:
+            continue
+        cue: tuple[int, int, str] = (cue_start, cue_end, slot)
+        host = min(candidates, key=lambda endpoint: _gap(endpoint, cue))
+        if _gap(host, cue) > QUALIFIER_HOST_WINDOW.get(slot, MAX_TRIGGER_DISTANCE):
+            continue
+        if _has_sentence_break(tokens, min(host[1] + 1, cue_start), max(cue_end + 1, host[0])):
+            continue
+        value = QUALIFIER_ENUM_TRIGGERS[slot][tuple(token.lower() for token in tokens[cue_start : cue_end + 1])]
+        relations.append(
+            Relation(
+                name=slot,
+                fields=[
+                    RelationField(name="head", value=_surface(tokens, host)),
+                    RelationField(name="tail", value=value),
+                ],
+                description=ScriptUtils.predicate_description(slot),
+                negated=False,
+                evidence="asserted",
+            )
+        )
+    return relations
+
+
 def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str]]) -> list[Relation]:
     """pair each trigger with its nearest bracketing mentions under sentence-break, window,
     surface, and biolink domain/range guards; span[2] is the mention's biolink category (or its
@@ -583,6 +630,7 @@ def extract_relations(tokens: list[str], mention_spans: list[tuple[int, int, str
         endpoints.extend((head, tail))
         tails.add(tail)
     relations.extend(_qualifiers(tokens, mention_spans, endpoints, frozenset(tails)))
+    relations.extend(_enum_qualifiers(tokens, endpoints, frozenset(tails)))
     return relations
 
 
@@ -594,6 +642,108 @@ validate_trigger_table(PREDICATE_TRIGGERS)
 # with species_context_qualifier deliberately excluded -- tablassert marks it
 # DISABLED_EDGE_FIELDS (never emittable; v12 disabled its derivation).
 DISABLED_QUALIFIERS: frozenset[str] = frozenset({"species_context_qualifier"})
+
+# Enum-valued Translator-ingest qualifiers (the NCATSTranslator/translator-ingests pattern:
+# ChEMBL/GtoPdb/SemMedDB/CTD/DrugCentral edges carry object_aspect_qualifier,
+# object_direction_qualifier, causal_mechanism_qualifier, and subject_form_or_variant_qualifier
+# as closed-vocabulary tokens, not entity-resolved CURIEs). Cue phrase -> canonical enum token;
+# the emitted relation value is always the token, never the surface ("competitive inhibition"
+# emits competitive_inhibition), so validate_enum_qualifier_table can pin every value against
+# tablassert's ENUM_RANGED_QUALIFIERS derived from the pinned biolink model. Slots absent from
+# that map are attached to no association class (UNSATISFIABLE) or CURIE-ranged, so the live-in-
+# practice check and the deprecated-slot exclusion are the same gate. Contested PTM nouns
+# (phosphorylation, methylation, ...) belong to object_aspect_qualifier, whose enum owns them
+# as aspects; causal_mechanism_qualifier keeps the action nouns and modulator phrases. Bare
+# "binding" is left out: ("binding", "to") already fires the binds predicate and the overlap
+# would double-encode the same event. Host side: object_* slots qualify the statement tail,
+# subject_* the head -- DAKP's nearest-with-tail-preference rule stays with the DAKP slots.
+QUALIFIER_ENUM_TRIGGERS: Mapping[str, Mapping[tuple[str, ...], str]] = {
+    "object_direction_qualifier": {
+        ("increased",): "increased",
+        ("decreased",): "decreased",
+        ("upregulated",): "upregulated",
+        ("downregulated",): "downregulated",
+    },
+    "object_aspect_qualifier": {
+        ("expression",): "expression",
+        ("activity",): "activity",
+        ("abundance",): "abundance",
+        ("secretion",): "secretion",
+        ("synthesis",): "synthesis",
+        ("transport",): "transport",
+        ("localization",): "localization",
+        ("splicing",): "splicing",
+        ("stability",): "stability",
+        ("uptake",): "uptake",
+        ("phosphorylation",): "phosphorylation",
+        ("ubiquitination",): "ubiquitination",
+        ("acetylation",): "acetylation",
+        ("methylation",): "methylation",
+        ("cleavage",): "cleavage",
+        ("degradation",): "degradation",
+        ("hydrolysis",): "hydrolysis",
+        ("oxidation",): "oxidation",
+        ("glycosylation",): "glycosylation",
+        ("aggregation",): "aggregation",
+    },
+    "causal_mechanism_qualifier": {
+        ("activation",): "activation",
+        ("inhibition",): "inhibition",
+        ("agonism",): "agonism",
+        ("antagonism",): "antagonism",
+        ("modulation",): "modulation",
+        ("stabilization",): "stabilization",
+        ("suppression",): "suppression",
+        ("potentiation",): "potentiation",
+        ("induction",): "induction",
+        ("sequestration",): "sequestration",
+        ("competitive", "inhibition"): "competitive_inhibition",
+        ("noncompetitive", "inhibition"): "noncompetitive_inhibition",
+        ("irreversible", "inhibition"): "irreversible_inhibition",
+        ("feedback", "inhibition"): "feedback_inhibition",
+        ("allosteric", "antagonism"): "allosteric_antagonism",
+        ("partial", "agonism"): "partial_agonism",
+        ("inverse", "agonism"): "inverse_agonism",
+        ("positive", "modulation"): "positive_modulation",
+        ("negative", "modulation"): "negative_modulation",
+    },
+    "subject_form_or_variant_qualifier": {
+        ("mutant",): "mutant_form",
+        ("mutated",): "mutant_form",
+        ("mutation",): "genetic_variant_form",
+        ("mutations",): "genetic_variant_form",
+        ("variant",): "genetic_variant_form",
+        ("variants",): "genetic_variant_form",
+        ("polymorphism",): "polymorphic_form",
+        ("polymorphic",): "polymorphic_form",
+        ("snp",): "snp_form",
+        ("snps",): "snp_form",
+        ("gain", "of", "function"): "gain_of_function_variant_form",
+        ("loss", "of", "function"): "loss_of_function_variant_form",
+    },
+}
+
+# Slot -> which statement endpoint the qualifier hosts on: object_* slots bind the tail,
+# subject_* the head (a "mutant KRAS activates RAF" statement carries its variant form on
+# KRAS; an aspect/direction/mechanism composes onto the object).
+QUALIFIER_HOST_SIDES: Mapping[str, str] = {
+    "object_direction_qualifier": "tail",
+    "object_aspect_qualifier": "tail",
+    "causal_mechanism_qualifier": "tail",
+    "subject_form_or_variant_qualifier": "head",
+}
+
+# Module-level view for _scan: the phrase index caches on table identity, so the enum scan
+# must always see the same object instead of a dict rebuilt per call.
+_ENUM_PHRASE_TABLE: dict[str, tuple[tuple[str, ...], ...]] = {slot: tuple(phrases) for slot, phrases in QUALIFIER_ENUM_TRIGGERS.items()}
+
+# Slot -> max cue-to-host gap. The default is MAX_TRIGGER_DISTANCE; the variant-form cues are
+# adjectival and only mean something next to their host ("Mutant KRAS", "KRAS mutations",
+# "loss of function of KRAS"), so a floating cue must not stamp the form on whichever
+# endpoint happens to be nearest ("Aspirin inhibits mutant COX2" must stay unqualified).
+QUALIFIER_HOST_WINDOW: Mapping[str, int] = {
+    "subject_form_or_variant_qualifier": 1,
+}
 
 # Phrase-introduced qualifier contexts, mirroring DAKP's patient-template cue semantics:
 # the phrase introduces the context mention, which must follow within the usual window and
@@ -664,6 +814,57 @@ NEGATION_CUES: tuple[tuple[str, ...], ...] = (
 )
 
 
+def validate_enum_qualifier_table(table: Mapping[str, Mapping[tuple[str, ...], str]]) -> None:
+    """fail loudly on enum-qualifier tables that could never emit a valid edge value: a slot
+    that is not a live enum-ranged biolink qualifier (tablassert's ENUM_RANGED_QUALIFIERS is
+    derived from the pinned model, so a slot absent from it is attached to no association class
+    -- the deprecation exclusion -- or CURIE-ranged, where a token value would be wrong), a
+    value outside the slot's live enum range, the disabled species slot, a malformed phrase, a
+    phrase claimed across the DAKP/enum/predicate tables, or a host side contradicting the
+    slot's own subject_/object_ naming"""
+    valid_slots: frozenset[str] = frozenset(slot.value for slot in Qualifiers)
+    claimed: dict[tuple[str, ...], str] = {phrase: slot for slot, phrases in QUALIFIER_TRIGGERS.items() for phrase in phrases}
+    predicate_phrases: frozenset[tuple[str, ...]] = frozenset(phrase for phrases in PREDICATE_TRIGGERS.values() for phrase in phrases)
+    for slot, phrases in table.items():
+        if slot in DISABLED_QUALIFIERS:
+            raise ValueError(f"enum qualifier slot {slot!r} is tablassert-disabled (never emittable)")
+        if slot not in valid_slots:
+            raise ValueError(f"enum qualifier slot {slot!r} is not a tablassert.biolink.Qualifiers member")
+        if slot in QUALIFIER_TRIGGERS:
+            raise ValueError(f"enum qualifier slot {slot!r} is already a DAKP context slot")
+        allowed: frozenset[str] | None = ENUM_RANGED_QUALIFIERS.get(slot)
+        if allowed is None:
+            raise ValueError(
+                f"enum qualifier slot {slot!r} is not a live enum-ranged qualifier (attached to "
+                "no association class or CURIE-ranged in the pinned biolink model)"
+            )
+        side = QUALIFIER_HOST_SIDES.get(slot)
+        if side not in ("head", "tail"):
+            raise ValueError(f"enum qualifier slot {slot!r} has no host side declared")
+        window = QUALIFIER_HOST_WINDOW.get(slot, MAX_TRIGGER_DISTANCE)
+        if not isinstance(window, int) or window < 0 or window > MAX_TRIGGER_DISTANCE:
+            raise ValueError(f"enum qualifier slot {slot!r} has an invalid host window {window!r}")
+        if slot.startswith("subject_") and side != "head":
+            raise ValueError(f"enum qualifier slot {slot!r} names a subject but binds the {side}")
+        if slot.startswith("object_") and side != "tail":
+            raise ValueError(f"enum qualifier slot {slot!r} names an object but binds the {side}")
+        for phrase, value in phrases.items():
+            if not phrase:
+                raise ValueError(f"enum qualifier slot {slot!r} has an empty phrase")
+            for token in phrase:
+                if not token:
+                    raise ValueError(f"enum qualifier slot {slot!r} phrase {phrase!r} contains an empty token")
+                if token != token.lower():
+                    raise ValueError(f"enum qualifier slot {slot!r} phrase {phrase!r} contains uppercase token {token!r}")
+            if value not in allowed:
+                raise ValueError(f"enum qualifier slot {slot!r} value {value!r} is outside its live enum range")
+            if phrase in predicate_phrases:
+                raise ValueError(f"phrase {phrase!r} collides with a predicate trigger")
+            owner = claimed.setdefault(phrase, slot)
+            if owner != slot:
+                raise ValueError(f"phrase {phrase!r} is claimed by both {owner!r} and {slot!r}")
+
+
 def validate_qualifier_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -> None:
     """fail loudly on non-biolink qualifier slots, the tablassert-disabled species slot,
     malformed phrases, or one phrase claimed by two slots"""
@@ -685,3 +886,6 @@ def validate_qualifier_table(table: Mapping[str, tuple[tuple[str, ...], ...]]) -
             owner = owners.setdefault(phrase, slot)
             if owner != slot:
                 raise ValueError(f"phrase {phrase!r} is claimed by both {owner!r} and {slot!r}")
+
+
+validate_enum_qualifier_table(QUALIFIER_ENUM_TRIGGERS)
