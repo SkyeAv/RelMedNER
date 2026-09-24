@@ -69,7 +69,15 @@ def test_live_streamed_json_extraction_rows_dispatch_end_to_end() -> None:
                 for field in relation.fields:
                     assert field.value in Example.text, f"relation endpoint {field.value!r} does not occur in the text"
 
-            # the pipeline's own dispatch wrapper must agree with the direct registry call above
-            PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), *dispatch_args(Ingests))
+            # the pipeline's own dispatch wrapper must agree with the direct registry call above.
+            # Script.dispatch stamps the stock weight 1.0; the pipeline stamps this source's
+            # DECLARED weight through validators.adjust_weight, so compare on the stamped copy and
+            # then pin the stamp itself to the declaration (trust 1.0 and no trust_edges here, so
+            # declared == stamped). Both sides come from the parsed yaml, so a tier retune moves
+            # the expectation with it instead of breaking the smoke -- the invariant under test is
+            # that the wrapper adds nothing but the weight.
+            Weights, EdgeTrusts = dispatch_args(Ingests)
+            PipelineOutputs, PipelineExample = dispatch_row((Name, (Task, Values)), Weights, EdgeTrusts)
             assert PipelineOutputs == RowOutputs
-            assert PipelineExample == Example
+            assert PipelineExample == Example.model_copy(update={"weight": Weights[Name]})
+            assert PipelineExample.weight == pytest.approx(Ingests.weights_by_source()[Name])

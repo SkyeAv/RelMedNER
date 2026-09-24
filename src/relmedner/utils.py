@@ -918,15 +918,18 @@ class ScriptUtils:
 
     @classmethod
     def predicate_description(cls, predicate: str) -> str | None:
-        """biolink slot definition for a predicate (underscore-normalized lookup, is_a walk);
-        all 23 declared gazetteer predicates carry one -- mirrors biolink_category_description"""
+        """description for a predicate (curated overlay first, biolink slot definition as fallback;
+        underscore-normalized lookup, is_a walk); all 23 declared gazetteer predicates carry one --
+        mirrors biolink_category_description"""
         if cls._predicate_descriptions is None:
             cls._predicate_descriptions = cls._load_slot_descriptions()
         return cls._predicate_descriptions.get(predicate)
 
     @staticmethod
     def _load_slot_descriptions() -> dict[str, str]:
-        """flattened biolink-model slot definitions keyed snake_case, inheriting along is_a"""
+        """flattened biolink-model slot definitions keyed snake_case, inheriting along is_a,
+        with the curated gazetteer overlay (data/predicate_descriptions.yaml) merged on top --
+        overlay entries win, biolink text stays the fallback for non-overlaid slots"""
         from importlib.resources import files
 
         import yaml
@@ -953,7 +956,28 @@ class ScriptUtils:
             described = definition(name)
             if described:
                 flattened[str(name).replace(" ", "_")] = described
+        flattened.update(ScriptUtils._load_description_overlay())
         return flattened
+
+    @staticmethod
+    def _load_description_overlay() -> dict[str, str]:
+        """curated predicate-description overlay shipped with the package; keyed snake_case exactly
+        as gazetteer predicate names. A missing overlay or a non-mapping parse is a packaging bug,
+        so it raises rather than silently degrading every gazetteer prompt to biolink fallback text"""
+        from importlib.resources import files
+
+        import yaml
+
+        overlay = files("relmedner").joinpath("data/predicate_descriptions.yaml")
+        if not overlay.is_file():
+            raise FileNotFoundError(
+                "curated predicate-description overlay missing from the relmedner package: "
+                "data/predicate_descriptions.yaml should ship beside ingests.yaml"
+            )
+        parsed = yaml.load(overlay.read_text(encoding="utf-8"), Loader=yaml.CSafeLoader)
+        if not isinstance(parsed, dict):
+            raise ValueError("data/predicate_descriptions.yaml must parse to a predicate->description mapping")
+        return {str(predicate): str(description) for predicate, description in parsed.items() if description}
 
     @classmethod
     @cache

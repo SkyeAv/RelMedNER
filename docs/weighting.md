@@ -155,14 +155,12 @@ Notes:
 
 ## Reweighting the existing datasets
 
-Every declared entry lands on `weight: 1.0` today, by three routes: some alias the single
-`&weight 1.0` anchor outright, most inherit it through the `<<: *hf-train` merge from
-`x-defaults`, and the reddit entries declare no `weight` at all and take the model default
-(the ingest table in README.md is the list that stays current as corpora are added).
-Proposal: replace that one anchor with three tier anchors in `x-defaults`
-(`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`) so tier membership is
-visible at a glance. The `trust` values below are **priors to confirm with
-`validate-trust`** -- run the validation, then replace priors with measured values.
+The tier scheme below is DECLARED: `x-defaults` in `src/relmedner/data/ingests.yaml` carries
+the tier anchors (`&weight-gold 1.0`, `&weight-silver 0.7`, `&weight-general 0.4`, plus the
+0.5 and 0.3 general bands), every entry aliases the tier it belongs to, and a drift lock
+test in `tests/test_docs.py` fails when this table's Weight column drifts from the declared
+yaml value for any row key. `trust` values remain PRIORS to confirm with `validate-trust`
+-- run the validation, then replace priors with measured values.
 
 Every row key in `src/relmedner/data/ingests.yaml` must appear in this table
 (`tests/test_docs.py` fails otherwise), so adding an ingest means adding its tier here in
@@ -217,6 +215,26 @@ on the row key and refuses to stamp two entries that disagree.
 | `aps/super_glue` record | general | 0.3 | 0.6 | reading-comprehension transfer, non-med |
 | `tensorshield/reddit_dataset_*` (all 7 entries, one shared anchor like the shared `match_on`) | general | 0.3 | 0.5 | noisy social text, health communities only |
 
+### Effective corpus share (computed from README row counts x declared weights)
+
+| tier | declared rows | weight | effective rows |
+| --- | --- | --- | --- |
+| gold | 1,840,386 | 1.0 | 1,840,386 |
+| silver | 946,484 | 0.7 | 662,539 |
+| TrialPanorama | 1,332,141 | 0.5 | 666,071 |
+| ehr_rel | 11,223 | 0.5 | 5,612 |
+| Nemotron-PII | 200,000 | 0.4 | 80,000 |
+| super_glue | 127,973 | 0.3 | 38,392 |
+| reddit (pre-health-filter) | 10,917,725 | 0.3 x 0.25 sample | 818,829 |
+| total | 15,375,932 | | 4,111,828 |
+
+The declared-anthonyyazdaniml balanced-curated rows (158,890) are a strict subset of the
+curated corpus and are not added twice. The post-training corpus row count is unmeasured
+and excluded from both columns. Gold's effective share of the training mix rises from 12.0
+percent (the old everything-at-1.0 world) to 44.8 percent; the reddit number is an upper
+bound because the health-community `match_on` filter shrinks it further, so the true gold
+share is higher.
+
 Worked example (one entry, gold tier):
 
 ```yaml
@@ -243,10 +261,11 @@ tier prior by more than the band allows).
 
 `weight` is a mixing ratio over rows that all exist; `sample_rate` decides how many rows
 exist. Declare it per dataset entry (`sample_rate: 0.25` keeps a quarter). Use it when a
-source is too big for its intended influence: the seven reddit fullmap ingests (7M rows)
-mined end to end dominate the run; `sample_rate: 0.25` cuts their mining, dispatch, and
-dedup cost by 4x AND their share of the corpus by 4x, which `weight` cannot do (weights
-duplicate records at export, they never remove mining work).
+source is too big for its intended influence: the seven reddit fullmap ingests (7M raw rows
+before the health-community `match_on` filter) mined end to end would dominate the run;
+`sample_rate: 0.25` (declared on all seven via the shared `&reddit-sample` anchor) cuts
+their mining, dispatch, and dedup cost by 4x AND their share of the corpus by 4x, which
+`weight` cannot do (weights duplicate records at export, they never remove mining work).
 
 - Deterministic per row CONTENT: keep iff `blake2b(source key + row repr)` lands under
   `rate * 2**64`. A resumed or re-parallelized pass re-makes the identical decision per

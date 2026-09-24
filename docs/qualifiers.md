@@ -43,7 +43,7 @@ Dataset-format notes (`PileNerBiomedScript`): `tokens`/`ner_tags` are python-rep
 rather than dropping; raw labels PascalCase so the full 3,896-type tail stays
 biolink-shaped. Measured full corpus: 100% of rows emit, ~188k entity mentions, and 6,058
 gazetteer relations across 5,501 rows (9.3% relation-bearing, across 23 biolink predicates,
-each carrying its biolink slot description as `relation_descriptions`).
+each carrying its curated overlay description as `relation_descriptions`).
 
 Dataset-format notes (`SentenceRexScript`): each `sentences` row wraps its two relation
 participants in `<e1>`/`<e2>` tags and `labels` carries the gold predicate; the text ships
