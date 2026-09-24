@@ -463,6 +463,20 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("exp",),
         ),
     ),
+    # OpenMed/MedDialog declares one fullmap ingest over the doctor_response column; the tuple is
+    # frozen from live generate_tuples() output via probe --freeze.
+    "OpenMed/MedDialog": (
+        "hf",
+        (
+            ("fullmap", 6, "9606", True, ("entities", "relations")),
+            1.0,
+            "OpenMed/MedDialog",
+            None,
+            "train",
+            None,
+            ("doctor_response",),
+        ),
+    ),
     # the seven tensorshield reddit ingests share one allowlist via EXPECTED_REDDIT_MATCH: the
     # parsed match_on tuple must equal the declaration, so a yaml-side fork fails here
     "tensorshield/reddit_dataset_157": (

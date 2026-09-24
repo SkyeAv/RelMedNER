@@ -71,6 +71,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `OpenMed/drugprot-parquet` (train + validation) | `script` -> `DrugprotScript` | `text`, `entities`, `relations` | entities, relations | 4,250 |
 | `AGBonnet/augmented-clinical-notes` | `fullmap` (max_ngram=6, taxon=9606) | `note` | entities, relations | 30,000 |
 | `openlifescienceai/medmcqa` | `fullmap` (max_ngram=6, taxon=9606) | `exp` | entities, relations | 182,822 |
+| `OpenMed/MedDialog` | `fullmap` (max_ngram=6, taxon=9606) | `doctor_response` | entities, relations | 226,557 |
 | `tensorshield/reddit_dataset_157` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 7,114,560 |
 | `tensorshield/reddit_dataset_30` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,318,568 |
 | `tensorshield/reddit_dataset_84` | `fullmap` (max_ngram=6, taxon=9606) | communityName-filtered `text` | entities, relations | 1,325,908 |
@@ -224,6 +225,16 @@ docs produce mentions at 8.1 mentions per doc, and 158 relations over the 300-ro
 Explanations are short (mean 532 chars), so the yield per row is the lowest of the fullmap
 mining bases; the volume is what makes the corpus useful. Exam prose is tiered silver in
 `docs/weighting.md` (distant labels, unverified provenance).
+
+## MedDialog
+
+`OpenMed/MedDialog` (apache-2.0): 251,731 patient-doctor consultations total; the declared train
+split carries 226,557 rows (datasets-server size endpoint), and the validation split stays
+undeclared. The declared column is `doctor_response`, the clinician reply (the
+`dialogue_context` column is empty on every sampled row). Measured over the first 300 train
+rows (wenceslaus 2026-09-24): mean 93.7 tokens per reply (median 83), 0 empty, 285 of 300 docs
+produce mentions at 6.19 mentions per doc, 84 relations. Consultation replies are informal
+clinical register, so the corpus is tiered silver in `docs/weighting.md` (distant labels).
 
 ## Install
 
