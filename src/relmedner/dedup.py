@@ -5,6 +5,7 @@ import random
 import struct
 import uuid
 from collections.abc import Iterable, Iterator
+from typing import Any
 
 import apache_beam as beam
 import numpy as np
@@ -35,10 +36,22 @@ def exact_key(text: str) -> str:
     return hashlib.blake2b(normalize_text(text).encode("utf-8"), digest_size=16).hexdigest()
 
 
+def content_id(example: TrainingExample) -> str:
+    """128-bit blake2b fingerprint (hex) of the record's canonical json: a compact, stable name
+    for the whole payload, so a record can be referred to in a shuffle without shipping it"""
+    return hashlib.blake2b(example.model_dump_json().encode("utf-8"), digest_size=16).hexdigest()
+
+
 def priority(example: TrainingExample) -> tuple[float, str]:
-    """total order over records sharing one key: highest weight wins, canonical json breaks ties,
-    so the survivor is deterministic across runners, shard counts, and arrival orders"""
-    return (-example.weight, example.model_dump_json())
+    """total order over records sharing one key: highest weight wins, content_id breaks ties,
+    so the survivor is deterministic across runners, shard counts, and arrival orders.
+
+    The tie-break is a content hash rather than the canonical json string itself (docs/weighting.md):
+    both are total orders over content, and only the hash is small enough to ship through the
+    near-dedup band shuffle, where every record used to travel once per band with its full payload
+    attached. Which of two EQUAL-WEIGHT near-duplicates survives can therefore differ from the
+    pre-hash pipeline; determinism, the drop rule, and every weight-bearing decision are unchanged."""
+    return (-example.weight, content_id(example))
 
 
 # ---------------------------------------------------------------- near-dedup math ----
@@ -193,79 +206,86 @@ class KeepPriorityWinnerByKey(beam.PTransform):
 
 
 class _EmitBandKeys(beam.DoFn):
-    """stamp every record into near_in; long texts emit one (band_key, example) per band,
-    short texts (< MIN_NEAR_TOKENS tokens) bypass near-dedup entirely (REQ-NEAR-1) and are
-    emitted on the "bypass" tag -- they never reach a band bucket, so they can never be
-    near_dropped and never collapse with anything. near_kept is NOT counted here: Beam keys
-    user counters by (step, namespace, name), so one name incremented in two different steps
-    is returned by a by-name query as one value PER STEP, not their sum"""
+    """stamp every record into near_in, then split it into a compact band stream and one
+    payload stream.
 
-    def process(self, example: TrainingExample) -> Iterator[TrainingExample | beam.pvalue.TaggedOutput]:
+    Long texts emit one (band_key, priority) per band -- priority is (-weight, content_id), about
+    40 bytes -- and the record itself rides a SEPARATE tagged output keyed by content_id, so the
+    full payload crosses the shuffle exactly once instead of once per band. Short texts
+    (< MIN_NEAR_TOKENS tokens) bypass near-dedup entirely (REQ-NEAR-1) on the "bypass" tag: they
+    never reach a band bucket, so they can never be near_dropped and never collapse with anything.
+
+    near_kept is NOT counted here: Beam keys user counters by (step, namespace, name), so one name
+    incremented in two different steps is returned by a by-name query as one value PER STEP, not
+    their sum (see _CountNearKept)."""
+
+    def process(self, example: TrainingExample) -> Iterator[tuple[tuple[int, str], tuple[float, str]] | beam.pvalue.TaggedOutput]:
         Metrics.counter(DEDUP_METRICS_NAMESPACE, "near_in").inc()
         if len(example.text.split()) < MIN_NEAR_TOKENS:
             yield beam.pvalue.TaggedOutput("bypass", example)
             return
-        for band_key in band_keys(signature(example.text)):
-            yield (band_key, example)
+        sig = signature(example.text)
+        rank = priority(example)
+        for band_key in band_keys(sig):
+            yield (band_key, rank)
+        yield beam.pvalue.TaggedOutput("payload", (rank[1], example))
 
 
-class _TagBandWinner(beam.DoFn):
-    """per band bucket, tag every element won-or-lost against the bucket's min-priority winner
+class _TagBandLosers(beam.DoFn):
+    """per band bucket, emit one loser marker for every record that is not the bucket's
+    min-priority winner.
 
-    the tag is recomputed from the whole group (never from arrival order), and it is a tag,
-    not a drop decision: the same record can win band 3 and lose band 5, and only the final
-    exact-key collapse may decide its fate -- that is what keeps near_dropped counting one per
-    RECORD instead of one per lost bucket (a 0.98-similar pair shares ~5 of 8 bands; counting
-    losses per bucket would count the same record 5 times and break the near_in reconciliation)
-    """
+    The winner is computed from the whole bucket (never from arrival order), and losing is a MARKER
+    rather than a drop decision: the same record can win band 3 and lose band 5, and only the join
+    below may decide its fate -- that is what keeps near_dropped counting one per RECORD instead of
+    one per lost bucket (a 0.98-similar pair shares ~5 of 8 bands; counting losses per bucket would
+    count the same record 5 times and break the near_in reconciliation). Only losers ship anything,
+    so a bucket of records that all survive costs no downstream elements at all."""
 
-    def process(self, keyed_group: tuple[tuple[int, str], Iterable[TrainingExample]]) -> Iterator[tuple[str, tuple[bool, TrainingExample]]]:
-        _, group = keyed_group
-        examples = list(group)
-        if len(examples) > 1:
+    def process(self, keyed_group: tuple[tuple[int, str], Iterable[tuple[float, str]]]) -> Iterator[tuple[str, None]]:
+        _, ranks = keyed_group
+        ranks = list(ranks)
+        if len(ranks) > 1:
             Metrics.counter(DEDUP_METRICS_NAMESPACE, "near_buckets_nontrivial").inc()
-        winner_priority = min(priority(example) for example in examples)
-        for example in examples:
-            yield (exact_key(example.text), (priority(example) != winner_priority, example))
+        winner = min(ranks)
+        for rank in ranks:
+            if rank != winner:
+                yield (rank[1], None)
 
 
-class _CollapseBandSurvivors(beam.DoFn):
-    """exact-key collapse over all band emissions: emit each record that never lost a band
+class _JoinPayloads(beam.DoFn):
+    """CoGroupByKey join of the payload stream with the loser markers: emit a record unless it lost
+    at least one band bucket.
 
-    grouping key is the exact text key, so two texts exact-dedup would also merge land in one
-    group; within a group a record is identified by its canonical json. A record that lost at
-    least one band has a lose tag in its group and is dropped EXACTLY ONCE no matter how many
-    bands it lost or won (REQ-NEAR-4/6): winning band 3 cannot resurrect a record that lost
-    band 5 to a higher-priority record, because "dropped iff it shares at least one band bucket
-    with a strictly higher-priority record" is a global rule. A record that won k of its 8
-    bands arrives here k times and must leave once. near_dropped is counted here; kept-counting
-    lives in the single _CountNearKept step after the merge Flatten (see _CountNearKept)
-    """
+    Grouping key is the record's content_id, so a record that lost k of its 8 bands arrives with
+    k markers and is dropped EXACTLY ONCE (REQ-NEAR-4/6): winning band 3 cannot resurrect a record
+    that lost band 5 to a higher-priority record, because "dropped iff it shares at least one band
+    bucket with a strictly higher-priority record" is a global rule. near_dropped is counted here.
 
-    def process(self, keyed_group: tuple[str, Iterable[tuple[bool, TrainingExample]]]) -> Iterator[TrainingExample]:
-        _, emissions = keyed_group
-        distinct: dict[str, TrainingExample] = {}
-        lost: set[str] = set()
-        for lost_band, example in emissions:
-            canonical = example.model_dump_json()
-            distinct[canonical] = example
-            if lost_band:
-                lost.add(canonical)
-        Metrics.counter(DEDUP_METRICS_NAMESPACE, "near_dropped").inc(len(lost))
-        survivors = [example for canonical, example in distinct.items() if canonical not in lost]
-        yield from survivors
+    Two records sharing one content_id have byte-identical payloads (the id is a hash of the
+    canonical json), so emitting one of them is not a choice: the payload stream carries each
+    surviving record exactly once."""
+
+    def process(self, joined: tuple[str, dict[str, list[Any]]]) -> Iterator[TrainingExample]:
+        _content_id, groups = joined
+        payloads: list[TrainingExample] = groups.get("payload", [])
+        if not payloads:
+            return  # a loser marker with no payload cannot happen; skip rather than count a phantom
+        if groups.get("lost"):
+            Metrics.counter(DEDUP_METRICS_NAMESPACE, "near_dropped").inc()
+            return
+        yield payloads[0]
 
 
 class _CountNearKept(beam.DoFn):
     """count one near_kept per merged survivor, in a SINGLE step, after the Flatten
 
     near_kept must be incremented in exactly one step: Beam keys user counters by
-    (step, namespace, name), so a name incremented in both the bypass emit step and the
-    collapse step comes back from a by-name metrics query as one value PER STEP. The
-    name-keyed dict in tests (and dashboards) then keeps only one step's value instead of
-    the sum, and near_in stops reconciling on mixed inputs -- bypass survivors and band
-    survivors must be counted together, here, where both paths have merged
-    """
+    (step, namespace, name), so a name incremented in both the bypass emit step and the join step
+    comes back from a by-name metrics query as one value PER STEP. The name-keyed dict in tests
+    (and dashboards) then keeps only one step's value instead of the sum, and near_in stops
+    reconciling on mixed inputs -- bypass survivors and band survivors must be counted together,
+    here, where both paths have merged."""
 
     def process(self, example: TrainingExample) -> Iterator[TrainingExample]:
         Metrics.counter(DEDUP_METRICS_NAMESPACE, "near_kept").inc()
@@ -273,23 +293,29 @@ class _CountNearKept(beam.DoFn):
 
 
 class NearDeduplicate(beam.PTransform):
-    """near-text dedup over TrainingExample values: LSH band grouping, priority drop, collapse
+    """near-text dedup over TrainingExample values: LSH band grouping, priority drop, payload join
 
-    pure Beam composition (ParDo + GroupByKey + Flatten, no runner-specific state, timers, or
-    uuid keying), so it runs unchanged on the DirectRunner and the Flink runner and is fully
-    deterministic: signatures come from DEDUP_SEED, winners from min(priority) over whole groups.
-    Semantics (REQ-NEAR-4): a record is dropped iff it shares at least one band bucket with a
-    strictly higher-priority record; short texts (< MIN_NEAR_TOKENS tokens) bypass untouched.
-    Counters under namespace relmedner.dedup always reconcile: near_in == near_dropped + near_kept
-    """
+    pure Beam composition (ParDo + GroupByKey + CoGroupByKey + Flatten, no runner-specific state,
+    timers, or uuid keying), so it runs unchanged on the DirectRunner and the Flink runner and is
+    fully deterministic: signatures come from DEDUP_SEED, winners from min(priority) over whole
+    buckets. Semantics (REQ-NEAR-4): a record is dropped iff it shares at least one band bucket
+    with a strictly higher-priority record; short texts (< MIN_NEAR_TOKENS tokens) bypass untouched.
+    Counters under namespace relmedner.dedup always reconcile: near_in == near_dropped + near_kept.
+
+    Shuffle shape: 8 compact (band_key, priority) elements plus ONE full payload per record, and
+    the band stream never carries a record. The previous shape shipped the whole TrainingExample
+    once per band and again once per band on the collapse step -- 16 full copies per record, which
+    is what made near-dedup the pipeline's dominant shuffle cost."""
 
     def expand(self, examples: beam.PCollection[TrainingExample]) -> beam.PCollection[TrainingExample]:
-        emitted = examples | "near: emit band keys" >> beam.ParDo(_EmitBandKeys()).with_outputs("bypass", main="bands")
-        tagged = emitted.bands | "near: group bands" >> beam.GroupByKey() | "near: tag band winners" >> beam.ParDo(_TagBandWinner())
-        collapsed = (
-            tagged | "near: group survivors by exact key" >> beam.GroupByKey() | "near: collapse survivors" >> beam.ParDo(_CollapseBandSurvivors())
+        emitted = examples | "near: emit band keys" >> beam.ParDo(_EmitBandKeys()).with_outputs("bypass", "payload", main="bands")
+        losers = emitted.bands | "near: group bands" >> beam.GroupByKey() | "near: tag band losers" >> beam.ParDo(_TagBandLosers())
+        survivors = (
+            {"payload": emitted.payload, "lost": losers}
+            | "near: join payloads with loser markers" >> beam.CoGroupByKey()
+            | "near: drop records that lost a band" >> beam.ParDo(_JoinPayloads())
         )
-        merged = (collapsed, emitted.bypass) | "near: merge survivors" >> beam.Flatten()
+        merged = (survivors, emitted.bypass) | "near: merge survivors" >> beam.Flatten()
         return merged | "near: count kept survivors" >> beam.ParDo(_CountNearKept())
 
 

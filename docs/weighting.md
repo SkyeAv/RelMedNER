@@ -15,8 +15,12 @@ Field reference lives in `docs/yaml-config.md`; this file is the practice guide.
   emitted ~0.7x as often as a 1.0 record. The avro corpus always contains every record
   exactly once -- weights are mixing ratios, not keep/drop switches.
 - Weight also decides **dedup survival**: when two near-duplicate records collide, the
-  higher-weight one wins (`priority = (-weight, canonical_json)`). After trust adjustment
+  higher-weight one wins (`priority = (-weight, content_id)`, where `content_id` is a
+  128-bit blake2b fingerprint of the record's canonical json). After trust adjustment
   (below) that means the higher-*trust* source's copy survives -- usually what you want.
+  The tie-break only decides between records of **equal** weight, and it is a content hash
+  so the pick stays deterministic across runners, shard counts, and arrival order while
+  the near-dedup band shuffle carries 40 bytes per record instead of the whole payload.
 
 ## Two knobs, two intents -- don't conflate them
 
