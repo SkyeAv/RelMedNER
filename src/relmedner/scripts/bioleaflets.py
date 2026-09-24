@@ -78,9 +78,7 @@ class BioleafletsScript(Script):
             # the multi-class fan-out makes resolved longer than spans, so pair_spans re-pairs by
             # span_index (items[0] is the primary; a misaligned shape raises instead of silently
             # misaligning later spans) and every fan-out row extends resolved_spans with its category
-            resolved_spans = [
-                (start, end, item.category) for (start, end, _), items in ScriptUtils.pair_spans(spans, labeled) for item in items
-            ]
+            resolved_spans = [(start, end, item.category) for (start, end, _), items in ScriptUtils.pair_spans(spans, labeled) for item in items]
             resolved_all.extend(labeled)
             # per-section extraction only: the section's own token stream is the whole haystack
             relations.extend(extract_relations(tokens, resolved_spans))

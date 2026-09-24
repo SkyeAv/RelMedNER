@@ -458,6 +458,10 @@ def test_empty_relations_ship_the_entities_only() -> None:
         "ChemicalEntity": ["methotrexate"],
         "GeneFamily": ["anti-tumor necrosis factor", "CD28 receptor"],
         "Gene": ["CD80", "CD86"],
+        # "CD28 receptor" also carries its measured tail-rule secondary label
+        # (SECONDARY_TAIL_LABELS["receptor"] -> ReceptorProtein, docs/secondary-labels.md): one
+        # surface trains under its resolved biolink class plus its morphological class
+        "ReceptorProtein": ["CD28 receptor"],
     }
     assert Example.relations == []
     assert Example.populated() == frozenset({"entities"})
@@ -615,9 +619,10 @@ def test_an_unmapped_label_ships_pascalcased_raw() -> None:
 
 def test_the_verbatim_cpr4_row_yields_29_entities_and_17_decreases_relations() -> None:
     """the census-measured nonzero-yield anchor: all 29 gold entity structs survive the transpose
-    and bridge, group to 24 mentions (5 surfaces repeat within one label and dedupe on grouping),
-    and all 17 gold CPR:4 antagonist relations emit as decreases_amount_or_activity_of with
-    head=arg1 (chemical) and tail=arg2 (gene) surfaces that are substrings of the emitted text"""
+    and bridge, group to 29 mentions (24 biolink-labelled, since 5 surfaces repeat within one label
+    and dedupe on grouping, plus 5 measured secondary morphological labels), and all 17 gold CPR:4
+    antagonist relations emit as decreases_amount_or_activity_of with head=arg1 (chemical) and
+    tail=arg2 (gene) surfaces that are substrings of the emitted text"""
     Example: TrainingExample = SCRIPT.run(row_14967461())
 
     assert len(ChemprotScript.entity_structs(ROW_14967461["entities"])) == 29
@@ -655,7 +660,9 @@ def test_the_verbatim_cpr4_row_yields_29_entities_and_17_decreases_relations() -
         "MonoclonalAntibodyDrug": ["cetuximab"],
         "ReceptorProtein": ["Epidermal growth factor receptor", "epidermal growth factor receptor"],
     }
-    assert sum(len(entity.mentions) for entity in Example.entities) == 24
+    # 18 ChemicalEntity + 4 Gene + 2 GeneFamily = 24 biolink mentions, plus the 5 secondary
+    # morphological labels declared in the dict above (2 -nib, 1 -mab, 2 -receptor)
+    assert sum(len(entity.mentions) for entity in Example.entities) == 29
     assert len(Example.relations) == 17
     assert {relation.name for relation in Example.relations} == {"decreases_amount_or_activity_of"}
     for relation in Example.relations:

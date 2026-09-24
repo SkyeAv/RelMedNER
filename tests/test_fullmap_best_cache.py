@@ -125,6 +125,7 @@ def test_the_python_ranking_matches_the_polars_reference_on_a_hand_built_table()
     assert ranked["aspirin"][0]["CURIE"] == "CHEBI:15365"
     assert ranked["head ache"][0]["CURIE"] == "SNOMED:25064002"
 
+
 def test_identity_agreeing_cross_category_rows_fan_out_and_strangers_do_not() -> None:
     """the fan-out contract: same preferred name (case-insensitive) in a DIFFERENT category rides
     along (one entity, two vocabularies); a different-name row and a same-category duplicate
