@@ -201,6 +201,11 @@ on the row key and refuses to stamp two entries that disagree.
 | `openlifescienceai/medmcqa` | silver | 0.7 | 0.8 | entrance-exam explanation prose, fullmap-mined distant labels (apache-2.0) |
 | `OpenMed/MedDialog` | silver | 0.7 | 0.8 | patient-doctor consultation replies, fullmap-mined distant labels (apache-2.0) |
 | `commanderstrife/jnlpba` | gold | 1.0 | 1.0 | JNLPBA biomedical abstract IOB gold spans (apache-2.0) |
+| `ncbi/ncbi_disease` (train, validation, test; one row key) | gold | 1.0 | 1.0 | NCBI Disease corpus, dual-annotator gold disease spans (public domain) |
+| `bigbio/linnaeus` | gold | 1.0 | 1.0 | LINNAEUS species corpus, gold species mentions over PMC full text (cc-by-4.0) |
+| `bigbio/osiris` | gold | 1.0 | 1.0 | OSIRIS variant corpus, gold gene/variant mentions over PubMed abstracts (cc-by-3.0) |
+| `bigbio/pubmed_qa` (labeled folds) | gold | 1.0 | 1.0 | PubMedQA expert-labeled folds, yes/no/maybe over abstract contexts (mit; artificial split undeclared, one-weight row key) |
+| `GBaker/MedQA-USMLE-4-options` | gold | 1.0 | 1.0 | MedQA USMLE four-option items, gold answer letter over rendered options (cc-by-4.0) |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | silver | 0.7 | 0.8 | trial eligibility criteria prose, fullmap-mined distant labels (MIT) |
 | `hackint0sh/Text-Clinical-Records` | silver | 0.7 | 0.8 | clinical-record prose, fullmap-mined distant labels (MIT) |
 | `dakp-ner-export/examples.avro` | silver | 0.7 | 0.8 | DAKP GLiNER-mined DailyMed / FAERS / EMA spans and assertion relations, model output not human gold |

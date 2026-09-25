@@ -617,6 +617,130 @@ datasets:
     file: jnlpba/validation/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
+  # NCBI Disease corpus (ncbi/ncbi_disease, PUBLIC DOMAIN US gov work): 793 PubMed abstracts
+  # with dual-annotator gold disease spans (MeSH/OMIM-normalized upstream), sentence-split.
+  # The hub repo ships a loader script (unsupported on this repo's datasets version), so the
+  # three splits read their parquet off refs/convert/parquet, one hf_parquet entry per split
+  # file (the bigbio/ehr_rel read path; the builder names every file's split 'train' and the
+  # semantic split lives in the file path). Full-split census measured on wenceslaus
+  # 2026-09-24: train 5,433 / validation 924 / test 941 sentences, tags O 169,361 /
+  # B-DISEASE 6,892 / I-DISEASE 8,299. row_key is the repo id, so all three entries share one
+  # weight slot. The parquet refs lose the ClassLabel name table; NcbiDiseaseScript carries
+  # the fixed 3-tag vocabulary.
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/train/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/validation/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: ncbi/ncbi_disease
+    file: ncbi_disease/test/0000.parquet
+    split: train
+    columns_out: [tokens, ner_tags]
+  # LINNAEUS species corpus (bigbio/linnaeus, cc-by-4.0): 100 PMC full-text articles with gold
+  # species mentions (4,259 measured on the full split) and NCBI taxon normalization. The hub
+  # repo is script-only, so the canonical linnaeus_bigbio_kb config reads its parquet off
+  # refs/convert/parquet (the bigbio/ehr_rel read path; the builder names the split 'train').
+  # Every span is end-exclusive (4,259/4,259 verified), single-part, one gapless passage per
+  # row. The _source and filtered_ configs re-render the same documents and are deliberately
+  # not declared (double-stream). Offsets are char offsets, so LinnaeusScript runs the shared
+  # char bridge and ships the re-joined token stream.
+  - task: {type: script, name: LinnaeusScript, outputs: [entities]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/linnaeus
+    file: linnaeus_bigbio_kb/train/0000.parquet
+    split: train
+    columns_out: [passages, entities]
+  # OSIRIS genetic-variant corpus (bigbio/osiris, cc-by-3.0): 105 PubMed-abstract documents
+  # with gold gene (689) and variant (541) mentions, 1,230 measured on the full split, two
+  # passages per row (title + abstract, gap 1 char) with global char offsets, 1,228/1,230
+  # spans end-exclusive verified (the 2 rest are sloppy-source trailing-space offsets the
+  # char bridge clamps or drops). The hub repo is script-only, so the osiris_bigbio_kb
+  # config reads its parquet off refs/convert/parquet. Trust-gold: spans ship under their
+  # own biolink classes (Gene / SequenceVariant), no fullmap re-resolution.
+  - task: {type: script, name: OsirisScript, outputs: [entities]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/osiris
+    file: osiris_bigbio_kb/train/0000.parquet
+    split: train
+    columns_out: [passages, entities]
+  # knowledgator/biomed_NER needs no second declaration here: main already streams it
+  # gold-tier through KnowledgatorBiomedScript over the hub hf source (the gap-fix screen on
+  # 2026-09-24 caught the duplicate row key before it shipped).
+  # PubMedQA (bigbio/pubmed_qa, mit): yes/no/maybe biomedical question answering over PubMed
+  # abstract contexts. The five expert-labeled folds (450 train + 50 validation each) are
+  # declared gold; row_key is the repo id, so all five entries share one weight slot via the
+  # same anchor. The 200k-row artificial split stays undeclared: the repo-id row key may
+  # carry only one weight (models.py weights_by_source), and its weak heuristic labels would
+  # need silver, which would conflict with the folds' gold. Labeled folds declare train only;
+  # validation rows stay undeclared.
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold0_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold1_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold2_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold3_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  - task: {type: script, name: PubmedQaScript, outputs: [classifications]}
+    source: hf_parquet
+    weight: *weight-gold
+    dataset: bigbio/pubmed_qa
+    file: pubmed_qa_labeled_fold4_source/train/0000.parquet
+    split: train
+    columns_out: [QUESTION, CONTEXTS, final_decision]
+  # MedQA USMLE 4-option (GBaker/MedQA-USMLE-4-options, cc-by-4.0): 10,178 USMLE-style
+  # multiple-choice questions from Jin et al. arXiv:2009.13081, gold `answer_idx` labels.
+  # The repo publishes jsonl on its main branch and has no refs/convert/parquet revision
+  # (404 measured 2026-09-24), so this reads through hf_json like thunlp/docred. The file
+  # name says "phrases" but each line is a full QA record. Census over all 10,178 rows
+  # (laptop 2026-09-24): options is a dict with exactly A/B/C/D and non-empty string values
+  # on 10,178/10,178; answer_idx in A|B|C|D on 10,178/10,178 (A 2,584 / B 2,654 / C 2,557 /
+  # D 2,383); no empty question (min 66 chars, mean 724, max 3,577); options[answer_idx]
+  # equals answer on 10,178/10,178; meta_info is step1 (5,629) or step2&3 (4,549).
+  # `answer` (the correct option text) and `metamap_phrases` stay out of columns_out: the
+  # first would leak the label into the example text, the second is a MetaMap mining artifact
+  # rather than a gold annotation. The 1,273-row test jsonl stays undeclared.
+  - task: {type: script, name: MedQaScript, outputs: [classifications]}
+    source: hf_json
+    weight: *weight-gold
+    dataset: GBaker/MedQA-USMLE-4-options
+    file: phrases_no_exclude_train.jsonl
+    split: train
+    columns_out: [question, options, answer_idx]
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched
