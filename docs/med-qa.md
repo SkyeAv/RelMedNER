@@ -32,14 +32,16 @@ Measured over all 10,178 declared rows (laptop census 2026-09-24): `options` is 
 exactly the keys `A`, `B`, `C`, `D` and non-empty string values on 10,178/10,178 rows;
 `answer_idx` is in `A|B|C|D` on 10,178/10,178 rows (A 2,584 / B 2,654 / C 2,557 / D 2,383);
 no question is empty (min 66 chars, mean 724, max 3,577); `options[answer_idx] == answer` on
-10,178/10,178 rows; `meta_info` is `step1` (5,629) or `step2&3` (4,549). A 500-row declared
-probe on wenceslaus (2026-09-24) dispatched 500/500 rows emitting, all with the
-`classifications` shape, question text median 692 chars (min 177, max 1,689):
+10,178/10,178 rows; `meta_info` is `step1` (5,629) or `step2&3` (4,549). The full-split
+declared probe on wenceslaus (2026-09-24) agrees and dispatches every row: 10,178 rows in,
+10,178 rows out, 10,178/10,178 emitting (100.0%), all with the `classifications` shape,
+`options` typed `dict{A,B,C,D}` on 10,178/10,178, question text median 694 chars (min 66,
+max 3,577), zero entity mentions and zero relations:
 
 ```
 uv run python .pi/skills/add-dataset/scripts/probe.py \
   --declared 'GBaker/MedQA-USMLE-4-options:phrases_no_exclude_train.jsonl' \
-  --script MedQaScript --outputs classifications --text-column question --limit 500
+  --script MedQaScript --outputs classifications --text-column question --limit 11000
 ```
 
 The 1,273-row test jsonl stays undeclared (repo convention: test rows are not training data),
