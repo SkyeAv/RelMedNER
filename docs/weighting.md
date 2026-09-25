@@ -265,10 +265,15 @@ tier prior by more than the band allows).
 
 `weight` is a mixing ratio over rows that all exist; `sample_rate` decides how many rows
 exist. Declare it per dataset entry (`sample_rate: 0.25` keeps a quarter). Use it when a
-source is too big for its intended influence. Deterministic per row CONTENT: keep iff
-`blake2b(source key + row repr)` lands under `rate * 2**64`. A resumed or re-parallelized
-pass re-makes the identical decision per row, and two sources never sample each other's
-rows.
+source is too big for its intended influence: the seven reddit fullmap ingests (7M raw rows
+before the health-community `match_on` filter) mined end to end would dominate the run;
+`sample_rate: 0.25` (declared on all seven via the shared `&reddit-sample` anchor) cuts
+their mining, dispatch, and dedup cost by 4x AND their share of the corpus by 4x, which
+`weight` cannot do (weights duplicate records at export, they never remove mining work).
+
+- Deterministic per row CONTENT: keep iff `blake2b(source key + row repr)` lands under
+  `rate * 2**64`. A resumed or re-parallelized pass re-makes the identical decision per
+  row, and two sources never sample each other's rows.
 - Runs AFTER the row filters: a row dropped by quality never also attributes to
   `sample_rate`, so the quality line keeps meaning quality. Sampled-out rows attribute to
   the `sample_rate` reason in the same per-source stats line.
@@ -280,47 +285,6 @@ rows.
 Prefer `sample_rate` over `weight`-style mixing when the goal is compute AND share
 reduction together; prefer `weight` when every row must stay in the corpus but the
 source should shape the model less.
-
-## Per-dataset balance cap
-
-Rule added 2026-09-24: every silver/general/transfer source whose sampled rows would
-exceed ~10,000 rows carries an explicit per-entry `sample_rate` sized to `10,000 / rows`,
-so no single non-gold dataset dominates the mix. Both multi-task IE precedents balance
-per dataset rather than per task: InstructUIE (arXiv:2304.08085) samples 10,000 examples
-per dataset (all examples when fewer), and GLiNER's supervised stage (arXiv:2311.08526)
-caps every benchmark at 10,000 samples. The cap is a real keep/drop, so it also cuts the
-capped source's mining, dispatch, and dedup cost, which `weight` cannot do.
-
-Measured effect (effective rows = rows x weight x sample_rate, rows from the README
-ingest table on the rebased main, 2026-09-24):
-
-| split | before | after |
-| --- | --- | --- |
-| gold tier share | 45.4% | ~88% |
-| silver + general + transfer share | 54.6% | ~12% |
-| biggest non-gold source share (reddit_dataset_157) | 12.2% | 0.3% |
-| relations-primary share | 1.2% | ~2.3% |
-| classifications share | 0.9% | ~1.5% |
-| structures share | ~0.3% | ~0.3% |
-
-Deliberate deviations from the uniform 10k rule, documented so a future rebalance does
-not "fix" them back:
-
-- Gold tier is uncapped: the tier decision (PR #85) is the mixing intent, and the DS-NER
-  literature (gold must outweigh distant-supervised silver) supports a gold-dominant mix.
-  Open question: `interventions/interventions.avro` alone is ~1M rows, ~45% of the
-  effective mix from one corpus -- the InstructUIE rule would cap it too.
-- Relations/classifications/structures/multi outputs are uncapped even when non-gold:
-  capping them would dilute the already-scarce task types further. Their shares stay
-  far below InstructUIE's dataset-count proportions (~20% RE) because no permissive
-  gold corpora exist at that scale; that gap is a corpus acquisition problem, not a
-  weighting problem.
-- `sample_rate` is sized on measured rows per row key; fullmap sources emit fewer
-  records than rows (documents without mentions drop), so their effective cap lands
-  under 10k.
-
-When adding a new non-gold source, size its `sample_rate` the same way: `10,000 / rows`,
-unless it is a scarce-type source (relations, classifications, structures).
 
 ## Soft drops: `trust: 0` vs `weight: 0` vs `exclude_regex`
 

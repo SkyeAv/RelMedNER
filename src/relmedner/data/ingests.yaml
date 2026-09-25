@@ -21,11 +21,10 @@ x-defaults:
   weight-general: &weight-general 0.4
   # general 0.3 band: non-medical task transfer (super_glue) and noisy social text (reddit)
   weight-transfer: &weight-transfer 0.3
-  # Per-dataset balance cap (docs/weighting.md 'Per-dataset balance cap'): silver/general/
-  # transfer sources whose sampled rows would exceed ~10k carry an explicit per-entry
-  # sample_rate (the InstructUIE/GLiNER 10k-per-dataset balance), a real keep/drop that
-  # cuts mining, dispatch, and dedup cost AND corpus share, which weight cannot do.
-  # Deterministic per row content, so resumed passes re-make the same decisions.
+  # reddit sampling (docs/weighting.md 'Sampling ratios'): a real keep/drop that cuts the
+  # seven corpora's mining, dispatch, and dedup cost AND their corpus share, which weight
+  # cannot do. Deterministic per row content, so resumed passes re-make the same decisions.
+  reddit-sample: &reddit-sample 0.25
   hf-train: &hf-train {source: hf, split: train, weight: *weight-gold}
   fullmap-task: &fullmap-task {type: fullmap, outputs: [entities, relations]}
   # general 0.5 band: human-rated concept pairs with no prose context (ehr_rel) and
@@ -46,7 +45,6 @@ datasets:
   - task: {type: script, name: PileNerBiomedScript, outputs: [entities]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.1699
     dataset: disi-unibo-nlp/Pile-NER-biomed-IOB
     columns_out: [tokens, ner_tags]
   - task: {type: script, name: SentenceRexScript, outputs: [relations]}
@@ -57,7 +55,6 @@ datasets:
   - task: {type: script, name: PileNerTypeScript, outputs: [entities]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.2179
     dataset: Universal-NER/Pile-NER-type
     columns_out: [conversations]
   - task: *fullmap-task
@@ -114,13 +111,11 @@ datasets:
   - task: {type: script, name: GlinerMultilingualScript, outputs: [entities]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.1035
     dataset: knowledgator/gliner-multilingual-synthetic
     columns_out: [tokenized_text, ner]
   - task: *fullmap-task
     source: hf
     weight: *ehrrel-weight
-    sample_rate: 0.0075
     dataset: TrialPanorama/TrialPanorama-database
     subset: studies
     split: all
@@ -187,13 +182,11 @@ datasets:
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     <<: *hf-train
     weight: *weight-general
-    sample_rate: 0.05
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
   - task: {type: script, name: NemotronPiiScript, outputs: [entities]}
     source: hf
     weight: *weight-general
-    sample_rate: 0.05
     split: test
     dataset: nvidia/Nemotron-PII
     columns_out: [text, spans]
@@ -233,7 +226,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_157
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0014
+    sample_rate: *reddit-sample
     # anchor sits on the LIST node (match_on: list[MatchOn], src/relmedner/models.py:95) so
     # match_on: *biomed_communities in the sibling entries resolves to a valid list
     match_on: &biomed_communities
@@ -297,7 +290,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_30
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0076
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -311,7 +304,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_84
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0075
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -325,7 +318,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_171
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0134
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -339,7 +332,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_85
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0665
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -353,7 +346,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_217
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0702
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -367,7 +360,7 @@ datasets:
     dataset: tensorshield/reddit_dataset_237
     split: train
     weight: *weight-transfer
-    sample_rate: 0.0822
+    sample_rate: *reddit-sample
     match_on: *biomed_communities
     columns_out:
       - text
@@ -579,7 +572,6 @@ datasets:
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.3333
     dataset: AGBonnet/augmented-clinical-notes
     columns_out: [note]
   # MedMCQA (openlifescienceai/medmcqa, apache-2.0): medical entrance-exam questions with expert
@@ -588,7 +580,6 @@ datasets:
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.0547
     dataset: openlifescienceai/medmcqa
     columns_out: [exp]
     filters: {drop_empty: true}
@@ -599,7 +590,6 @@ datasets:
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.0441
     dataset: OpenMed/MedDialog
     columns_out: [doctor_response]
     read_shards: 4
@@ -771,7 +761,6 @@ datasets:
   - task: {type: fullmap, max_ngram: 6, taxon: '9606', outputs: [entities, relations]}
     <<: *hf-train
     weight: *weight-silver
-    sample_rate: 0.3176
     dataset: hackint0sh/Text-Clinical-Records
     columns_out: [text]
     filters: {drop_empty: true}
