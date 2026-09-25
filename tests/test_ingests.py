@@ -663,6 +663,21 @@ EXPECTED: dict[str, tuple[object, ...]] = {
             ("QUESTION", "CONTEXTS", "final_decision"),
         ),
     ),
+    # GBaker/MedQA-USMLE-4-options declares one hf_json ingest: the repo publishes jsonl on its
+    # main branch and has no refs/convert/parquet revision, so hf_parquet cannot read it. Tuple
+    # frozen from live generate_tuples() output via probe --freeze (wenceslaus 2026-09-24).
+    "GBaker/MedQA-USMLE-4-options:phrases_no_exclude_train.jsonl": (
+        "hf_json",
+        (
+            ("script", "MedQaScript", ("classifications",)),
+            1.0,
+            "GBaker/MedQA-USMLE-4-options",
+            "phrases_no_exclude_train.jsonl",
+            "train",
+            None,
+            ("question", "options", "answer_idx"),
+        ),
+    ),
     # knowledgator/biomed_NER needs no second declaration: main already streams it gold-tier
     # through KnowledgatorBiomedScript over the hub hf source (the gap-fix screen on
     # 2026-09-24 caught the duplicate row key before it shipped).

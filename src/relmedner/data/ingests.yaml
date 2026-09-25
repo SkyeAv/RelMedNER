@@ -722,6 +722,25 @@ datasets:
     file: pubmed_qa_labeled_fold4_source/train/0000.parquet
     split: train
     columns_out: [QUESTION, CONTEXTS, final_decision]
+  # MedQA USMLE 4-option (GBaker/MedQA-USMLE-4-options, cc-by-4.0): 10,178 USMLE-style
+  # multiple-choice questions from Jin et al. arXiv:2009.13081, gold `answer_idx` labels.
+  # The repo publishes jsonl on its main branch and has no refs/convert/parquet revision
+  # (404 measured 2026-09-24), so this reads through hf_json like thunlp/docred. The file
+  # name says "phrases" but each line is a full QA record. Census over all 10,178 rows
+  # (laptop 2026-09-24): options is a dict with exactly A/B/C/D and non-empty string values
+  # on 10,178/10,178; answer_idx in A|B|C|D on 10,178/10,178 (A 2,584 / B 2,654 / C 2,557 /
+  # D 2,383); no empty question (min 66 chars, mean 724, max 3,577); options[answer_idx]
+  # equals answer on 10,178/10,178; meta_info is step1 (5,629) or step2&3 (4,549).
+  # `answer` (the correct option text) and `metamap_phrases` stay out of columns_out: the
+  # first would leak the label into the example text, the second is a MetaMap mining artifact
+  # rather than a gold annotation. The 1,273-row test jsonl stays undeclared.
+  - task: {type: script, name: MedQaScript, outputs: [classifications]}
+    source: hf_json
+    weight: *weight-gold
+    dataset: GBaker/MedQA-USMLE-4-options
+    file: phrases_no_exclude_train.jsonl
+    split: train
+    columns_out: [question, options, answer_idx]
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched

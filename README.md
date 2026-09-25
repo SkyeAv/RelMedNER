@@ -83,6 +83,7 @@ Machine-readable JSON Schemas for editor autocomplete and pre-validation: [schem
 | `bigbio/linnaeus` | `script` (LinnaeusScript) | `passages`, `entities` | entities | 95 (probe census of the refs/convert/parquet file, wenceslaus 2026-09-24) |
 | `bigbio/osiris` | `script` (OsirisScript) | `passages`, `entities` | entities | 105 (probe census of the refs/convert/parquet file, laptop 2026-09-24) |
 | `bigbio/pubmed_qa` (5 labeled folds) | `script` (PubmedQaScript) | `QUESTION`, `CONTEXTS`, `final_decision` | classifications | 450 x 5 (probe census of the refs/convert/parquet files, laptop 2026-09-24) |
+| `GBaker/MedQA-USMLE-4-options` | `script` (MedQaScript) | `question`, `options`, `answer_idx` | classifications | 10,178 (probe census of `phrases_no_exclude_train.jsonl`, wenceslaus 2026-09-24) |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | `fullmap` (max_ngram=6, taxon=9606) | `eligibility` | entities, relations | 3,002 |
 | `hackint0sh/Text-Clinical-Records` | `fullmap` (max_ngram=6, taxon=9606) | `text` | entities, relations | 31,489 |
 | `chanzuckerberg/MedMentions` (ST21pv) | `script` (MedMentionsScript, local avro) | `title`, `abstract`, `entities` | entities | 2,635 train + 878 dev + 879 test |
@@ -145,6 +146,7 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 - [docs/linnaeus.md](docs/linnaeus.md) -- the `bigbio/linnaeus` gold species-NER ingest and its trust-gold label stance.
 - [docs/osiris.md](docs/osiris.md) -- the `bigbio/osiris` gold variant-NER ingest and its offset-aware passage reconstruction.
 - [docs/pubmed-qa.md](docs/pubmed-qa.md) -- the `bigbio/pubmed_qa` gold question-answering classification ingests.
+- [docs/med-qa.md](docs/med-qa.md) -- the `GBaker/MedQA-USMLE-4-options` gold four-option multiple-choice QA ingest.
 - [docs/medmentions.md](docs/medmentions.md) -- the MedMentions ST21pv gold entity corpus as a local avro container.
 - [docs/clinicaltrials-gov.md](docs/clinicaltrials-gov.md) -- the `rjac/clinicaltrials.gov-summary_and_eligibility` fullmap ingest over eligibility criteria.
 - [docs/text-clinical-records.md](docs/text-clinical-records.md) -- the `hackint0sh/Text-Clinical-Records` fullmap ingest over record text.

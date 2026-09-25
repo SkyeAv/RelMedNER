@@ -205,6 +205,7 @@ on the row key and refuses to stamp two entries that disagree.
 | `bigbio/linnaeus` | gold | 1.0 | 1.0 | LINNAEUS species corpus, gold species mentions over PMC full text (cc-by-4.0) |
 | `bigbio/osiris` | gold | 1.0 | 1.0 | OSIRIS variant corpus, gold gene/variant mentions over PubMed abstracts (cc-by-3.0) |
 | `bigbio/pubmed_qa` (labeled folds) | gold | 1.0 | 1.0 | PubMedQA expert-labeled folds, yes/no/maybe over abstract contexts (mit; artificial split undeclared, one-weight row key) |
+| `GBaker/MedQA-USMLE-4-options` | gold | 1.0 | 1.0 | MedQA USMLE four-option items, gold answer letter over rendered options (cc-by-4.0) |
 | `rjac/clinicaltrials.gov-summary_and_eligibility` | silver | 0.7 | 0.8 | trial eligibility criteria prose, fullmap-mined distant labels (MIT) |
 | `hackint0sh/Text-Clinical-Records` | silver | 0.7 | 0.8 | clinical-record prose, fullmap-mined distant labels (MIT) |
 | `dakp-ner-export/examples.avro` | silver | 0.7 | 0.8 | DAKP GLiNER-mined DailyMed / FAERS / EMA spans and assertion relations, model output not human gold |
