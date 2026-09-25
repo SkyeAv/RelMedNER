@@ -626,7 +626,10 @@ datasets:
   # 2026-09-24: train 5,433 / validation 924 / test 941 sentences, tags O 169,361 /
   # B-DISEASE 6,892 / I-DISEASE 8,299. row_key is the repo id, so all three entries share one
   # weight slot. The parquet refs lose the ClassLabel name table; NcbiDiseaseScript carries
-  # the fixed 3-tag vocabulary.
+  # the fixed 3-tag vocabulary. Only the train file declares read_shards: at 5,433 rows it is
+  # the one split big enough to split usefully (measured on wenceslaus 2026-09-24 through
+  # build_stream: 0.25s unsharded vs 0.14s slowest of 4 shards, 5,433 rows either way); the
+  # 924- and 941-row files read in 0.11s and would gain nothing.
   - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
     source: hf_parquet
     weight: *weight-gold
@@ -634,6 +637,7 @@ datasets:
     file: ncbi_disease/train/0000.parquet
     split: train
     columns_out: [tokens, ner_tags]
+    read_shards: 4
   - task: {type: script, name: NcbiDiseaseScript, outputs: [entities, relations]}
     source: hf_parquet
     weight: *weight-gold
@@ -733,7 +737,9 @@ datasets:
   # equals answer on 10,178/10,178; meta_info is step1 (5,629) or step2&3 (4,549).
   # `answer` (the correct option text) and `metamap_phrases` stay out of columns_out: the
   # first would leak the label into the example text, the second is a MetaMap mining artifact
-  # rather than a gold annotation. The 1,273-row test jsonl stays undeclared.
+  # rather than a gold annotation. The 1,273-row test jsonl stays undeclared. read_shards: 4
+  # splits the 10,178-row read by row index (measured on wenceslaus 2026-09-24 through
+  # build_stream: 0.56s unsharded vs 0.21s slowest of 4 shards, 10,178 rows either way).
   - task: {type: script, name: MedQaScript, outputs: [classifications]}
     source: hf_json
     weight: *weight-gold
@@ -741,6 +747,7 @@ datasets:
     file: phrases_no_exclude_train.jsonl
     split: train
     columns_out: [question, options, answer_idx]
+    read_shards: 4
   # MedMentions ST21pv (chanzuckerberg/MedMentions, CC0): three local avro ingests, one per
   # split file, built out-of-band from the PubTator corpus with the bc5cdr builder contract
   # (document-absolute offsets over title + newline + abstract; converter census slice-matched

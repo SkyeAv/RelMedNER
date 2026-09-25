@@ -92,8 +92,10 @@ def test_build_dataset_test_run_writes_rows_matching_their_declared_shapes(tmp_p
 
     Records: list[dict[str, object]] = list(reader(open(Output, "rb")))
     Ingests: YamlIngests = YamlIngestsParser().parse_ingests()
-    # every declared ingest samples up to the test-run limit; empty/malformed rows shrink the count
-    assert 1 <= len(Records) <= len(Ingests.datasets) * TEST_ROW_LIMIT
+    # the test-run limit caps each STREAM, and a source declaring read_shards streams once per
+    # shard, so the ceiling counts Create envelopes (stream_args), not declared datasets: bounding
+    # by datasets undercounts every sharded source by its shard count minus one
+    assert 1 <= len(Records) <= len(Ingests.stream_args()) * TEST_ROW_LIMIT
 
     Declared: frozenset[str] = frozenset({"entities", "classifications", "structures", "relations"})
     for record in Records:

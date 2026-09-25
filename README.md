@@ -157,7 +157,8 @@ Ingest resolution chains and gates (per-task relabeling, mining, distant supervi
 
 ## Build the dataset
 
-Smoke run over 5 sampled rows per dataset:
+Smoke run over 5 sampled rows per read (a dataset declaring `read_shards: N` reads N times, so up
+to 5 rows per shard):
 
     uv run relmedner build-dataset -t -o ./relmedner-test.avro
 
